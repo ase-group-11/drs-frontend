@@ -2,7 +2,7 @@ name: Deploy Frontend
 
 on:
   push:
-    branches: ["feature/thin-slice"] # Runs whenever code is pushed to main
+    branches: ["feature/thin-slice"]
 
 jobs:
   build-and-deploy:
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
+      # 2. Setup Node.js (Point to the correct lock file!)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -21,41 +21,45 @@ jobs:
           cache: "npm"
           cache-dependency-path: apps/web/package-lock.json
 
-      # 3. Install & Build (This handles Tailwind and TS compilation)
+      # 3. Install Dependencies (Run inside the folder)
       - name: Install Dependencies
         working-directory: ./apps/web
         run: npm ci
 
+      # 4. Build React App (Run inside the folder)
       - name: Build React App
         working-directory: ./apps/web
         run: npm run build
         env:
-          CI: false # Prevents the build from failing on minor warnings
+          CI: false
 
-      # 4. Setup SSH Connection
+      # 5. Setup SSH Key
       - name: Install SSH Key
         uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          known_hosts: unnecessary # We skip host checking manually below
+          known_hosts: unnecessary
 
-      # 5. Deploy to VM
+      # 6. Deploy to VM
       - name: Deploy to Azure VM
         run: |
-          # Define connection variables
           VM_USER=${{ secrets.VM_USER }}
           VM_HOST=${{ secrets.VM_IP }}
           TARGET_DIR="~/drs-app/frontend"
+          SOURCE_DIR="apps/web"
 
-          # A. Prepare directory on VM (Clean old files)
+          # A. Clean old files on VM
           ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "rm -rf $TARGET_DIR && mkdir -p $TARGET_DIR"
 
-          # B. Upload 'build' folder and Docker configs
-          scp -o StrictHostKeyChecking=no -r build/ nginx-internal.conf Dockerfile.prod $VM_USER@$VM_HOST:$TARGET_DIR/
+          # B. Transfer Build Artifacts (Note the path prefix!)
+          # We copy from 'apps/web/build' and 'apps/web/Dockerfile.prod'
+          scp -o StrictHostKeyChecking=no -r $SOURCE_DIR/build/ $SOURCE_DIR/nginx-internal.conf $SOURCE_DIR/Dockerfile.prod $VM_USER@$VM_HOST:$TARGET_DIR/
 
-          # C. Rebuild and Restart the Container
+          # C. Rename Dockerfile on VM (Standardize name if needed)
+          ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "mv $TARGET_DIR/Dockerfile.prod $TARGET_DIR/Dockerfile"
+
+          # D. Restart Container on VM
           ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "
             cd ~/drs-app &&
-            # We use --build to force Docker to use the new files we just uploaded
             sudo docker compose up -d --build frontend
           "
