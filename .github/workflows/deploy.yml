@@ -1,0 +1,58 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: ["main"] # Runs whenever code is pushed to main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      # 3. Install & Build (This handles Tailwind and TS compilation)
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build React App
+        run: npm run build
+        env:
+          CI: false # Prevents the build from failing on minor warnings
+
+      # 4. Setup SSH Connection
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: unnecessary # We skip host checking manually below
+
+      # 5. Deploy to VM
+      - name: Deploy to Azure VM
+        run: |
+          # Define connection variables
+          VM_USER=${{ secrets.VM_USER }}
+          VM_HOST=${{ secrets.VM_IP }}
+          TARGET_DIR="~/drs-app/frontend"
+
+          # A. Prepare directory on VM (Clean old files)
+          ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "rm -rf $TARGET_DIR && mkdir -p $TARGET_DIR"
+
+          # B. Upload 'build' folder and Docker configs
+          scp -o StrictHostKeyChecking=no -r build/ nginx-internal.conf Dockerfile.prod $VM_USER@$VM_HOST:$TARGET_DIR/
+
+          # C. Rebuild and Restart the Container
+          ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "
+            cd ~/drs-app &&
+            # We use --build to force Docker to use the new files we just uploaded
+            sudo docker compose up -d --build frontend
+          "
