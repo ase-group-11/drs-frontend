@@ -19,12 +19,15 @@ jobs:
         with:
           node-version: "18"
           cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
 
       # 3. Install & Build (This handles Tailwind and TS compilation)
       - name: Install Dependencies
+        working-directory: ./apps/web
         run: npm ci
 
       - name: Build React App
+        working-directory: ./apps/web
         run: npm run build
         env:
           CI: false # Prevents the build from failing on minor warnings
