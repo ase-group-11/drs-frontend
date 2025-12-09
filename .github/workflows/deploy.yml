@@ -39,7 +39,7 @@ jobs:
         run: |
           VM_USER=${{ secrets.VM_USER }}
           VM_HOST=${{ secrets.VM_IP }}
-          TARGET_DIR="~/drs-app/frontend"
+          TARGET_DIR="/opt/drs-app/frontend"
           SOURCE_DIR="apps/web"
 
           # A. Clean old files on VM
@@ -54,6 +54,6 @@ jobs:
 
           # D. Restart Container on VM
           ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "
-            cd ~/drs-app &&
-            sudo docker compose up -d --build frontend
+          cd /opt/drs-app &&
+          sudo docker compose up -d --build frontend
           "
