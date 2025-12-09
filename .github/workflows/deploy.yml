@@ -2,18 +2,16 @@ name: Deploy Frontend
 
 on:
   push:
-    branches: ["feature/thin-slice"]
+    branches: ["main"]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout Code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js (Point to the correct lock file!)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -21,26 +19,22 @@ jobs:
           cache: "npm"
           cache-dependency-path: apps/web/package-lock.json
 
-      # 3. Install Dependencies (Run inside the folder)
       - name: Install Dependencies
         working-directory: ./apps/web
         run: npm ci
 
-      # 4. Build React App (Run inside the folder)
       - name: Build React App
         working-directory: ./apps/web
         run: npm run build
         env:
           CI: false
 
-      # 5. Setup SSH Key
       - name: Install SSH Key
         uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           known_hosts: unnecessary
 
-      # 6. Deploy to VM
       - name: Deploy to Azure VM
         run: |
           VM_USER=${{ secrets.VM_USER }}
