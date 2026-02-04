@@ -1,0 +1,174 @@
+.otp-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.otp-modal-container {
+  background: white;
+  border-radius: 16px;
+  padding: 48px 40px;
+  max-width: 520px;
+  width: 100%;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  text-align: center;
+}
+
+.otp-modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.3s;
+}
+
+.otp-modal-close:hover {
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.otp-icon-circle {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: #e6f7ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 32px;
+}
+
+.otp-phone-icon {
+  font-size: 48px;
+  color: #1890ff;
+}
+
+.otp-modal-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  margin: 0 0 16px 0;
+}
+
+.otp-modal-description {
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.45);
+  margin: 0 0 40px 0;
+  line-height: 1.5;
+}
+
+.otp-input-container {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.otp-input-box {
+  width: 64px;
+  height: 64px;
+  border: 2px solid #d9d9d9;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  transition: all 0.3s;
+  outline: none;
+}
+
+.otp-input-box:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.otp-input-box.filled {
+  border-color: #1890ff;
+  background: #f0f8ff;
+}
+
+.otp-resend-container {
+  margin-bottom: 24px;
+}
+
+.otp-resend-button {
+  font-size: 14px;
+  color: #1890ff;
+  padding: 0;
+  height: auto;
+}
+
+.otp-resend-button:disabled {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.otp-resend-button:hover:not(:disabled) {
+  color: #40a9ff;
+}
+
+.otp-verify-button {
+  height: 48px;
+  font-size: 16px;
+  font-weight: 500;
+  background: #e0e0e0;
+  border-color: #e0e0e0;
+  color: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+}
+
+.otp-verify-button:not(:disabled) {
+  background: #1890ff;
+  border-color: #1890ff;
+  color: white;
+}
+
+.otp-verify-button:not(:disabled):hover {
+  background: #40a9ff;
+  border-color: #40a9ff;
+}
+
+@media (max-width: 768px) {
+  .otp-modal-container {
+    padding: 32px 24px;
+  }
+
+  .otp-icon-circle {
+    width: 100px;
+    height: 100px;
+    margin-bottom: 24px;
+  }
+
+  .otp-phone-icon {
+    font-size: 40px;
+  }
+
+  .otp-modal-title {
+    font-size: 24px;
+  }
+
+  .otp-input-container {
+    gap: 8px;
+  }
+
+  .otp-input-box {
+    width: 48px;
+    height: 48px;
+    font-size: 20px;
+  }
+}
