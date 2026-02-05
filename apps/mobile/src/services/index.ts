@@ -1,2 +1,9 @@
-export * from './auth';
-export * from './api';
+export { 
+  authService,
+  ApiError,
+  formatPhoneForApi,
+  validatePhoneNumber,
+  validateEmail,
+  validateFullName,
+  validateOTP,
+} from './authService';
