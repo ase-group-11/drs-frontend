@@ -1,0 +1,259 @@
+.signup-form {
+  width: 100%;
+}
+
+.signup-form .ant-form-item-label > label {
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 14px;
+}
+
+.signup-form .ant-form-item-required::before {
+  display: inline-block !important;
+  margin-right: 4px;
+  color: #ff4d4f;
+  font-size: 14px;
+  font-family: SimSun, sans-serif;
+  line-height: 1;
+  content: '*' !important;
+}
+
+.signup-form .ant-form-item-label > label::after {
+  content: '' !important;
+}
+
+.signup-form .ant-input-affix-wrapper,
+.signup-form .ant-input,
+.signup-form .ant-select-selector,
+.signup-form .ant-input-number,
+.signup-form .ant-picker {
+  border-radius: 6px;
+  border: 1px solid #d9d9d9;
+  height: 48px !important;
+  font-size: 14px;
+  font-weight: 400;
+  display: flex;
+  align-items: center;
+}
+
+.signup-form .ant-input-affix-wrapper .ant-input,
+.signup-form .ant-input {
+  height: 100% !important;
+  line-height: normal !important;
+  border: none;
+  padding: 0 11px;
+}
+
+.signup-form .ant-input::placeholder {
+  color: rgba(0, 0, 0, 0.25);
+  font-size: 14px;
+  line-height: normal;
+}
+
+.signup-form .ant-select-selector {
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 11px !important;
+  height: 48px !important;
+}
+
+.signup-form .ant-select-selection-search {
+  display: flex;
+  align-items: center;
+}
+
+.signup-form .ant-select-selection-search-input {
+  height: 100% !important;
+  line-height: normal !important;
+}
+
+.signup-form .ant-select-selection-item,
+.signup-form .ant-select-selection-placeholder {
+  line-height: 48px !important;
+  padding: 0 !important;
+  display: flex;
+  align-items: center;
+}
+
+.signup-form .ant-input-password {
+  height: 48px !important;
+  display: flex;
+  align-items: center;
+}
+
+.signup-form .ant-input-password input {
+  height: 100% !important;
+  line-height: normal !important;
+  padding: 0;
+}
+
+/* Mobile Number Field */
+.mobile-input-group {
+  display: flex !important;
+  width: 100%;
+  align-items: stretch;
+}
+
+.signup-form .country-code-select {
+  width: 90px !important;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.signup-form .country-code-select .ant-select-selector {
+  background-color: #fafafa !important;
+  border-radius: 6px 0 0 6px !important;
+  border: 1px solid #d9d9d9 !important;
+  height: 48px !important;
+  padding: 0 28px 0 12px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.signup-form .country-code-select .ant-select-selection-item {
+  font-size: 14px !important;
+  color: rgba(0, 0, 0, 0.85) !important;
+  padding: 0 !important;
+  line-height: normal !important;
+  display: flex;
+  align-items: center;
+}
+
+.signup-form .country-code-select .ant-select-arrow {
+  position: absolute !important;
+  right: 8px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 12px !important;
+  height: 12px !important;
+  color: rgba(0, 0, 0, 0.45) !important;
+  pointer-events: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+}
+
+.signup-form .country-code-select .ant-select-arrow .anticon,
+.signup-form .country-code-select .ant-select-arrow svg {
+  width: 12px !important;
+  height: 12px !important;
+  font-size: 12px !important;
+  display: block !important;
+}
+
+.signup-form .mobile-input-field {
+  flex: 1 !important;
+  min-width: 0;
+  border-left: none !important;
+  border-radius: 0 6px 6px 0 !important;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.85);
+  height: 48px !important;
+  border: 1px solid #d9d9d9 !important;
+}
+
+.signup-form .country-code-select:hover .ant-select-selector {
+  border-color: #40a9ff !important;
+}
+
+.signup-form .mobile-input-field:hover,
+.signup-form .mobile-input-field:focus {
+  border-color: #40a9ff !important;
+  border-left: 1px solid #40a9ff !important;
+  z-index: 1;
+}
+
+.signup-form .country-code-select.ant-select-focused .ant-select-selector {
+  border-color: #1890ff !important;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
+}
+
+.signup-form .ant-select-selection-placeholder {
+  color: rgba(0, 0, 0, 0.25);
+  font-size: 14px;
+}
+
+.signup-form .ant-input-prefix,
+.signup-form .ant-input-suffix {
+  display: flex;
+  align-items: center;
+  margin: 0 8px;
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.signup-form .ant-input-prefix {
+  margin-right: 8px;
+  margin-left: 0;
+}
+
+.signup-form .ant-input-suffix {
+  margin-left: 8px;
+  margin-right: 0;
+}
+
+.signup-form .ant-input-affix-wrapper > input.ant-input {
+  padding-left: 0;
+}
+
+.signup-form-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 32px;
+}
+
+.signup-footer-text {
+  flex: 1;
+}
+
+.signup-footer-text span {
+  font-size: 14px;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.signup-footer-text a {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1890ff;
+}
+
+.signup-submit-btn {
+  height: 48px;
+  padding: 0 32px;
+  font-size: 14px;
+  font-weight: 500;
+  background: #e0e0e0;
+  border-color: #e0e0e0;
+  color: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  cursor: not-allowed;
+}
+
+.signup-submit-btn:not(:disabled) {
+  background: #1890ff;
+  border-color: #1890ff;
+  color: white;
+  cursor: pointer;
+}
+
+.signup-submit-btn:not(:disabled):hover {
+  background: #40a9ff;
+  border-color: #40a9ff;
+}
+
+@media (max-width: 768px) {
+  .signup-form .ant-col {
+    margin-bottom: 0;
+  }
+
+  .signup-form-footer {
+    flex-direction: column-reverse;
+    gap: 16px;
+  }
+
+  .signup-submit-btn {
+    width: 100%;
+  }
+}

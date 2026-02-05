@@ -1,0 +1,30 @@
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ant-btn {
+  font-weight: 500;
+}
+
+.ant-input,
+.ant-select-selector {
+  transition: all 0.3s ease;
+}
+
+.ant-input:hover,
+.ant-select-selector:hover {
+  border-color: #40a9ff;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+}
+
+.ant-spin-container {
+  min-height: 200px;
+}
