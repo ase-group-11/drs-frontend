@@ -2,57 +2,89 @@ import React, { useState } from 'react';
 import { AuthTemplate } from '@templates/AuthTemplate';
 import { AuthHeader } from '@organisms/AuthHeader';
 import { OTPVerificationForm } from '@organisms/OTPVerificationForm';
+import { authService, ApiError } from '@services/authService';
 import type { OTPVerificationScreenProps } from '@types/navigation';
 
 export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
   navigation,
   route,
 }) => {
-  const { mobileNumber, countryCode, isSignup, userName } = route.params;
+  const { phoneNumber, isSignup, userName, email } = route.params;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Extract display phone (last digits) from full phone number
+  const getDisplayPhone = (fullPhone: string): string => {
+    // Remove the + and country code for display
+    // +353892039542 -> show last 9 digits or so
+    if (fullPhone.length > 6) {
+      return fullPhone.slice(-9);
+    }
+    return fullPhone;
+  };
+
+  // Extract country code from full phone number
+  const getCountryCode = (fullPhone: string): string => {
+    // +353892039542 -> +353
+    const match = fullPhone.match(/^(\+\d{1,4})/);
+    return match ? match[1] : '+353';
+  };
 
   const handleVerify = async (otp: string) => {
     setIsLoading(true);
     setError('');
 
     try {
-      // TODO: Call API to verify OTP
-      // const response = await authService.verifyOTP({ mobileNumber, countryCode, otpCode: otp });
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Simulate OTP validation - for demo purposes
-      // In production, this would be validated by the backend
-      if (otp === '123456') {
-        // Navigate to Welcome screen
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Welcome', params: { isNewUser: isSignup } }],
+      if (isSignup) {
+        // Verify registration OTP
+        const response = await authService.verifyRegistration({
+          phone_number: phoneNumber,
+          otp,
         });
+        
+        // TODO: Store token in secure storage
+        // await SecureStore.setItemAsync('token', response.access_token);
+        console.log('Registration successful:', response);
       } else {
-        setError('Invalid OTP. Please try again.');
+        // Verify login OTP
+        const response = await authService.verifyLogin({
+          phone_number: phoneNumber,
+          otp,
+        });
+        
+        // TODO: Store token in secure storage
+        // await SecureStore.setItemAsync('token', response.access_token);
+        console.log('Login successful:', response);
       }
+
+      // Navigate to Welcome screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome', params: { isNewUser: isSignup } }],
+      });
     } catch (err: any) {
-      setError(err.message || 'Failed to verify OTP. Please try again.');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || 'Failed to verify OTP. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleResend = async () => {
+    setError('');
+    
     try {
-      // TODO: Call API to resend OTP
-      // await authService.resendOTP({ mobileNumber, countryCode });
-      
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      
-      // Show success message (could use a toast)
+      await authService.resendOTP(phoneNumber, isSignup, userName, email);
       console.log('OTP resent successfully');
     } catch (err: any) {
-      setError(err.message || 'Failed to resend OTP. Please try again.');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || 'Failed to resend OTP. Please try again.');
+      }
     }
   };
 
@@ -61,7 +93,9 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
   };
 
   const title = isSignup ? 'Verify Your Number' : "Verify It's You";
-  const subtitle = `Enter the code sent to ${countryCode} ${mobileNumber}`;
+  const displayPhone = getDisplayPhone(phoneNumber);
+  const countryCode = getCountryCode(phoneNumber);
+  const subtitle = `Enter the code sent to ${countryCode} ${displayPhone}`;
 
   return (
     <AuthTemplate
@@ -73,7 +107,7 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       }
     >
       <OTPVerificationForm
-        phoneNumber={mobileNumber}
+        phoneNumber={displayPhone}
         countryCode={countryCode}
         isSignup={isSignup}
         onVerify={handleVerify}

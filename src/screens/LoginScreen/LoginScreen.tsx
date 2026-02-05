@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AuthTemplate } from '@templates/AuthTemplate';
 import { AuthHeader } from '@organisms/AuthHeader';
 import { LoginForm } from '@organisms/LoginForm';
+import { authService, formatPhoneForApi, ApiError } from '@services/authService';
 import type { LoginScreenProps } from '@types/navigation';
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
@@ -13,20 +14,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     setError('');
 
     try {
-      // TODO: Call API to send OTP
-      // const response = await authService.requestLogin({ mobileNumber: phoneNumber, countryCode });
+      // Format phone number for API: +353892039542
+      const formattedPhone = formatPhoneForApi(countryCode, phoneNumber);
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Call login API
+      await authService.login({
+        phone_number: formattedPhone,
+      });
 
       // Navigate to OTP verification screen
       navigation.navigate('OTPVerification', {
-        mobileNumber: phoneNumber,
-        countryCode,
+        phoneNumber: formattedPhone,
         isSignup: false,
       });
     } catch (err: any) {
-      setError(err.message || 'Failed to send OTP. Please try again.');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || 'Failed to send OTP. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

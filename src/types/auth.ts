@@ -1,18 +1,17 @@
 export interface User {
   id: string;
-  mobileNumber: string;
-  countryCode: string;
-  name?: string;
+  phone_number: string;
+  full_name: string;
   email?: string;
-  role: UserRole;
+  role?: UserRole;
   status: UserStatus;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export type UserRole = 'CITIZEN' | 'EMERGENCY_RESPONDER' | 'COORDINATOR' | 'ADMIN';
+export type UserRole = 'user' | 'admin' | 'responder' | 'coordinator';
 
-export type UserStatus = 'ACTIVE' | 'PENDING_APPROVAL' | 'SUSPENDED' | 'INACTIVE';
+export type UserStatus = 'active' | 'pending' | 'suspended' | 'inactive';
 
 export interface AuthState {
   user: User | null;
@@ -22,52 +21,60 @@ export interface AuthState {
   error: string | null;
 }
 
+// Register API
+export interface RegisterRequest {
+  phone_number: string; // Format: +911234567890
+  full_name: string;
+  email?: string;
+}
+
+export interface RegisterResponse {
+  message: string;
+  success: boolean;
+}
+
+// Verify Registration API
+export interface VerifyRegisterRequest {
+  phone_number: string;
+  otp: string;
+}
+
+export interface VerifyRegisterResponse {
+  message: string;
+  user: User;
+  access_token: string;
+  refresh_token?: string;
+}
+
+// Login API
 export interface LoginRequest {
-  mobileNumber: string;
-  countryCode: string;
+  phone_number: string; // Format: +911234567890
 }
 
 export interface LoginResponse {
   message: string;
-  otpSent: boolean;
-  expiresIn: number;
+  success: boolean;
 }
 
-export interface VerifyOTPRequest {
-  mobileNumber: string;
-  countryCode: string;
-  otpCode: string;
+// Verify Login API
+export interface VerifyLoginRequest {
+  phone_number: string;
+  otp: string;
 }
 
-export interface VerifyOTPResponse {
+export interface VerifyLoginResponse {
+  message: string;
   user: User;
-  token: string;
-  refreshToken: string;
+  access_token: string;
+  refresh_token?: string;
 }
 
-export interface SignupRequest {
-  firstName: string;
-  lastName: string;
-  mobileNumber: string;
-  countryCode: string;
-  email?: string;
-  role?: UserRole;
-}
-
-export interface SignupResponse {
+// Generic API Response
+export interface ApiResponse<T = any> {
+  success: boolean;
   message: string;
-  otpSent: boolean;
-  expiresIn: number;
-}
-
-export interface ResendOTPRequest {
-  mobileNumber: string;
-  countryCode: string;
-}
-
-export interface ResendOTPResponse {
-  message: string;
-  expiresIn: number;
+  data?: T;
+  error?: string;
 }
 
 export interface Country {
@@ -78,8 +85,7 @@ export interface Country {
 }
 
 export interface OTPVerificationState {
-  mobileNumber: string;
-  countryCode: string;
+  phoneNumber: string;
   isSignup: boolean;
   userName?: string;
 }

@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { AuthTemplate } from '@templates/AuthTemplate';
 import { Text } from '@atoms/Text';
 import { SignupForm } from '@organisms/SignupForm';
+import { authService, formatPhoneForApi, ApiError } from '@services/authService';
 import { spacing } from '@theme/spacing';
 import type { SignupScreenProps } from '@types/navigation';
 
@@ -21,27 +22,32 @@ export const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
     setError('');
 
     try {
-      // TODO: Call API to initiate signup and send OTP
-      // const response = await authService.signup({ 
-      //   firstName, 
-      //   lastName, 
-      //   mobileNumber: phoneNumber, 
-      //   countryCode,
-      //   email 
-      // });
+      // Format phone number for API: +353892039542
+      const formattedPhone = formatPhoneForApi(countryCode, phoneNumber);
+      
+      // Combine first name and last name
+      const fullName = `${firstName} ${lastName}`;
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Call register API
+      await authService.register({
+        phone_number: formattedPhone,
+        full_name: fullName,
+        email: email || undefined,
+      });
 
       // Navigate to OTP verification screen
       navigation.navigate('OTPVerification', {
-        mobileNumber: phoneNumber,
-        countryCode,
+        phoneNumber: formattedPhone,
         isSignup: true,
-        userName: `${firstName} ${lastName}`,
+        userName: fullName,
+        email: email || undefined,
       });
     } catch (err: any) {
-      setError(err.message || 'Failed to send OTP. Please try again.');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || 'Failed to send OTP. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

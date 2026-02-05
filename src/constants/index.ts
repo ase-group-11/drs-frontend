@@ -29,4 +29,10 @@ export const OTP_LENGTH = 6;
 export const OTP_RESEND_TIMEOUT = 60; // seconds
 
 export const API_TIMEOUT = 30000; // 30 seconds
-export const API_BASE_URL = 'https://api.drs.dublin.ie/v1'; // Replace with actual API URL
+
+// API Base URL - Update this to your actual backend URL
+// For local development: http://localhost:8000/api/v1
+// For production: https://api.drs.dublin.ie/api/v1
+export const API_BASE_URL = __DEV__ 
+  ? 'http://localhost:8000/api/v1'  // Development
+  : 'https://api.drs.dublin.ie/api/v1'; // Production
