@@ -116,9 +116,10 @@ const OtpVerificationForm: React.FC = () => {
 
     setResendLoading(true);
     try {
+
       const result = await requestSignupOTP({
-        mobileNumber: mobileNumber!,
         ...state?.signupData,
+        phoneNumber: mobileNumber!,
       });
 
       if (result.success) {
