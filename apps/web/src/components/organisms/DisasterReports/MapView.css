@@ -1,0 +1,350 @@
+/* File: src/components/organisms/DisasterReports/MapView.css */
+
+.map-view-container {
+  position: relative;
+  width: 100%;
+  height: 600px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Loading State */
+.map-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #f9fafb;
+  z-index: 1000;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #e5e7eb;
+  border-top-color: #7c3aed;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.map-loading p {
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Error State */
+.map-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 600px;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  border: 2px dashed #d1d5db;
+  padding: 24px;
+  text-align: center;
+}
+
+.map-error p {
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.map-error a {
+  color: #7c3aed;
+  text-decoration: underline;
+}
+
+/* 3D Controls */
+.map-controls-3d {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.control-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: white;
+  border: none;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.control-btn:hover {
+  background: #f9fafb;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px);
+}
+
+.control-btn.active {
+  background: #7c3aed;
+  color: white;
+}
+
+.control-btn.active:hover {
+  background: #6d28d9;
+}
+
+.control-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.control-label {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 3D Info Badge */
+.map-3d-badge {
+  position: absolute;
+  top: 80px;
+  left: 20px;
+  background: rgba(124, 58, 237, 0.95);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.badge-details {
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+/* Map Legend */
+.map-legend {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  min-width: 150px;
+  z-index: 1;
+}
+
+.legend-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: #1f2937;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.legend-item:last-child {
+  margin-bottom: 0;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* 3D Custom Marker Styles */
+.custom-marker-3d {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+}
+
+.marker-pin {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  left: 4px;
+  top: 0;
+  border: 3px solid white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: transform 0.3s;
+}
+
+.custom-marker-3d:hover .marker-pin {
+  transform: rotate(-45deg) scale(1.2);
+}
+
+.marker-pulse {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  left: 4px;
+  top: 0;
+  opacity: 0.6;
+  animation: pulse 2s ease-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* Popup Styles */
+.map-popup {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  min-width: 250px;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.popup-header strong {
+  font-size: 16px;
+  color: #1f2937;
+}
+
+.popup-severity {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+}
+
+.popup-content p {
+  margin: 8px 0;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.popup-content strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.popup-description {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+  font-style: italic;
+  color: #6b7280;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .map-view-container {
+    height: 400px;
+  }
+
+  .map-error {
+    height: 400px;
+  }
+
+  .map-controls-3d {
+    top: 10px;
+    left: 10px;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .control-btn {
+    padding: 8px 10px;
+  }
+
+  .control-label {
+    display: none;
+  }
+
+  .map-3d-badge {
+    top: auto;
+    bottom: 80px;
+    left: 10px;
+    font-size: 10px;
+  }
+
+  .map-legend {
+    bottom: 10px;
+    right: 10px;
+    padding: 12px;
+    min-width: 120px;
+  }
+
+  .legend-title {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  .legend-item {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+}
+
+/* Mapbox Attribution */
+.mapboxgl-ctrl-attrib {
+  font-size: 11px;
+}
+
+.mapboxgl-ctrl-logo {
+  margin: 0 0 2px 2px;
+}
+
+/* Hide compass on mobile */
+@media (max-width: 768px) {
+  .mapboxgl-ctrl-compass {
+    display: none;
+  }
+}

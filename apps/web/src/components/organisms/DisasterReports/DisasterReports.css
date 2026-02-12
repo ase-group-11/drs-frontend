@@ -31,16 +31,49 @@
   margin-bottom: 12px;
 }
 
-.status-badges {
+/* Status Summary - New Design */
+.status-summary {
   display: flex;
+  align-items: center;
   gap: 24px;
-  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-critical .status-dot {
+  background-color: #ef4444;
+}
+
+.status-active .status-dot {
+  background-color: #f97316;
+}
+
+.status-resolved .status-dot {
+  background-color: #10b981;
+}
+
+/* Hide old badge style */
+.status-badges {
+  display: none;
 }
 
 .status-badge-label {
-  font-size: 14px;
-  color: #6b7280;
-  margin-right: 8px;
+  display: none;
 }
 
 .view-switcher .ant-btn-group .ant-btn-primary {
@@ -328,6 +361,12 @@
 
   .disaster-reports-header {
     flex-direction: column;
+  }
+
+  .status-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .view-switcher {

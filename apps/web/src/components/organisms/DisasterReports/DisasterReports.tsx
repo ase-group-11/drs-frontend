@@ -1,5 +1,5 @@
 // File: /web/src/components/organisms/DisasterReports/DisasterReports.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Card,
   Row,
@@ -36,6 +36,7 @@ import {
 } from '@ant-design/icons';
 import { getDisasterReports, updateDisasterReportStatus, escalateDisasterSeverity } from '../../../services';
 import type { DisasterReport } from '../../../types';
+import MapView from './MapView';
 import './DisasterReports.css';
 
 const { Search } = Input;
@@ -55,25 +56,7 @@ const DisasterReports: React.FC = () => {
     fetchReports();
   }, []);
 
-  useEffect(() => {
-    filterReports();
-  }, [reports, selectedSeverity, selectedType, searchText]);
-
-  const fetchReports = async () => {
-    setLoading(true);
-    try {
-      const response = await getDisasterReports();
-      if (response.data) {
-        setReports(response.data);
-      }
-    } catch (error) {
-      message.error('Failed to load disaster reports');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filterReports = () => {
+  const filterReports = useCallback(() => {
     let filtered = [...reports];
 
     if (selectedSeverity !== 'all') {
@@ -94,6 +77,24 @@ const DisasterReports: React.FC = () => {
     }
 
     setFilteredReports(filtered);
+  }, [reports, selectedSeverity, selectedType, searchText]);
+
+  useEffect(() => {
+    filterReports();
+  }, [filterReports]);
+
+  const fetchReports = async () => {
+    setLoading(true);
+    try {
+      const response = await getDisasterReports();
+      if (response.data) {
+        setReports(response.data);
+      }
+    } catch (error) {
+      message.error('Failed to load disaster reports');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleMarkResolved = async (report: DisasterReport) => {
@@ -170,28 +171,19 @@ const DisasterReports: React.FC = () => {
       <div className="disaster-reports-header">
         <div className="header-title-section">
           <h1 className="page-title">Disaster Reports</h1>
-          <div className="status-badges">
-            <Badge
-              count={criticalCount}
-              style={{ backgroundColor: '#ef4444' }}
-              showZero
-            >
-              <span className="status-badge-label">Critical</span>
-            </Badge>
-            <Badge
-              count={activeCount}
-              style={{ backgroundColor: '#f97316' }}
-              showZero
-            >
-              <span className="status-badge-label">Active</span>
-            </Badge>
-            <Badge
-              count={resolvedCount}
-              style={{ backgroundColor: '#10b981' }}
-              showZero
-            >
-              <span className="status-badge-label">Resolved</span>
-            </Badge>
+          <div className="status-summary">
+            <span className="status-item status-critical">
+              <span className="status-dot"></span>
+              {criticalCount} Critical
+            </span>
+            <span className="status-item status-active">
+              <span className="status-dot"></span>
+              {activeCount} Active
+            </span>
+            <span className="status-item status-resolved">
+              <span className="status-dot"></span>
+              {resolvedCount} Resolved
+            </span>
           </div>
         </div>
         <div className="view-switcher">
@@ -416,18 +408,9 @@ const DisasterReports: React.FC = () => {
         </div>
       )}
 
-      {/* Map View Placeholder */}
+      {/* Map View */}
       {view === 'map' && (
-        <Card className="map-placeholder">
-          <div className="placeholder-content">
-            <EnvironmentFilled style={{ fontSize: 64, color: '#7c3aed' }} />
-            <h3>Interactive Map View</h3>
-            <p>View all disaster reports on an interactive map with real-time updates and location tracking.</p>
-            <Button type="primary" size="large" style={{ background: '#7c3aed', borderColor: '#7c3aed' }}>
-              Launch Fullscreen Map
-            </Button>
-          </div>
-        </Card>
+        <MapView reports={filteredReports} />
       )}
 
       {/* Kanban View */}
