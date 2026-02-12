@@ -87,16 +87,20 @@ export const login = async (email: string, password: string): Promise<ApiRespons
       password: password,
     });
 
+    // API returns nested structure: { team_member: {...}, tokens: {...} }
+    const teamMember = response.data.team_member;
+    const tokens = response.data.tokens;
+
     const userData: User = {
-      userId: response.data.team_member_id || response.data.id,
-      phoneNumber: response.data.phone_number,
-      fullName: response.data.full_name,
-      email: response.data.email,
-      role: response.data.role,
-      department: response.data.department,
-      employeeId: response.data.employee_id,
+      userId: teamMember.id,
+      phoneNumber: teamMember.phone_number,
+      fullName: teamMember.full_name,
+      email: teamMember.email,
+      role: teamMember.role,
+      department: teamMember.department,
+      employeeId: teamMember.employee_id,
       isVerified: true,
-      createdAt: response.data.created_at,
+      createdAt: teamMember.created_at,
     };
 
     return {
@@ -104,7 +108,7 @@ export const login = async (email: string, password: string): Promise<ApiRespons
       message: 'Login successful',
       data: {
         user: userData,
-        token: response.data.access_token || 'mock-jwt-token',
+        token: tokens.access_token,
       },
     };
   } catch (error: any) {

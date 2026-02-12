@@ -24,4 +24,13 @@ export const API_ENDPOINTS = {
     LOGIN_VERIFY: '/auth/login/verify',
     HEALTH: '/auth/health',
   },
+  // Admin Panel (Dummy endpoints - to be replaced with actual API)
+  ADMIN: {
+    DASHBOARD_STATS: '/admin/dashboard/stats',
+    TREND_DATA: '/admin/dashboard/trends',
+    DISTRIBUTION_DATA: '/admin/dashboard/distribution',
+    ACTIVITY_LOGS: '/admin/dashboard/activity',
+    SYSTEM_ALERTS: '/admin/dashboard/alerts',
+    DISASTER_REPORTS: '/admin/disaster-reports',
+  },
 };

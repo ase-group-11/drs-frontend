@@ -50,7 +50,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setToken(result.data.token);
         localStorage.setItem('token', result.data.token);
         localStorage.setItem('user', JSON.stringify(result.data.user));
-        navigate('/home');
+        
+        // Convert role to lowercase for case-insensitive comparison
+        const userRole = result.data.user.role.toLowerCase();
+        
+        // Redirect based on role
+        if (userRole === 'admin') {
+          navigate('/admin/dashboard');
+        } else if (userRole === 'manager' || userRole === 'staff') {
+          navigate('/dashboard');
+        } else {
+          // Unknown role, redirect to unauthorized
+          navigate('/unauthorized');
+        }
       } else {
         throw new Error(result.message);
       }
