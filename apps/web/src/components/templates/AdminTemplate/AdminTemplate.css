@@ -1,14 +1,32 @@
 /* File: /web/src/components/templates/AdminTemplate/AdminTemplate.css */
+
 .admin-layout {
   min-height: 100vh;
 }
 
+/* ✅ FIXED SIDEBAR */
 .admin-sider {
   background: #ffffff;
   border-right: 1px solid #f0f0f0;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+
+  position: fixed;     /* ✅ key */
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100vh;
+  z-index: 100;
+  overflow: hidden;    /* keep inner scroll controlled */
 }
 
+/* ✅ Make sider content a column so footer sticks to bottom */
+.admin-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Header/Logo */
 .admin-logo {
   height: 64px;
   display: flex;
@@ -16,6 +34,7 @@
   padding: 0 24px;
   border-bottom: 1px solid #f0f0f0;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .logo-icon {
@@ -25,7 +44,7 @@
   border-radius: 8px;
   display: flex;
   align-items: center;
-  justify-content:center;
+  justify-content: center;
   color: white;
   font-weight: bold;
   font-size: 14px;
@@ -46,6 +65,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .user-info {
@@ -79,23 +99,20 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .status-text {
   white-space: nowrap;
 }
 
+/* ✅ MENU SCROLLS, FOOTER STAYS */
 .admin-menu {
   border-right: none;
   padding: 8px 12px;
-  flex: 1;
-  overflow-y: auto;
+  flex: 1;              /* ✅ take remaining height */
+  overflow-y: auto;     /* ✅ scroll menu */
 }
 
 .admin-menu .ant-menu-item {
@@ -118,10 +135,12 @@
   background-color: #f3f4f6;
 }
 
+/* Footer pinned */
 .admin-footer {
   background: #f9fafb;
   border-top: 1px solid #f0f0f0;
   padding: 16px;
+  flex-shrink: 0;
 }
 
 .version-status {
@@ -163,6 +182,12 @@
   cursor: pointer;
 }
 
+/* ✅ MAIN CONTENT WRAPPER (offset handled in TSX inline style) */
+.admin-main {
+  min-height: 100vh;
+}
+
+/* ✅ FIXED HEADER */
 .admin-header {
   background: #ffffff;
   border-bottom: 1px solid #f0f0f0;
@@ -172,9 +197,11 @@
   justify-content: space-between;
   height: 64px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-  position: sticky;
+
+  position: fixed;  /* ✅ key */
   top: 0;
-  z-index: 10;
+  right: 0;
+  z-index: 90;
 }
 
 .header-left {
@@ -238,9 +265,10 @@
   color: #6b7280;
 }
 
+/* ✅ CONTENT OFFSET BELOW FIXED HEADER */
 .admin-content {
-  margin: 24px;
-  min-height: calc(100vh - 112px);
+  margin: 88px 24px 24px; /* 64(header) + 24 spacing */
+  min-height: calc(100vh - 88px);
 }
 
 /* Responsive */
@@ -254,6 +282,6 @@
   }
 
   .admin-content {
-    margin: 16px;
+    margin: 80px 16px 16px;
   }
 }

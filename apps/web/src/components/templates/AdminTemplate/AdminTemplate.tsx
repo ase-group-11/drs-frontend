@@ -1,5 +1,4 @@
-// MODIFIED FILE — changes: Removed Analytics sidebar item (not in Figma design);
-//   Quick Actions buttons now navigate to relevant admin routes
+// File: /web/src/components/templates/AdminTemplate/AdminTemplate.tsx
 import React, { useState } from 'react';
 import { Layout, Menu, Avatar, Badge, Input, Dropdown, Button } from 'antd';
 import type { MenuProps } from 'antd';
@@ -37,6 +36,8 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const siderWidth = collapsed ? 80 : 256;
 
   const menuItems: MenuProps['items'] = [
     {
@@ -89,9 +90,7 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({
       label: 'Settings',
       onClick: () => navigate('/admin/settings'),
     },
-    {
-      type: 'divider',
-    },
+    { type: 'divider' },
     {
       key: 'logout',
       icon: <LogoutOutlined />,
@@ -164,8 +163,14 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({
         </div>
       </Sider>
 
-      <Layout>
-        <Header className="admin-header">
+      {/* Main area offset by fixed sider width */}
+      <Layout className="admin-main" style={{ marginLeft: siderWidth }}>
+        <Header
+          className="admin-header"
+          style={{
+            left: siderWidth,
+          }}
+        >
           <div className="header-left">
             <Button
               type="text"

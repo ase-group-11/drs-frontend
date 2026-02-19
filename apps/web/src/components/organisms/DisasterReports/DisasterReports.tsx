@@ -1,6 +1,9 @@
-// MODIFIED FILE — changes: Wired DispatchUnitsModal replacing inline Modal.confirm dispatch;
+// File: /web/src/components/organisms/DisasterReports/DisasterReports.tsx
+// MODIFIED FILE — Kanban removed completely
+//   wired DispatchUnitsModal replacing inline Modal.confirm dispatch;
 //   wired EscalateSeverityModal replacing inline Modal.confirm escalation;
 //   added PhotoGallery and LogUpdates sub-page navigation via currentView state
+
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Card,
@@ -32,7 +35,6 @@ import {
   CheckCircleOutlined,
   UnorderedListOutlined,
   EnvironmentFilled,
-  AppstoreOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import { getDisasterReports, updateDisasterReportStatus } from '../../../services';
@@ -52,7 +54,7 @@ const DisasterReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<DisasterReport[]>([]);
   const [filteredReports, setFilteredReports] = useState<DisasterReport[]>([]);
-  const [view, setView] = useState<'list' | 'map' | 'kanban'>('list');
+  const [view, setView] = useState<'list' | 'map'>('list'); // ✅ kanban removed
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTimeFilter, setSelectedTimeFilter] = useState('today');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
@@ -74,6 +76,7 @@ const DisasterReports: React.FC = () => {
 
   const filterReports = useCallback(() => {
     let filtered = [...reports];
+
     if (selectedSeverity !== 'all') {
       filtered = filtered.filter((r) => r.severity === selectedSeverity);
     }
@@ -81,13 +84,18 @@ const DisasterReports: React.FC = () => {
       filtered = filtered.filter((r) => r.type === selectedType);
     }
     if (searchText) {
+      const q = searchText.toLowerCase();
       filtered = filtered.filter(
         (r) =>
-          r.reportId.toLowerCase().includes(searchText.toLowerCase()) ||
-          r.location.toLowerCase().includes(searchText.toLowerCase()) ||
-          r.description.toLowerCase().includes(searchText.toLowerCase())
+          r.reportId.toLowerCase().includes(q) ||
+          r.location.toLowerCase().includes(q) ||
+          r.description.toLowerCase().includes(q)
       );
     }
+
+    // Note: selectedTimeFilter is present in UI but not applied in your original code.
+    // Keeping behavior identical (no time filtering) to avoid breaking data.
+
     setFilteredReports(filtered);
   }, [reports, selectedSeverity, selectedType, searchText]);
 
@@ -169,27 +177,19 @@ const DisasterReports: React.FC = () => {
   };
 
   const criticalCount = reports.filter((r) => r.severity === 'critical').length;
-  const activeCount = reports.filter((r) => r.severity === 'high' || r.severity === 'medium').length;
+  const activeCount = reports.filter(
+    (r) => r.severity === 'high' || r.severity === 'medium'
+  ).length;
   const resolvedCount = reports.filter((r) => r.responseStatus >= 90).length;
 
   // ─── Sub-page renders ────────────────────────────────────────────────────────
 
   if (currentView === 'photos' && selectedReport) {
-    return (
-      <PhotoGallery
-        report={selectedReport}
-        onBack={() => setCurrentView('list')}
-      />
-    );
+    return <PhotoGallery report={selectedReport} onBack={() => setCurrentView('list')} />;
   }
 
   if (currentView === 'logs' && selectedReport) {
-    return (
-      <LogUpdates
-        report={selectedReport}
-        onBack={() => setCurrentView('list')}
-      />
-    );
+    return <LogUpdates report={selectedReport} onBack={() => setCurrentView('list')} />;
   }
 
   // ─── Main list view ──────────────────────────────────────────────────────────
@@ -223,6 +223,7 @@ const DisasterReports: React.FC = () => {
             </span>
           </div>
         </div>
+
         <div className="view-switcher">
           <Button.Group>
             <Button
@@ -241,14 +242,6 @@ const DisasterReports: React.FC = () => {
             >
               Map
             </Button>
-            <Button
-              type={view === 'kanban' ? 'primary' : 'default'}
-              icon={<AppstoreOutlined />}
-              onClick={() => setView('kanban')}
-              style={view === 'kanban' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
-            >
-              Kanban
-            </Button>
           </Button.Group>
         </div>
       </div>
@@ -261,25 +254,30 @@ const DisasterReports: React.FC = () => {
               <Button
                 type={selectedTimeFilter === 'today' ? 'primary' : 'default'}
                 onClick={() => setSelectedTimeFilter('today')}
-                style={selectedTimeFilter === 'today' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
+                style={
+                  selectedTimeFilter === 'today'
+                    ? { background: '#7c3aed', borderColor: '#7c3aed' }
+                    : {}
+                }
               >
                 Today
               </Button>
               <Button
                 type={selectedTimeFilter === '7days' ? 'primary' : 'default'}
                 onClick={() => setSelectedTimeFilter('7days')}
-                style={selectedTimeFilter === '7days' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
+                style={
+                  selectedTimeFilter === '7days'
+                    ? { background: '#7c3aed', borderColor: '#7c3aed' }
+                    : {}
+                }
               >
                 7 Days
               </Button>
             </Button.Group>
           </Col>
+
           <Col xs={24} sm={12} md={6}>
-            <Select
-              value={selectedSeverity}
-              onChange={setSelectedSeverity}
-              style={{ width: '100%' }}
-            >
+            <Select value={selectedSeverity} onChange={setSelectedSeverity} style={{ width: '100%' }}>
               <Select.Option value="all">All Severity</Select.Option>
               <Select.Option value="critical">Critical</Select.Option>
               <Select.Option value="high">High</Select.Option>
@@ -287,12 +285,9 @@ const DisasterReports: React.FC = () => {
               <Select.Option value="low">Low</Select.Option>
             </Select>
           </Col>
+
           <Col xs={24} sm={12} md={6}>
-            <Select
-              value={selectedType}
-              onChange={setSelectedType}
-              style={{ width: '100%' }}
-            >
+            <Select value={selectedType} onChange={setSelectedType} style={{ width: '100%' }}>
               <Select.Option value="all">All Types</Select.Option>
               <Select.Option value="fire">Fire</Select.Option>
               <Select.Option value="flood">Flood</Select.Option>
@@ -300,6 +295,7 @@ const DisasterReports: React.FC = () => {
               <Select.Option value="storm">Storm</Select.Option>
             </Select>
           </Col>
+
           <Col xs={24} sm={12} md={6}>
             <Search
               placeholder="Search reports..."
@@ -335,12 +331,15 @@ const DisasterReports: React.FC = () => {
                         <span className="report-title">{report.title}</span>
                         <span className="report-id">{report.reportId}</span>
                       </div>
+
                       <div className="report-details">
                         <div className="detail-item">
                           <EnvironmentOutlined />
                           <span>{report.location}</span>
                         </div>
+
                         <div className="detail-zone">{report.zone}</div>
+
                         <div className="detail-row">
                           <div className="detail-item">
                             <ClockCircleOutlined />
@@ -354,15 +353,12 @@ const DisasterReports: React.FC = () => {
                       </div>
                     </div>
                   </div>
+
                   <div className="report-actions-header">
                     <Tag color={severityColors[report.severity]} className="severity-tag">
                       {severityLabels[report.severity]}
                     </Tag>
-                    <Button
-                      type="text"
-                      icon={<MoreOutlined />}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                    <Button type="text" icon={<MoreOutlined />} onClick={(e) => e.stopPropagation()} />
                   </div>
                 </div>
 
@@ -373,6 +369,7 @@ const DisasterReports: React.FC = () => {
                         <div className="expanded-section">
                           <h4 className="section-title">Description</h4>
                           <p className="section-content">{report.description}</p>
+
                           <div className="section-buttons">
                             <Button
                               icon={<PictureOutlined />}
@@ -391,6 +388,7 @@ const DisasterReports: React.FC = () => {
                           </div>
                         </div>
                       </Col>
+
                       <Col xs={24} md={8}>
                         <Card className="status-card" size="small">
                           <h4 className="section-title">Response Status</h4>
@@ -415,6 +413,7 @@ const DisasterReports: React.FC = () => {
                           </div>
                         </Card>
                       </Col>
+
                       <Col xs={24} md={8}>
                         <div className="expanded-section">
                           <h4 className="section-title">Admin Actions</h4>
@@ -460,36 +459,6 @@ const DisasterReports: React.FC = () => {
 
       {/* Map View */}
       {view === 'map' && <MapView reports={filteredReports} />}
-
-      {/* Kanban View */}
-      {view === 'kanban' && (
-        <Row gutter={16} className="kanban-view">
-          {['Reported', 'Assessing', 'Active Response', 'Resolved'].map((status, idx) => (
-            <Col xs={24} sm={12} lg={6} key={status}>
-              <Card className="kanban-column" size="small">
-                <div className="kanban-header">
-                  <span className="kanban-title">{status}</span>
-                  <Badge count={idx + 1} style={{ backgroundColor: '#7c3aed' }} />
-                </div>
-                <div className="kanban-items">
-                  {filteredReports.slice(idx, idx + 1).map((report) => (
-                    <Card key={report.id} className="kanban-item" size="small">
-                      <div className="kanban-item-header">
-                        {typeIcons[report.type]}
-                        <span className="kanban-item-id">{report.reportId}</span>
-                      </div>
-                      <p className="kanban-item-description">{report.description}</p>
-                      <Tag color={severityColors[report.severity]} className="kanban-item-tag">
-                        {severityLabels[report.severity]}
-                      </Tag>
-                    </Card>
-                  ))}
-                </div>
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      )}
 
       {/* Modals */}
       <DispatchUnitsModal

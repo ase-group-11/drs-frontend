@@ -1,5 +1,4 @@
-// MODIFIED FILE — changes: Quick Actions buttons now navigate to relevant admin routes;
-//   uses useNavigate for New User (→/admin/users) and Report (→/admin/disaster-reports)
+// File: /web/src/components/organisms/Dashboard/Dashboard.tsx
 import React, { useEffect, useState } from 'react';
 import { Card, Row, Col, Select, Button, Table, Tag, Spin, message } from 'antd';
 import {
@@ -8,10 +7,6 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
   ArrowUpOutlined,
-  PlusOutlined,
-  FileTextOutlined,
-  BellOutlined,
-  SettingOutlined,
 } from '@ant-design/icons';
 import {
   AreaChart,
@@ -46,6 +41,7 @@ import './Dashboard.css';
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [trendData, setTrendData] = useState<TrendDataPoint[]>([]);
   const [distributionData, setDistributionData] = useState<DistributionDataPoint[]>([]);
@@ -55,6 +51,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trendPeriod]);
 
   const fetchDashboardData = async () => {
@@ -67,6 +64,7 @@ const Dashboard: React.FC = () => {
         getActivityLogs(),
         getSystemAlerts(),
       ]);
+
       if (statsRes.data) setStats(statsRes.data);
       if (trendRes.data) setTrendData(trendRes.data);
       if (distributionRes.data) setDistributionData(distributionRes.data);
@@ -136,6 +134,7 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </Col>
+
         <Col xs={24} sm={12} lg={6}>
           <Card className="stat-card stat-card-red">
             <div className="stat-icon-wrapper stat-icon-red">
@@ -148,6 +147,7 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </Col>
+
         <Col xs={24} sm={12} lg={6}>
           <Card className="stat-card stat-card-blue">
             <div className="stat-icon-wrapper stat-icon-blue">
@@ -160,6 +160,7 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </Col>
+
         <Col xs={24} sm={12} lg={6}>
           <Card className="stat-card stat-card-green">
             <div className="stat-icon-wrapper stat-icon-green">
@@ -167,6 +168,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="stat-content">
               <div className="stat-label">System Status</div>
+              {/* keep stat-value for same size; stat-status only changes color */}
               <div className="stat-value stat-status">{stats?.systemStatus}</div>
               <div className="stat-detail">Uptime: {stats?.uptime}%</div>
             </div>
@@ -179,6 +181,7 @@ const Dashboard: React.FC = () => {
         <Col xs={24} lg={15}>
           <Card
             title="Disaster Reports Trends"
+            className="chart-card"
             extra={
               <Select value={trendPeriod} onChange={setTrendPeriod} style={{ width: 140 }}>
                 <Select.Option value={7}>Last 7 Days</Select.Option>
@@ -187,50 +190,78 @@ const Dashboard: React.FC = () => {
               </Select>
             }
           >
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={trendData}>
-                <defs>
-                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="colorCritical" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="day" stroke="#6B7280" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#6B7280" style={{ fontSize: '12px' }} />
-                <Tooltip />
-                <Area type="monotone" dataKey="total" stroke="#8B5CF6" strokeWidth={2} fill="url(#colorTotal)" name="Total Reports" />
-                <Area type="monotone" dataKey="critical" stroke="#EF4444" strokeWidth={2} fill="url(#colorCritical)" name="Critical" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="chart-fill chart-fill-trends">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorCritical" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                  <XAxis dataKey="day" stroke="#6B7280" style={{ fontSize: '12px' }} />
+                  <YAxis stroke="#6B7280" style={{ fontSize: '12px' }} />
+                  <Tooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#8B5CF6"
+                    strokeWidth={2}
+                    fill="url(#colorTotal)"
+                    name="Total Reports"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="critical"
+                    stroke="#EF4444"
+                    strokeWidth={2}
+                    fill="url(#colorCritical)"
+                    name="Critical"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </Card>
         </Col>
+
         <Col xs={24} lg={9}>
-          <Card title="Disaster Distribution">
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={distributionData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
-                  {distributionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  iconType="circle"
-                  formatter={(value, entry: any) => (
-                    <span style={{ fontSize: '11px', color: '#6B7280' }}>
-                      {value} ({entry.payload.value})
-                    </span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+          <Card title="Disaster Distribution" className="chart-card chart-card-distribution">
+            <div className="chart-fill chart-fill-distribution">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={distributionData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {distributionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    iconType="circle"
+                    formatter={(value, entry: any) => (
+                      <span style={{ fontSize: '11px', color: '#6B7280' }}>
+                        {value} ({entry?.payload?.value})
+                      </span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
             <div className="total-reports">
               <div className="total-reports-value">{totalReports}</div>
               <div className="total-reports-label">Total Reports</div>
@@ -241,7 +272,7 @@ const Dashboard: React.FC = () => {
 
       {/* Bottom Row */}
       <Row gutter={[16, 16]} className="dashboard-bottom">
-        <Col xs={24} lg={16}>
+        <Col xs={24} lg={24}>
           <Card
             title="Recent System Activity"
             extra={
@@ -258,56 +289,6 @@ const Dashboard: React.FC = () => {
               className="activity-table"
             />
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
-          <div className="sidebar-cards">
-            <Card title="Quick Actions" className="quick-actions-card">
-              <div className="quick-actions-grid">
-                <Button
-                  className="quick-action-btn quick-action-purple"
-                  onClick={() => navigate('/admin/users')}
-                >
-                  <PlusOutlined />
-                  <span>New User</span>
-                </Button>
-                <Button
-                  className="quick-action-btn quick-action-blue"
-                  onClick={() => navigate('/admin/disaster-reports')}
-                >
-                  <FileTextOutlined />
-                  <span>Report</span>
-                </Button>
-                <Button
-                  className="quick-action-btn quick-action-red"
-                  onClick={() => navigate('/admin/disaster-reports')}
-                >
-                  <BellOutlined />
-                  <span>Alert</span>
-                </Button>
-                <Button
-                  className="quick-action-btn quick-action-gray"
-                  onClick={() => navigate('/admin/settings')}
-                >
-                  <SettingOutlined />
-                  <span>Config</span>
-                </Button>
-              </div>
-            </Card>
-
-            <Card title="System Alerts" className="system-alerts-card">
-              <div className="system-alerts-list">
-                {systemAlerts.map((alert) => (
-                  <div key={alert.id} className={`alert-item alert-${alert.severity}`}>
-                    <div className="alert-title">{alert.title}</div>
-                    <div className="alert-description">{alert.description}</div>
-                  </div>
-                ))}
-                <Button type="link" className="view-all-alerts">
-                  View All Alerts →
-                </Button>
-              </div>
-            </Card>
-          </div>
         </Col>
       </Row>
     </div>
