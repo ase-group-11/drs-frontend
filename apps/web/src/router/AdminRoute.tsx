@@ -1,4 +1,4 @@
-// File: /web/src/router/AdminRoute.tsx
+// MODIFIED FILE — changes: Redirect non-admin to /unauthorized (not /dashboard, which no longer exists)
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks';
@@ -18,10 +18,8 @@ const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  // Convert role to lowercase for case-insensitive comparison
   if (user?.role?.toLowerCase() !== 'admin') {
-    // Non-admin users are redirected to their respective dashboard
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return children;

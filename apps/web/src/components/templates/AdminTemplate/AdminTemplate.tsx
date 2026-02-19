@@ -1,4 +1,5 @@
-// File: /web/src/components/templates/AdminTemplate/AdminTemplate.tsx
+// MODIFIED FILE — changes: Removed Analytics sidebar item (not in Figma design);
+//   Quick Actions buttons now navigate to relevant admin routes
 import React, { useState } from 'react';
 import { Layout, Menu, Avatar, Badge, Input, Dropdown, Button } from 'antd';
 import type { MenuProps } from 'antd';
@@ -8,7 +9,6 @@ import {
   AlertOutlined,
   TeamOutlined,
   EnvironmentOutlined,
-  BarChartOutlined,
   SettingOutlined,
   BellOutlined,
   SearchOutlined,
@@ -29,7 +29,11 @@ interface AdminTemplateProps {
   breadcrumb?: string;
 }
 
-const AdminTemplate: React.FC<AdminTemplateProps> = ({ children, selectedKey, breadcrumb = 'Dashboard / Overview' }) => {
+const AdminTemplate: React.FC<AdminTemplateProps> = ({
+  children,
+  selectedKey,
+  breadcrumb = 'Dashboard / Overview',
+}) => {
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -66,12 +70,6 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({ children, selectedKey, br
       onClick: () => navigate('/admin/locations'),
     },
     {
-      key: 'analytics',
-      icon: <BarChartOutlined />,
-      label: 'Analytics',
-      onClick: () => navigate('/admin/analytics'),
-    },
-    {
       key: 'settings',
       icon: <SettingOutlined />,
       label: 'Settings',
@@ -89,6 +87,7 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({ children, selectedKey, br
       key: 'settings',
       icon: <SettingOutlined />,
       label: 'Settings',
+      onClick: () => navigate('/admin/settings'),
     },
     {
       type: 'divider',
@@ -117,14 +116,9 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({ children, selectedKey, br
           <div className="logo-icon">DR</div>
           {!collapsed && <span className="logo-text">Admin Panel</span>}
         </div>
-        
+
         <div className="admin-user-profile">
-          <Avatar 
-            src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop"
-            size={40}
-          >
-            {user?.fullName?.charAt(0)}
-          </Avatar>
+          <Avatar size={40}>{user?.fullName?.charAt(0) || 'A'}</Avatar>
           {!collapsed && (
             <div className="user-info">
               <div className="user-name">{user?.fullName || 'Admin User'}</div>
@@ -188,34 +182,23 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({ children, selectedKey, br
               prefix={<SearchOutlined />}
               className="search-input"
             />
-            
+
             <Badge dot>
-              <Button
-                type="text"
-                icon={<BellOutlined />}
-                className="notification-btn"
-              />
+              <Button type="text" icon={<BellOutlined />} className="notification-btn" />
             </Badge>
 
             <div className="divider" />
 
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <div className="user-dropdown">
-                <Avatar 
-                  src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop"
-                  size={32}
-                >
-                  {user?.fullName?.charAt(0)}
-                </Avatar>
+                <Avatar size={32}>{user?.fullName?.charAt(0) || 'A'}</Avatar>
                 <DownOutlined className="dropdown-icon" />
               </div>
             </Dropdown>
           </div>
         </Header>
 
-        <Content className="admin-content">
-          {children}
-        </Content>
+        <Content className="admin-content">{children}</Content>
       </Layout>
     </Layout>
   );

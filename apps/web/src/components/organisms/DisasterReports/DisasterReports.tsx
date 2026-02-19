@@ -1,4 +1,6 @@
-// File: /web/src/components/organisms/DisasterReports/DisasterReports.tsx
+// MODIFIED FILE — changes: Wired DispatchUnitsModal replacing inline Modal.confirm dispatch;
+//   wired EscalateSeverityModal replacing inline Modal.confirm escalation;
+//   added PhotoGallery and LogUpdates sub-page navigation via currentView state
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Card,
@@ -13,7 +15,6 @@ import {
   message,
   Spin,
   Empty,
-  Modal,
 } from 'antd';
 import {
   FireOutlined,
@@ -34,12 +35,18 @@ import {
   AppstoreOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import { getDisasterReports, updateDisasterReportStatus, escalateDisasterSeverity } from '../../../services';
+import { getDisasterReports, updateDisasterReportStatus } from '../../../services';
 import type { DisasterReport } from '../../../types';
 import MapView from './MapView';
+import DispatchUnitsModal from './DispatchUnitsModal';
+import EscalateSeverityModal from './EscalateSeverityModal';
+import PhotoGallery from './PhotoGallery';
+import LogUpdates from './LogUpdates';
 import './DisasterReports.css';
 
 const { Search } = Input;
+
+type DisasterView = 'list' | 'photos' | 'logs';
 
 const DisasterReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -52,21 +59,27 @@ const DisasterReports: React.FC = () => {
   const [selectedType, setSelectedType] = useState('all');
   const [searchText, setSearchText] = useState('');
 
+  // Sub-page navigation
+  const [currentView, setCurrentView] = useState<DisasterView>('list');
+  const [selectedReport, setSelectedReport] = useState<DisasterReport | null>(null);
+
+  // Modal state
+  const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
+  const [escalateModalOpen, setEscalateModalOpen] = useState(false);
+  const [activeModalReport, setActiveModalReport] = useState<DisasterReport | null>(null);
+
   useEffect(() => {
     fetchReports();
   }, []);
 
   const filterReports = useCallback(() => {
     let filtered = [...reports];
-
     if (selectedSeverity !== 'all') {
       filtered = filtered.filter((r) => r.severity === selectedSeverity);
     }
-
     if (selectedType !== 'all') {
       filtered = filtered.filter((r) => r.type === selectedType);
     }
-
     if (searchText) {
       filtered = filtered.filter(
         (r) =>
@@ -75,7 +88,6 @@ const DisasterReports: React.FC = () => {
           r.description.toLowerCase().includes(searchText.toLowerCase())
       );
     }
-
     setFilteredReports(filtered);
   }, [reports, selectedSeverity, selectedType, searchText]);
 
@@ -90,7 +102,7 @@ const DisasterReports: React.FC = () => {
       if (response.data) {
         setReports(response.data);
       }
-    } catch (error) {
+    } catch {
       message.error('Failed to load disaster reports');
     } finally {
       setLoading(false);
@@ -106,30 +118,33 @@ const DisasterReports: React.FC = () => {
       } else {
         message.error(response.message);
       }
-    } catch (error) {
+    } catch {
       message.error('Failed to update report status');
     }
   };
 
-  const handleEscalatePriority = (report: DisasterReport) => {
-    Modal.confirm({
-      title: 'Escalate Priority',
-      content: 'Are you sure you want to escalate the priority of this disaster report?',
-      onOk: async () => {
-        try {
-          const newSeverity = report.severity === 'low' ? 'medium' : report.severity === 'medium' ? 'high' : 'critical';
-          const response = await escalateDisasterSeverity(report.id, newSeverity);
-          if (response.success) {
-            message.success('Priority escalated successfully');
-            fetchReports();
-          } else {
-            message.error(response.message);
-          }
-        } catch (error) {
-          message.error('Failed to escalate priority');
-        }
-      },
-    });
+  const openDispatchModal = (report: DisasterReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActiveModalReport(report);
+    setDispatchModalOpen(true);
+  };
+
+  const openEscalateModal = (report: DisasterReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActiveModalReport(report);
+    setEscalateModalOpen(true);
+  };
+
+  const openPhotoGallery = (report: DisasterReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedReport(report);
+    setCurrentView('photos');
+  };
+
+  const openLogUpdates = (report: DisasterReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedReport(report);
+    setCurrentView('logs');
   };
 
   const typeIcons: Record<string, React.ReactNode> = {
@@ -157,6 +172,28 @@ const DisasterReports: React.FC = () => {
   const activeCount = reports.filter((r) => r.severity === 'high' || r.severity === 'medium').length;
   const resolvedCount = reports.filter((r) => r.responseStatus >= 90).length;
 
+  // ─── Sub-page renders ────────────────────────────────────────────────────────
+
+  if (currentView === 'photos' && selectedReport) {
+    return (
+      <PhotoGallery
+        report={selectedReport}
+        onBack={() => setCurrentView('list')}
+      />
+    );
+  }
+
+  if (currentView === 'logs' && selectedReport) {
+    return (
+      <LogUpdates
+        report={selectedReport}
+        onBack={() => setCurrentView('list')}
+      />
+    );
+  }
+
+  // ─── Main list view ──────────────────────────────────────────────────────────
+
   if (loading) {
     return (
       <div className="disaster-reports-loading">
@@ -173,15 +210,15 @@ const DisasterReports: React.FC = () => {
           <h1 className="page-title">Disaster Reports</h1>
           <div className="status-summary">
             <span className="status-item status-critical">
-              <span className="status-dot"></span>
+              <span className="status-dot" />
               {criticalCount} Critical
             </span>
             <span className="status-item status-active">
-              <span className="status-dot"></span>
+              <span className="status-dot" />
               {activeCount} Active
             </span>
             <span className="status-item status-resolved">
-              <span className="status-dot"></span>
+              <span className="status-dot" />
               {resolvedCount} Resolved
             </span>
           </div>
@@ -192,6 +229,7 @@ const DisasterReports: React.FC = () => {
               type={view === 'list' ? 'primary' : 'default'}
               icon={<UnorderedListOutlined />}
               onClick={() => setView('list')}
+              style={view === 'list' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
             >
               List
             </Button>
@@ -199,6 +237,7 @@ const DisasterReports: React.FC = () => {
               type={view === 'map' ? 'primary' : 'default'}
               icon={<EnvironmentFilled />}
               onClick={() => setView('map')}
+              style={view === 'map' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
             >
               Map
             </Button>
@@ -206,6 +245,7 @@ const DisasterReports: React.FC = () => {
               type={view === 'kanban' ? 'primary' : 'default'}
               icon={<AppstoreOutlined />}
               onClick={() => setView('kanban')}
+              style={view === 'kanban' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
             >
               Kanban
             </Button>
@@ -221,12 +261,14 @@ const DisasterReports: React.FC = () => {
               <Button
                 type={selectedTimeFilter === 'today' ? 'primary' : 'default'}
                 onClick={() => setSelectedTimeFilter('today')}
+                style={selectedTimeFilter === 'today' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
               >
                 Today
               </Button>
               <Button
                 type={selectedTimeFilter === '7days' ? 'primary' : 'default'}
                 onClick={() => setSelectedTimeFilter('7days')}
+                style={selectedTimeFilter === '7days' ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}}
               >
                 7 Days
               </Button>
@@ -237,7 +279,6 @@ const DisasterReports: React.FC = () => {
               value={selectedSeverity}
               onChange={setSelectedSeverity}
               style={{ width: '100%' }}
-              placeholder="All Severity"
             >
               <Select.Option value="all">All Severity</Select.Option>
               <Select.Option value="critical">Critical</Select.Option>
@@ -251,7 +292,6 @@ const DisasterReports: React.FC = () => {
               value={selectedType}
               onChange={setSelectedType}
               style={{ width: '100%' }}
-              placeholder="All Types"
             >
               <Select.Option value="all">All Types</Select.Option>
               <Select.Option value="fire">Fire</Select.Option>
@@ -266,6 +306,7 @@ const DisasterReports: React.FC = () => {
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               prefix={<SearchOutlined />}
+              allowClear
             />
           </Col>
         </Row>
@@ -275,7 +316,7 @@ const DisasterReports: React.FC = () => {
       {view === 'list' && (
         <div className="reports-list">
           {filteredReports.length === 0 ? (
-            <Empty description="No disaster reports found" />
+            <Empty description="No disaster reports found" style={{ padding: '60px 0' }} />
           ) : (
             filteredReports.map((report) => (
               <Card
@@ -314,10 +355,7 @@ const DisasterReports: React.FC = () => {
                     </div>
                   </div>
                   <div className="report-actions-header">
-                    <Tag
-                      color={severityColors[report.severity]}
-                      className="severity-tag"
-                    >
+                    <Tag color={severityColors[report.severity]} className="severity-tag">
                       {severityLabels[report.severity]}
                     </Tag>
                     <Button
@@ -336,10 +374,18 @@ const DisasterReports: React.FC = () => {
                           <h4 className="section-title">Description</h4>
                           <p className="section-content">{report.description}</p>
                           <div className="section-buttons">
-                            <Button icon={<PictureOutlined />} size="small">
+                            <Button
+                              icon={<PictureOutlined />}
+                              size="small"
+                              onClick={(e) => openPhotoGallery(report, e)}
+                            >
                               View Photos
                             </Button>
-                            <Button icon={<FileTextOutlined />} size="small">
+                            <Button
+                              icon={<FileTextOutlined />}
+                              size="small"
+                              onClick={(e) => openLogUpdates(report, e)}
+                            >
                               Log Update
                             </Button>
                           </div>
@@ -378,6 +424,7 @@ const DisasterReports: React.FC = () => {
                               icon={<RocketOutlined />}
                               block
                               style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
+                              onClick={(e) => openDispatchModal(report, e)}
                             >
                               Dispatch Additional Units
                             </Button>
@@ -385,14 +432,17 @@ const DisasterReports: React.FC = () => {
                               danger
                               icon={<ExclamationCircleOutlined />}
                               block
-                              onClick={() => handleEscalatePriority(report)}
+                              onClick={(e) => openEscalateModal(report, e)}
                             >
                               Escalate Priority
                             </Button>
                             <Button
                               icon={<CheckCircleOutlined />}
                               block
-                              onClick={() => handleMarkResolved(report)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMarkResolved(report);
+                              }}
                             >
                               Mark as Resolved
                             </Button>
@@ -409,9 +459,7 @@ const DisasterReports: React.FC = () => {
       )}
 
       {/* Map View */}
-      {view === 'map' && (
-        <MapView reports={filteredReports} />
-      )}
+      {view === 'map' && <MapView reports={filteredReports} />}
 
       {/* Kanban View */}
       {view === 'kanban' && (
@@ -421,10 +469,7 @@ const DisasterReports: React.FC = () => {
               <Card className="kanban-column" size="small">
                 <div className="kanban-header">
                   <span className="kanban-title">{status}</span>
-                  <Badge
-                    count={idx + 1}
-                    style={{ backgroundColor: '#7c3aed' }}
-                  />
+                  <Badge count={idx + 1} style={{ backgroundColor: '#7c3aed' }} />
                 </div>
                 <div className="kanban-items">
                   {filteredReports.slice(idx, idx + 1).map((report) => (
@@ -434,10 +479,7 @@ const DisasterReports: React.FC = () => {
                         <span className="kanban-item-id">{report.reportId}</span>
                       </div>
                       <p className="kanban-item-description">{report.description}</p>
-                      <Tag
-                        color={severityColors[report.severity]}
-                        className="kanban-item-tag"
-                      >
+                      <Tag color={severityColors[report.severity]} className="kanban-item-tag">
                         {severityLabels[report.severity]}
                       </Tag>
                     </Card>
@@ -448,6 +490,27 @@ const DisasterReports: React.FC = () => {
           ))}
         </Row>
       )}
+
+      {/* Modals */}
+      <DispatchUnitsModal
+        open={dispatchModalOpen}
+        report={activeModalReport}
+        onClose={() => {
+          setDispatchModalOpen(false);
+          setActiveModalReport(null);
+        }}
+        onSuccess={fetchReports}
+      />
+
+      <EscalateSeverityModal
+        open={escalateModalOpen}
+        report={activeModalReport}
+        onClose={() => {
+          setEscalateModalOpen(false);
+          setActiveModalReport(null);
+        }}
+        onSuccess={fetchReports}
+      />
     </div>
   );
 };

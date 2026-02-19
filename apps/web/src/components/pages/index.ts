@@ -3,4 +3,7 @@ export { default as LoginPage } from './LoginPage';
 export { default as OtpPage } from './OtpPage';
 export { default as DashboardPage } from './DashboardPage';
 export { default as DisasterReportsPage } from './DisasterReportsPage';
-export { default as StaffManagerDashboardPage } from './StaffManagerDashboardPage';
+export { default as UserManagementPage } from './UserManagementPage';
+export {default as EmergencyTeamsPage} from './EmergencyTeamsPage';
+export {default as LocationsPage} from './LocationsPage';
+export {default as SettingsPage} from './SettingsPage';

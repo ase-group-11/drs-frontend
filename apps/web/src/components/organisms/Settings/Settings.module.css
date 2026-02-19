@@ -1,0 +1,146 @@
+/* NEW FILE */
+
+.container {
+  padding-bottom: 32px;
+}
+
+.pageHeader {
+  margin-bottom: 24px;
+}
+
+.pageTitle {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.mainTabs :global(.ant-tabs-nav) {
+  margin-bottom: 20px;
+}
+
+.tabLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Cards ────────────────────────────────────── */
+.settingsCard {
+  border-radius: 12px !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+}
+
+/* ── Form layouts ─────────────────────────────── */
+.fieldGrid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.fieldGrid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .fieldGrid2 { grid-template-columns: 1fr; }
+  .fieldGrid3 { grid-template-columns: 1fr; }
+}
+
+.formFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+/* ── Toggle rows ──────────────────────────────── */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.toggleRowLast {
+  border-bottom: none;
+}
+
+/* ── Notifications grid ───────────────────────── */
+.notifGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .notifGrid { grid-template-columns: 1fr; }
+}
+
+/* ── System status ────────────────────────────── */
+.statusGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 640px) {
+  .statusGrid { grid-template-columns: 1fr; }
+}
+
+.statusCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 10px;
+}
+
+.statusCardGreen { background: #f0fdf4; }
+.statusCardBlue { background: #eff6ff; }
+.statusCardRed { background: #fef2f2; }
+
+.statusIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.statusIconGreen { background: #dcfce7; }
+.statusIconBlue { background: #dbeafe; }
+.statusIconRed { background: #fee2e2; }
+
+/* ── Info rows ────────────────────────────────── */
+.infoRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.infoRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.infoRowLast {
+  border-bottom: none;
+}
+
+/* ── Loading ──────────────────────────────────── */
+.tabLoading {
+  display: flex;
+  justify-content: center;
+  padding: 60px 0;
+}

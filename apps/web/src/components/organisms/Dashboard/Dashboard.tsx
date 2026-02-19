@@ -1,6 +1,7 @@
-// File: /web/src/components/organisms/Dashboard/Dashboard.tsx
+// MODIFIED FILE — changes: Quick Actions buttons now navigate to relevant admin routes;
+//   uses useNavigate for New User (→/admin/users) and Report (→/admin/disaster-reports)
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Select, Button, Table, Tag, Statistic, message, Spin } from 'antd';
+import { Card, Row, Col, Select, Button, Table, Tag, Spin, message } from 'antd';
 import {
   UserOutlined,
   AlertOutlined,
@@ -25,6 +26,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import {
   getDashboardStats,
   getTrendData,
@@ -42,6 +44,7 @@ import type {
 import './Dashboard.css';
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [trendData, setTrendData] = useState<TrendDataPoint[]>([]);
@@ -64,13 +67,12 @@ const Dashboard: React.FC = () => {
         getActivityLogs(),
         getSystemAlerts(),
       ]);
-
       if (statsRes.data) setStats(statsRes.data);
       if (trendRes.data) setTrendData(trendRes.data);
       if (distributionRes.data) setDistributionData(distributionRes.data);
       if (activityRes.data) setActivityLogs(activityRes.data);
       if (alertsRes.data) setSystemAlerts(alertsRes.data);
-    } catch (error) {
+    } catch {
       message.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
@@ -134,7 +136,6 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </Col>
-
         <Col xs={24} sm={12} lg={6}>
           <Card className="stat-card stat-card-red">
             <div className="stat-icon-wrapper stat-icon-red">
@@ -147,7 +148,6 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </Col>
-
         <Col xs={24} sm={12} lg={6}>
           <Card className="stat-card stat-card-blue">
             <div className="stat-icon-wrapper stat-icon-blue">
@@ -160,7 +160,6 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         </Col>
-
         <Col xs={24} sm={12} lg={6}>
           <Card className="stat-card stat-card-green">
             <div className="stat-icon-wrapper stat-icon-green">
@@ -181,11 +180,7 @@ const Dashboard: React.FC = () => {
           <Card
             title="Disaster Reports Trends"
             extra={
-              <Select
-                value={trendPeriod}
-                onChange={setTrendPeriod}
-                style={{ width: 140 }}
-              >
+              <Select value={trendPeriod} onChange={setTrendPeriod} style={{ width: 140 }}>
                 <Select.Option value={7}>Last 7 Days</Select.Option>
                 <Select.Option value={30}>Last 30 Days</Select.Option>
                 <Select.Option value={90}>Last 90 Days</Select.Option>
@@ -208,40 +203,17 @@ const Dashboard: React.FC = () => {
                 <XAxis dataKey="day" stroke="#6B7280" style={{ fontSize: '12px' }} />
                 <YAxis stroke="#6B7280" style={{ fontSize: '12px' }} />
                 <Tooltip />
-                <Area
-                  type="monotone"
-                  dataKey="total"
-                  stroke="#8B5CF6"
-                  strokeWidth={2}
-                  fill="url(#colorTotal)"
-                  name="Total Reports"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="critical"
-                  stroke="#EF4444"
-                  strokeWidth={2}
-                  fill="url(#colorCritical)"
-                  name="Critical"
-                />
+                <Area type="monotone" dataKey="total" stroke="#8B5CF6" strokeWidth={2} fill="url(#colorTotal)" name="Total Reports" />
+                <Area type="monotone" dataKey="critical" stroke="#EF4444" strokeWidth={2} fill="url(#colorCritical)" name="Critical" />
               </AreaChart>
             </ResponsiveContainer>
           </Card>
         </Col>
-
         <Col xs={24} lg={9}>
           <Card title="Disaster Distribution">
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
-                <Pie
-                  data={distributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
+                <Pie data={distributionData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
                   {distributionData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
@@ -272,7 +244,11 @@ const Dashboard: React.FC = () => {
         <Col xs={24} lg={16}>
           <Card
             title="Recent System Activity"
-            extra={<a href="#" className="view-all-link">View All</a>}
+            extra={
+              <Button type="link" size="small" onClick={() => navigate('/admin/disaster-reports')}>
+                View All
+              </Button>
+            }
           >
             <Table
               columns={activityColumns}
@@ -283,24 +259,35 @@ const Dashboard: React.FC = () => {
             />
           </Card>
         </Col>
-
         <Col xs={24} lg={8}>
           <div className="sidebar-cards">
             <Card title="Quick Actions" className="quick-actions-card">
               <div className="quick-actions-grid">
-                <Button className="quick-action-btn quick-action-purple">
+                <Button
+                  className="quick-action-btn quick-action-purple"
+                  onClick={() => navigate('/admin/users')}
+                >
                   <PlusOutlined />
                   <span>New User</span>
                 </Button>
-                <Button className="quick-action-btn quick-action-blue">
+                <Button
+                  className="quick-action-btn quick-action-blue"
+                  onClick={() => navigate('/admin/disaster-reports')}
+                >
                   <FileTextOutlined />
                   <span>Report</span>
                 </Button>
-                <Button className="quick-action-btn quick-action-red">
+                <Button
+                  className="quick-action-btn quick-action-red"
+                  onClick={() => navigate('/admin/disaster-reports')}
+                >
                   <BellOutlined />
                   <span>Alert</span>
                 </Button>
-                <Button className="quick-action-btn quick-action-gray">
+                <Button
+                  className="quick-action-btn quick-action-gray"
+                  onClick={() => navigate('/admin/settings')}
+                >
                   <SettingOutlined />
                   <span>Config</span>
                 </Button>
@@ -310,10 +297,7 @@ const Dashboard: React.FC = () => {
             <Card title="System Alerts" className="system-alerts-card">
               <div className="system-alerts-list">
                 {systemAlerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className={`alert-item alert-${alert.severity}`}
-                  >
+                  <div key={alert.id} className={`alert-item alert-${alert.severity}`}>
                     <div className="alert-title">{alert.title}</div>
                     <div className="alert-description">{alert.description}</div>
                   </div>

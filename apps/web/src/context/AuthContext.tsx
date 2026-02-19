@@ -1,4 +1,4 @@
-// File: /web/src/context/AuthContext.tsx
+// MODIFIED FILE — changes: Admin-only auth; non-admin roles receive ACCESS_DENIED error instead of redirect
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login as loginService, logout as logoutService } from '../services';
@@ -30,8 +30,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const storedUser = localStorage.getItem('user');
 
       if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        const parsedUser: User = JSON.parse(storedUser);
+        // Only restore session for admins
+        if (parsedUser.role?.toLowerCase() === 'admin') {
+          setToken(storedToken);
+          setUser(parsedUser);
+        } else {
+          // Clear any stale non-admin session
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+        }
       }
 
       setIsLoading(false);
@@ -44,25 +52,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setIsLoading(true);
     try {
       const result = await loginService(email, password);
-      
+
       if (result.success && result.data) {
+        const userRole = result.data.user.role?.toLowerCase();
+
+        // This panel is admin-only — reject all other roles immediately
+        if (userRole !== 'admin') {
+          throw new Error('ACCESS_DENIED');
+        }
+
         setUser(result.data.user);
         setToken(result.data.token);
         localStorage.setItem('token', result.data.token);
         localStorage.setItem('user', JSON.stringify(result.data.user));
-        
-        // Convert role to lowercase for case-insensitive comparison
-        const userRole = result.data.user.role.toLowerCase();
-        
-        // Redirect based on role
-        if (userRole === 'admin') {
-          navigate('/admin/dashboard');
-        } else if (userRole === 'manager' || userRole === 'staff') {
-          navigate('/dashboard');
-        } else {
-          // Unknown role, redirect to unauthorized
-          navigate('/unauthorized');
-        }
+        navigate('/admin/dashboard');
       } else {
         throw new Error(result.message);
       }
