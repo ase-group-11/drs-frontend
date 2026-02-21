@@ -32,10 +32,6 @@ const LoginForm: React.FC = () => {
 
   return (
     <div className="login-form-container">
-      <div className="login-form-header">
-        <h1 className="login-title">Welcome Back</h1>
-        <p className="login-subtitle">Sign in to your admin account</p>
-      </div>
 
       {error && (
         <Alert

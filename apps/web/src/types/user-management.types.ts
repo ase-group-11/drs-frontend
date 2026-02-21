@@ -1,5 +1,5 @@
 // NEW FILE
-export type AdminUserRole = 'admin' | 'manager' | 'staff';
+export type AdminUserRole = 'admin' | 'user';
 export type AdminUserStatus = 'active' | 'suspended' | 'pending';
 export type AdminUserDepartment = 'medical' | 'police' | 'it' | 'fire';
 

@@ -183,7 +183,7 @@ const Dashboard: React.FC = () => {
             title="Disaster Reports Trends"
             className="chart-card"
             extra={
-              <Select value={trendPeriod} onChange={setTrendPeriod} style={{ width: 140 }}>
+              <Select value={trendPeriod} onChange={setTrendPeriod} style={{ width: 140 }} popupClassName="chart-card-trends-dropdown">
                 <Select.Option value={7}>Last 7 Days</Select.Option>
                 <Select.Option value={30}>Last 30 Days</Select.Option>
                 <Select.Option value={90}>Last 90 Days</Select.Option>

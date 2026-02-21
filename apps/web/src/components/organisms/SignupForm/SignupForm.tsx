@@ -190,8 +190,6 @@ const SignupForm: React.FC = () => {
                             suffixIcon={<SafetyOutlined style={{ color: 'rgba(0, 0, 0, 0.25)' }} />}
                         >
                             <Option value="admin">Admin</Option>
-                            <Option value="manager">Manager</Option>
-                            <Option value="staff">Staff</Option>
                         </Select>
                     </Form.Item>
                 </Col>

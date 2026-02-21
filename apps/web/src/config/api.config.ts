@@ -1,4 +1,3 @@
-// MODIFIED FILE — changes: Added TEAMS, LOCATIONS, and SETTINGS endpoint groups
 export const API_CONFIG = {
   BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1',
   TIMEOUT: 10000,
@@ -51,14 +50,6 @@ export const API_ENDPOINTS = {
     DEPLOY: (id: string) => `/api/admin/teams/${id}/deploy`,
     DECOMMISSION: (id: string) => `/api/admin/teams/${id}/decommission`,
     ACTIVE_DISASTERS: '/api/admin/teams/active-disasters',
-  },
-  // Locations & Zones
-  LOCATIONS: {
-    LIST: '/api/admin/zones',
-    CREATE: '/api/admin/zones',
-    UPDATE: (id: string) => `/api/admin/zones/${id}`,
-    DELETE: (id: string) => `/api/admin/zones/${id}`,
-    EXPORT: '/api/admin/zones/export',
   },
   // Settings
   SETTINGS: {

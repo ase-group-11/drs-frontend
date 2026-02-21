@@ -1,5 +1,3 @@
-// MODIFIED FILE — changes: Replaced placeholder routes for /admin/teams, /admin/locations,
-//   /admin/settings with real EmergencyTeamsPage, LocationsPage, SettingsPage components
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AdminRoute from './AdminRoute';
@@ -12,12 +10,10 @@ import {
   DisasterReportsPage,
   UserManagementPage,
   EmergencyTeamsPage,
-  LocationsPage,
   SettingsPage,
 } from '../components/pages';
 import { useAuth } from '../hooks';
 
-// Redirects to admin dashboard if authenticated admin, otherwise to login
 const RootRedirect: React.FC = () => {
   const { isAuthenticated, user, isLoading } = useAuth();
 
@@ -33,7 +29,6 @@ const RootRedirect: React.FC = () => {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
-  // Any authenticated non-admin ends up at unauthorized
   return <Navigate to="/unauthorized" replace />;
 };
 
@@ -89,14 +84,6 @@ const AppRouter: React.FC = () => {
         element={
           <AdminRoute>
             <EmergencyTeamsPage />
-          </AdminRoute>
-        }
-      />
-      <Route
-        path="/admin/locations"
-        element={
-          <AdminRoute>
-            <LocationsPage />
           </AdminRoute>
         }
       />

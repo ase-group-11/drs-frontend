@@ -5,7 +5,7 @@ import { AdminTemplate } from '../../templates';
 
 const EmergencyTeamsPage: React.FC = () => {
   return (
-  <AdminTemplate selectedKey="teams" breadcrumb="Emergency Teams / Overview">
+  <AdminTemplate selectedKey="teams" breadcrumb="Emergency Teams / All teams">
     <EmergencyTeams />
   </AdminTemplate>
   );

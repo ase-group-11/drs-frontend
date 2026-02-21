@@ -58,12 +58,98 @@
   padding: 16px !important;
 }
 
-.um-search .ant-input-affix-wrapper {
-  border-radius: 8px;
+/* ── Select controls in filter bar — gray pill, no border ── */
+.um-filter-card .ant-select .ant-select-selector {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: #374151 !important;
 }
 
-.um-export-btn {
+.um-filter-card .ant-select-focused .ant-select-selector,
+.um-filter-card .ant-select:hover .ant-select-selector,
+.um-filter-card .ant-select-open .ant-select-selector {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.um-filter-card .ant-select-arrow {
+  color: #6b7280 !important;
+}
+
+/* ── Search input — gray pill, no border, fills width ── */
+.um-search {
+  width: 100%;
+}
+
+.um-search .ant-input-affix-wrapper,
+.um-search.ant-input-search .ant-input-affix-wrapper {
+  background-color: #f3f4f6 !important;
+  border: none !important;
   border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.um-search .ant-input-affix-wrapper:focus,
+.um-search .ant-input-affix-wrapper:hover,
+.um-search .ant-input-affix-wrapper-focused {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.um-search .ant-input {
+  background-color: transparent !important;
+}
+
+/* Hide the search button that antd appends */
+.um-search .ant-input-search-button {
+  display: none !important;
+}
+
+.um-search .ant-input-affix-wrapper:not(:last-child) {
+  border-radius: 8px !important;
+}
+
+/* ── Filter dropdown popup — gray selected, no blue ── */
+.um-filter-dropdown .ant-select-item {
+  color: #374151 !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+}
+
+.um-filter-dropdown .ant-select-item:hover,
+.um-filter-dropdown .ant-select-item-option-active {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+.um-filter-dropdown .ant-select-item-option-selected {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+.um-filter-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
+  color: #374151 !important;
+}
+
+/* ── Export button — subtle border like Figma ── */
+.um-export-btn {
+  border: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+  color: #374151 !important;
+  font-weight: 500 !important;
+}
+
+.um-export-btn:hover {
+  border-color: #d1d5db !important;
+  background: #f9fafb !important;
+  color: #111827 !important;
 }
 
 /* Selection banner */
@@ -97,13 +183,16 @@
 
 /* Table */
 .um-table .ant-table-thead > tr > th {
-  background: #f9fafb;
-  font-weight: 600;
-  font-size: 12px;
+  background: transparent !important;
+  font-weight: 500;
+  font-size: 13px;
   color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   border-bottom: 1px solid #e5e7eb;
+}
+
+/* Remove default header column separators */
+.um-table .ant-table-thead > tr > th::before {
+  display: none !important;
 }
 
 .um-table .ant-table-tbody > tr > td {

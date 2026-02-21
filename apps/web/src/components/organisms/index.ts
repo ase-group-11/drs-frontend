@@ -5,5 +5,4 @@ export { default as Dashboard } from './Dashboard';
 export { default as DisasterReports } from './DisasterReports';
 export { default as UserManagement } from './UserManagement';
 export * from './EmergencyTeams';
-export * from './Locations';
 export * from './Settings';

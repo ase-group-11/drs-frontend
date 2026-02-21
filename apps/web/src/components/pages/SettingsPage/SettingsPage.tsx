@@ -5,7 +5,7 @@ import { AdminTemplate } from '../../templates';
 
 const SettingsPage: React.FC = () => {
   return (
-  <AdminTemplate selectedKey="settings" breadcrumb="Settings / Overview">
+  <AdminTemplate selectedKey="settings" breadcrumb="Settings / General">
     <Settings />
   </AdminTemplate>
   );

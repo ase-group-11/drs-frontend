@@ -53,10 +53,9 @@ const { Text } = Typography;
 
 // ─── Role & status config ─────────────────────────────────────────────────────
 
-const ROLE_COLORS: Record<AdminUserRole, string> = {
+const ROLE_COLORS: Record<string, string> = {
   admin: '#7c3aed',
-  manager: '#2563eb',
-  staff: '#059669',
+  user: '#2563eb',
 };
 
 const STATUS_COLORS: Record<AdminUserStatus, string> = {
@@ -65,10 +64,9 @@ const STATUS_COLORS: Record<AdminUserStatus, string> = {
   pending: '#d97706',
 };
 
-const ROLE_OPTIONS: { label: string; value: AdminUserRole }[] = [
+const ROLE_OPTIONS: { label: string; value: string }[] = [
   { label: 'Admin', value: 'admin' },
-  { label: 'Manager', value: 'manager' },
-  { label: 'Staff', value: 'staff' },
+  { label: 'User', value: 'user' },
 ];
 
 const DEPARTMENT_OPTIONS: { label: string; value: AdminUserDepartment }[] = [
@@ -374,7 +372,7 @@ const UserManagement: React.FC = () => {
           <Avatar
             size={36}
             className="um-avatar"
-            style={{ background: ROLE_COLORS[record.role], flexShrink: 0 }}
+            style={{ background: ROLE_COLORS[record.role] ?? '#6b7280', flexShrink: 0 }}
           >
             {getInitials(record.fullName)}
           </Avatar>
@@ -383,25 +381,25 @@ const UserManagement: React.FC = () => {
               {record.fullName}
             </Text>
             <Text type="secondary" className="um-user-id">
-              {record.userId} · {record.employeeId}
+              {record.userId}
             </Text>
           </div>
         </div>
       ),
-      width: 240,
+      width: 220,
     },
     {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      render: (role: AdminUserRole) => (
+      render: (role: string) => (
         <Tag
           className="um-role-tag"
           style={{
-            background: `${ROLE_COLORS[role]}18`,
-            color: ROLE_COLORS[role],
-            border: `1px solid ${ROLE_COLORS[role]}40`,
-            borderRadius: '6px',
+            background: `${ROLE_COLORS[role] ?? '#6b7280'}28`,
+            color: ROLE_COLORS[role] ?? '#6b7280',
+            border: `1px solid ${ROLE_COLORS[role] ?? '#6b7280'}50`,
+            borderRadius: '20px',
             fontWeight: 500,
             textTransform: 'capitalize',
           }}
@@ -412,27 +410,15 @@ const UserManagement: React.FC = () => {
       width: 110,
     },
     {
-      title: 'Department',
-      dataIndex: 'department',
-      key: 'department',
-      render: (dept: string) => (
-        <Text style={{ textTransform: 'capitalize' }}>{dept}</Text>
+      title: 'Contact',
+      key: 'contact',
+      render: (_, record) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Text style={{ fontSize: 13, color: '#374151' }}>{record.email}</Text>
+          <Text style={{ fontSize: 12, color: '#9ca3af' }}>{record.phone}</Text>
+        </div>
       ),
-      width: 110,
-    },
-    {
-      title: 'Email',
-      dataIndex: 'email',
-      key: 'email',
-      render: (email: string) => <Text type="secondary">{email}</Text>,
-      width: 200,
-    },
-    {
-      title: 'Phone',
-      dataIndex: 'phone',
-      key: 'phone',
-      render: (phone: string) => <Text type="secondary">{phone}</Text>,
-      width: 155,
+      width: 220,
     },
     {
       title: 'Status',
@@ -442,30 +428,43 @@ const UserManagement: React.FC = () => {
         <Tag
           className="um-status-tag"
           style={{
-            background: `${STATUS_COLORS[status]}18`,
+            background: `${STATUS_COLORS[status]}28`,
             color: STATUS_COLORS[status],
-            border: `1px solid ${STATUS_COLORS[status]}40`,
-            borderRadius: '6px',
+            border: `1px solid ${STATUS_COLORS[status]}50`,
+            borderRadius: '20px',
             fontWeight: 500,
             textTransform: 'capitalize',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
           }}
         >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              background: STATUS_COLORS[status],
+              display: 'inline-block',
+              flexShrink: 0,
+            }}
+          />
           {status}
         </Tag>
       ),
-      width: 100,
+      width: 120,
     },
     {
       title: 'Joined',
       dataIndex: 'createdAt',
       key: 'createdAt',
       render: (date: string) =>
-        new Date(date).toLocaleDateString('en-IE', {
-          day: 'numeric',
+        new Date(date).toLocaleDateString('en-US', {
           month: 'short',
+          day: 'numeric',
           year: 'numeric',
         }),
-      width: 120,
+      width: 130,
     },
     {
       title: 'Actions',
@@ -524,7 +523,7 @@ const UserManagement: React.FC = () => {
       <div className="um-header">
         <div className="um-header-left">
           <h1 className="um-title">User Management</h1>
-          <p className="um-subtitle">Manage admin panel accounts and access levels</p>
+          <p className="um-subtitle">12,458 Total Users</p>
         </div>
         <Button
           type="primary"
@@ -539,8 +538,40 @@ const UserManagement: React.FC = () => {
 
       {/* Filter bar */}
       <Card className="um-filter-card">
-        <Row gutter={[16, 12]} align="middle">
-          <Col xs={24} sm={24} md={10} lg={8}>
+        <Row gutter={[12, 12]} align="middle" style={{ flexWrap: 'nowrap' }}>
+          <Col flex="160px">
+            <Select
+              value={roleFilter}
+              onChange={setRoleFilter}
+              style={{ width: '100%' }}
+              placeholder="All Roles"
+              popupClassName="um-filter-dropdown"
+            >
+              <Select.Option value="all">All Roles</Select.Option>
+              {ROLE_OPTIONS.map((r) => (
+                <Select.Option key={r.value} value={r.value}>
+                  {r.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Col>
+          <Col flex="160px">
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              style={{ width: '100%' }}
+              placeholder="All Statuses"
+              popupClassName="um-filter-dropdown"
+            >
+              <Select.Option value="all">All Statuses</Select.Option>
+              {STATUS_OPTIONS.map((s) => (
+                <Select.Option key={s.value} value={s.value}>
+                  {s.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Col>
+          <Col flex="auto">
             <Search
               placeholder="Search by name, email or ID..."
               allowClear
@@ -551,37 +582,7 @@ const UserManagement: React.FC = () => {
               className="um-search"
             />
           </Col>
-          <Col xs={12} sm={8} md={5} lg={4}>
-            <Select
-              value={roleFilter}
-              onChange={setRoleFilter}
-              style={{ width: '100%' }}
-              placeholder="All Roles"
-            >
-              <Select.Option value="all">All Roles</Select.Option>
-              {ROLE_OPTIONS.map((r) => (
-                <Select.Option key={r.value} value={r.value}>
-                  {r.label}
-                </Select.Option>
-              ))}
-            </Select>
-          </Col>
-          <Col xs={12} sm={8} md={5} lg={4}>
-            <Select
-              value={statusFilter}
-              onChange={setStatusFilter}
-              style={{ width: '100%' }}
-              placeholder="All Statuses"
-            >
-              <Select.Option value="all">All Statuses</Select.Option>
-              {STATUS_OPTIONS.map((s) => (
-                <Select.Option key={s.value} value={s.value}>
-                  {s.label}
-                </Select.Option>
-              ))}
-            </Select>
-          </Col>
-          <Col xs={24} sm={8} md={4} lg={3} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Col flex="none">
             <Button icon={<DownloadOutlined />} onClick={handleExport} className="um-export-btn">
               Export
             </Button>

@@ -7,7 +7,6 @@ import {
   UserOutlined,
   AlertOutlined,
   TeamOutlined,
-  EnvironmentOutlined,
   SettingOutlined,
   BellOutlined,
   SearchOutlined,
@@ -65,12 +64,6 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({
       onClick: () => navigate('/admin/teams'),
     },
     {
-      key: 'locations',
-      icon: <EnvironmentOutlined />,
-      label: 'Locations & Zones',
-      onClick: () => navigate('/admin/locations'),
-    },
-    {
       key: 'settings',
       icon: <SettingOutlined />,
       label: 'Settings',
@@ -79,18 +72,6 @@ const AdminTemplate: React.FC<AdminTemplateProps> = ({
   ];
 
   const userMenuItems: MenuProps['items'] = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: 'Profile',
-    },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Settings',
-      onClick: () => navigate('/admin/settings'),
-    },
-    { type: 'divider' },
     {
       key: 'logout',
       icon: <LogoutOutlined />,
