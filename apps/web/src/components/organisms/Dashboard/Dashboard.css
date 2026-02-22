@@ -60,26 +60,26 @@
 }
 
 .stat-icon-red {
-  background: #fee2e2;
+  background: oklch(0.936 0.032 17.717);
 }
 .stat-icon-red .stat-icon {
-  color: #ef4444;
+  color: oklch(0.505 0.213 27.518);
   font-size: 20px;
 }
 
 .stat-icon-blue {
-  background: #dbeafe;
+  background: oklch(0.932 0.032 255.585);
 }
 .stat-icon-blue .stat-icon {
-  color: #3b82f6;
+  color: oklch(0.488 0.243 264.376);
   font-size: 20px;
 }
 
 .stat-icon-green {
-  background: #d1fae5;
+  background: oklch(0.962 0.044 156.743);
 }
 .stat-icon-green .stat-icon {
-  color: #10b981;
+  color: rgb(0, 130, 54);
   font-size: 20px;
 }
 
@@ -297,7 +297,7 @@
 
 /* Status tags — pill-shaped, no border, pastel background */
 .activity-table .ant-tag {
-  border-radius: 20px !important;
+  border-radius: 10px !important;
   border: none !important;
   font-weight: 600 !important;
   padding: 3px 12px !important;

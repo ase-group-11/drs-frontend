@@ -273,7 +273,7 @@ const SignupForm: React.FC = () => {
                             { min: 8, message: 'Password must be at least 8 characters' },
                             {
                                 pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
-                                message: 'Password must contain uppercase, lowercase, number, and special character'
+                                message: 'Password must contain uppercase, lowercase, number, and special character (@,$,!,%,*,?,&)'
                             }
                         ]}
                         hasFeedback

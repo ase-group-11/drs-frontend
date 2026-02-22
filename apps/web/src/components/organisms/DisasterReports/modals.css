@@ -207,3 +207,26 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ── Dispatch Priority Select — gray fill, no border ── */
+.dispatch-priority-select .ant-select .ant-select-selector {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  height: 42px !important;
+  align-items: center !important;
+}
+
+.dispatch-priority-select .ant-select:hover .ant-select-selector,
+.dispatch-priority-select .ant-select-focused .ant-select-selector,
+.dispatch-priority-select .ant-select-open .ant-select-selector {
+  background-color: #e9eaec !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.dispatch-priority-select .ant-select-selection-item {
+  display: flex !important;
+  align-items: center !important;
+}

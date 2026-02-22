@@ -18,6 +18,7 @@ import {
   message,
   Spin,
   Empty,
+  Space,
 } from 'antd';
 import {
   FireOutlined,
@@ -93,11 +94,19 @@ const DisasterReports: React.FC = () => {
       );
     }
 
-    // Note: selectedTimeFilter is present in UI but not applied in your original code.
-    // Keeping behavior identical (no time filtering) to avoid breaking data.
+    // Time filter
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+
+    if (selectedTimeFilter === 'today') {
+      filtered = filtered.filter((r) => new Date(r.createdAt).getTime() >= startOfToday);
+    } else if (selectedTimeFilter === '7days') {
+      filtered = filtered.filter((r) => new Date(r.createdAt).getTime() >= sevenDaysAgo);
+    }
 
     setFilteredReports(filtered);
-  }, [reports, selectedSeverity, selectedType, searchText]);
+  }, [reports, selectedSeverity, selectedType, searchText, selectedTimeFilter]);
 
   useEffect(() => {
     filterReports();
@@ -248,16 +257,16 @@ const DisasterReports: React.FC = () => {
 
       {/* Filter Bar */}
       <Card className="filter-card">
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} sm={12} md={6}>
-            <Button.Group>
+        <Row gutter={[16, 16]} align="middle" style={{ flexWrap: 'nowrap' }}>
+          <Col flex="none">
+            <Space size={8}>
               <Button
                 type={selectedTimeFilter === 'today' ? 'primary' : 'default'}
                 onClick={() => setSelectedTimeFilter('today')}
                 style={
                   selectedTimeFilter === 'today'
-                    ? { background: '#7c3aed', borderColor: '#7c3aed' }
-                    : {}
+                    ? { background: '#7c3aed', borderColor: '#7c3aed', borderRadius: 8 }
+                    : { borderRadius: 8 }
                 }
               >
                 Today
@@ -267,17 +276,17 @@ const DisasterReports: React.FC = () => {
                 onClick={() => setSelectedTimeFilter('7days')}
                 style={
                   selectedTimeFilter === '7days'
-                    ? { background: '#7c3aed', borderColor: '#7c3aed' }
-                    : {}
+                    ? { background: '#7c3aed', borderColor: '#7c3aed', borderRadius: 8 }
+                    : { borderRadius: 8 }
                 }
               >
                 7 Days
               </Button>
-            </Button.Group>
+            </Space>
           </Col>
 
-          <Col xs={24} sm={12} md={6}>
-            <Select value={selectedSeverity} onChange={setSelectedSeverity} style={{ width: '100%' }}>
+          <Col flex="180px">
+            <Select value={selectedSeverity} onChange={setSelectedSeverity} style={{ width: '100%' }} popupClassName="dr-filter-dropdown">
               <Select.Option value="all">All Severity</Select.Option>
               <Select.Option value="critical">Critical</Select.Option>
               <Select.Option value="high">High</Select.Option>
@@ -286,8 +295,8 @@ const DisasterReports: React.FC = () => {
             </Select>
           </Col>
 
-          <Col xs={24} sm={12} md={6}>
-            <Select value={selectedType} onChange={setSelectedType} style={{ width: '100%' }}>
+          <Col flex="180px">
+            <Select value={selectedType} onChange={setSelectedType} style={{ width: '100%' }} popupClassName="dr-filter-dropdown">
               <Select.Option value="all">All Types</Select.Option>
               <Select.Option value="fire">Fire</Select.Option>
               <Select.Option value="flood">Flood</Select.Option>
@@ -296,7 +305,7 @@ const DisasterReports: React.FC = () => {
             </Select>
           </Col>
 
-          <Col xs={24} sm={12} md={6}>
+          <Col flex="auto">
             <Search
               placeholder="Search reports..."
               value={searchText}
@@ -358,7 +367,7 @@ const DisasterReports: React.FC = () => {
                     <Tag color={severityColors[report.severity]} className="severity-tag">
                       {severityLabels[report.severity]}
                     </Tag>
-                    <Button type="text" icon={<MoreOutlined />} onClick={(e) => e.stopPropagation()} />
+                    <Button type="text" icon={<MoreOutlined />} onClick={(e) => { e.stopPropagation(); setExpandedId(expandedId === report.id ? null : report.id); }} />
                   </div>
                 </div>
 
@@ -394,7 +403,7 @@ const DisasterReports: React.FC = () => {
                           <h4 className="section-title">Response Status</h4>
                           <Progress
                             percent={report.responseStatus}
-                            strokeColor="#7c3aed"
+                            strokeColor="#10b981"
                             className="status-progress"
                           />
                           <div className="status-steps">
@@ -428,9 +437,10 @@ const DisasterReports: React.FC = () => {
                               Dispatch Additional Units
                             </Button>
                             <Button
-                              danger
+                              type="primary"
                               icon={<ExclamationCircleOutlined />}
                               block
+                              style={{ background: '#e11d48', borderColor: '#e11d48' }}
                               onClick={(e) => openEscalateModal(report, e)}
                             >
                               Escalate Priority

@@ -152,16 +152,21 @@
   color: #111827 !important;
 }
 
-/* Selection banner */
+/* ✅ Selection banner — Figma-like BLUE */
 .um-selection-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #ede9fe;
-  border: 1px solid #c4b5fd;
+  background: #eff6ff; /* light blue */
+  border: 1px solid #bfdbfe; /* blue border */
   border-radius: 8px;
   padding: 10px 16px;
   margin-bottom: 12px;
+}
+
+.um-selection-banner .ant-typography {
+  color: #2563eb; /* blue text */
+  font-weight: 500;
 }
 
 /* Table card */
@@ -203,6 +208,56 @@
 
 .um-table .ant-table-tbody > tr:hover > td {
   background: #fafafa;
+}
+
+/* ✅ Disable AntD default blue selected-row background */
+.um-table .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: #ffffff !important;
+}
+
+.um-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
+  background: #fafafa !important;
+}
+
+/* ✅ Checkbox styling (black like Figma) */
+.um-table .ant-checkbox .ant-checkbox-inner {
+  border-radius: 6px !important;
+  border-color: #d1d5db !important;
+}
+
+.um-table .ant-checkbox-wrapper:hover .ant-checkbox-inner,
+.um-table .ant-checkbox:hover .ant-checkbox-inner {
+  border-color: #111827 !important;
+}
+
+/* Checked state */
+.um-table .ant-checkbox-checked .ant-checkbox-inner {
+  background: #111827 !important;
+  border-color: #111827 !important;
+}
+
+/* Checked hover */
+.um-table .ant-checkbox-wrapper:hover .ant-checkbox-checked .ant-checkbox-inner,
+.um-table .ant-checkbox-checked:hover .ant-checkbox-inner {
+  background: #0b0f19 !important;
+  border-color: #0b0f19 !important;
+}
+
+/* Indeterminate (select-all with partial selection) */
+.um-table .ant-checkbox-indeterminate .ant-checkbox-inner {
+  background: #111827 !important;
+  border-color: #111827 !important;
+}
+
+.um-table .ant-checkbox-indeterminate .ant-checkbox-inner::after {
+  background: #ffffff !important;
+}
+
+/* Remove AntD blue focus ring */
+.um-table .ant-checkbox-input:focus-visible + .ant-checkbox-inner {
+  box-shadow: none !important;
+  outline: 2px solid rgba(17, 24, 39, 0.2) !important;
+  outline-offset: 2px;
 }
 
 /* User cell */
@@ -261,4 +316,269 @@
 .ant-modal-title {
   font-weight: 700 !important;
   font-size: 16px !important;
+}
+
+/* ── Add/Edit User Modal ── */
+.um-modal .ant-modal-header {
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+}
+
+/* Cap body height so it scrolls internally instead of overflowing */
+.um-modal .ant-modal-body {
+  max-height: 70vh !important;
+  overflow-y: auto !important;
+  padding-top: 4px !important;
+}
+
+.um-modal-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.um-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.um-modal-subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.um-modal-form {
+  margin-top: 16px;
+}
+
+/* Tighter form item spacing */
+.um-modal-form .ant-form-item {
+  margin-bottom: 12px !important;
+}
+
+/* Gray bg inputs — no border */
+.um-modal-form .ant-form-item-label > label {
+  font-weight: 600 !important;
+  color: #111827 !important;
+  font-size: 13px !important;
+}
+
+/* Hide the red asterisk */
+.um-modal-form .ant-form-item-label > label.ant-form-item-required::before {
+  display: none !important;
+}
+
+.um-modal-input,
+.um-modal-input.ant-input,
+.um-modal-input .ant-input {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  height: 38px !important;
+  color: #111827 !important;
+  font-size: 14px !important;
+}
+
+.um-modal-input:hover,
+.um-modal-input:focus,
+.um-modal-input.ant-input:focus,
+.um-modal-input.ant-input:hover {
+  background-color: #e9eaec !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Password input wrapper */
+.um-modal-input.ant-input-password {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  height: 38px !important;
+}
+
+.um-modal-input.ant-input-password:hover,
+.um-modal-input.ant-input-password:focus-within {
+  background-color: #e9eaec !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.um-modal-input.ant-input-password .ant-input {
+  background-color: transparent !important;
+  height: auto !important;
+}
+
+/* Select in modal */
+.um-modal-select .ant-select-selector {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  height: 38px !important;
+  align-items: center !important;
+  display: flex !important;
+}
+
+.um-modal-select.ant-select-focused .ant-select-selector,
+.um-modal-select:hover .ant-select-selector,
+.um-modal-select.ant-select-open .ant-select-selector {
+  background-color: #e9eaec !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.um-modal-select .ant-select-selection-placeholder,
+.um-modal-select .ant-select-selection-item {
+  line-height: 38px !important;
+  color: #374151 !important;
+}
+
+/* Modal select dropdown */
+.um-modal-dropdown .ant-select-item {
+  color: #374151 !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+}
+
+.um-modal-dropdown .ant-select-item:hover,
+.um-modal-dropdown .ant-select-item-option-active {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+.um-modal-dropdown .ant-select-item-option-selected {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+.um-modal-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
+  color: #374151 !important;
+}
+
+/* Checkboxes */
+.um-modal-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.um-modal-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #374151;
+}
+
+.um-modal-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid #d1d5db;
+  accent-color: #111827;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ✅ Selection banner actions (match Figma Bulk Edit + Delete Selected) */
+.um-selection-actions .ant-btn {
+  height: 36px !important;
+  padding: 0 16px !important;
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+
+/* Figma-like outline button (Bulk Edit style) */
+.um-selection-btn-outline {
+  border: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+
+.um-selection-btn-outline:hover {
+  border-color: #d1d5db !important;
+  background: #f9fafb !important;
+  color: #111827 !important;
+}
+
+/* Figma-like danger button */
+.um-selection-btn-danger {
+  border: 1px solid #e11d48 !important;
+  background: #e11d48 !important;
+  color: #ffffff !important;
+}
+
+.um-selection-btn-danger:hover {
+  border-color: #be123c !important;
+  background: #be123c !important;
+  color: #ffffff !important;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Pagination: remove blue active page styling (page "1")
+   ───────────────────────────────────────────────────────────── */
+.um-pagination .ant-pagination-item {
+  border-color: #e5e7eb !important;
+}
+
+.um-pagination .ant-pagination-item a {
+  color: #111827 !important;
+}
+
+.um-pagination .ant-pagination-item:hover {
+  border-color: #d1d5db !important;
+}
+
+.um-pagination .ant-pagination-item-active {
+  border-color: #e5e7eb !important;
+  background: #f3f4f6 !important; /* same tone as your filters */
+}
+
+.um-pagination .ant-pagination-item-active a {
+  color: #111827 !important;
+}
+
+.um-pagination .ant-pagination-prev .ant-pagination-item-link,
+.um-pagination .ant-pagination-next .ant-pagination-item-link {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.um-pagination .ant-pagination-options .ant-select .ant-select-selector {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: #374151 !important;
+}
+
+.um-pagination .ant-pagination-options .ant-select:hover .ant-select-selector,
+.um-pagination .ant-pagination-options .ant-select-focused .ant-select-selector,
+.um-pagination .ant-pagination-options .ant-select-open .ant-select-selector {
+  background-color: #e9eaec !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  font-weight: 500 !important;
+}
+
+.ant-select-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
+  color: #374151 !important;
 }

@@ -1,4 +1,3 @@
-// NEW FILE
 import React, { useState } from 'react';
 import {
   Button,
@@ -7,12 +6,8 @@ import {
   Select,
   Checkbox,
   Typography,
-  Tag,
   Space,
-  Tooltip,
   message,
-  Badge,
-  Divider,
   Upload,
 } from 'antd';
 import {
@@ -30,7 +25,9 @@ import {
   CheckCircleOutlined,
   InfoCircleOutlined,
   UserOutlined,
-  MoreOutlined,
+  ArrowRightOutlined,
+  CalendarOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import type { DisasterReport } from '../../../types';
 import './LogUpdates.css';
@@ -38,96 +35,75 @@ import './LogUpdates.css';
 const { TextArea } = Input;
 const { Text } = Typography;
 
-// FALLBACK DUMMY DATA — remove or replace when API is live
 const DUMMY_TIMELINE = [
   {
     id: 1,
     type: 'critical' as const,
     title: 'Evacuation Order Issued',
-    description: 'Evacuation order for Zone A issued. Alert sent to 1,234 residents via emergency broadcast.',
-    time: '2 mins ago',
+    description: 'Evacuation order for Zone A issued. Alert sent to 1,234 residents.',
     timestamp: '14:45',
     user: 'System',
     isCritical: true,
     attachments: 0,
+    severityChange: null as null | { from: string; to: string },
   },
   {
     id: 2,
     type: 'system' as const,
     title: 'Units Arrived on Scene',
     description: 'Fire Unit F-12 confirms arrival. Commencing containment operations.',
-    time: '10 mins ago',
     timestamp: '14:35',
     user: 'System',
     isCritical: false,
     attachments: 0,
+    severityChange: null,
   },
   {
     id: 3,
     type: 'admin' as const,
     title: 'Dispatch Confirmed',
-    description: '3 Units dispatched to location via fastest route. ETAs: 5–7 minutes.',
-    time: '25 mins ago',
+    description: '3 Units dispatched to location via fastest route. ETAs: 5-7 minutes.',
     timestamp: '14:20',
     user: 'Admin User',
     isCritical: false,
     attachments: 1,
+    severityChange: null,
   },
   {
     id: 4,
     type: 'critical' as const,
     title: 'Severity Upgraded',
-    description: 'Report escalated from High to Critical based on visual evidence submitted by field team.',
-    time: '30 mins ago',
+    description: 'Report escalated from High to Critical based on visual evidence.',
     timestamp: '14:15',
     user: 'Admin User',
     isCritical: true,
     attachments: 2,
+    severityChange: { from: 'High', to: 'Critical' },
   },
   {
     id: 5,
     type: 'user' as const,
-    title: 'Initial Report Filed',
-    description: 'Disaster report submitted via mobile app. Location GPS coordinates attached.',
-    time: '45 mins ago',
-    timestamp: '14:00',
-    user: 'John Murphy',
+    title: 'Report Received',
+    description: 'Initial report submitted by citizen via mobile app. Photo evidence attached.',
+    timestamp: '14:10',
+    user: 'Sarah Connor',
     isCritical: false,
-    attachments: 3,
+    attachments: 2,
+    severityChange: null,
   },
 ];
 
 type TimelineEntryType = 'critical' | 'system' | 'admin' | 'user';
-type UpdateType = 'status_update' | 'resource_update' | 'situation_report' | 'action_taken';
+type UpdateType = 'status_change' | 'general_note' | 'resource_request' | 'public_alert' | 'casualty_update' | 'unit_arrival' | 'situation_report' | 'evacuation_notice';
+type FilterTab = 'all' | 'system' | 'admin' | 'user';
+type Priority = 'standard' | 'important' | 'critical';
+type Visibility = 'internal' | 'public';
 
-const ENTRY_TYPE_CONFIG: Record<
-  TimelineEntryType,
-  { color: string; bg: string; icon: React.ReactNode; label: string }
-> = {
-  critical: {
-    color: '#dc2626',
-    bg: '#fef2f2',
-    icon: <ExclamationCircleOutlined />,
-    label: 'Critical Alert',
-  },
-  system: {
-    color: '#2563eb',
-    bg: '#eff6ff',
-    icon: <InfoCircleOutlined />,
-    label: 'System',
-  },
-  admin: {
-    color: '#7c3aed',
-    bg: '#f5f3ff',
-    icon: <UserOutlined />,
-    label: 'Admin',
-  },
-  user: {
-    color: '#059669',
-    bg: '#f0fdf4',
-    icon: <CheckCircleOutlined />,
-    label: 'Field Report',
-  },
+const ENTRY_TYPE_CONFIG: Record<TimelineEntryType, { color: string; bg: string; dotColor: string; label: string }> = {
+  critical: { color: '#dc2626', bg: '#fef2f2', dotColor: '#fecaca', label: 'Critical' },
+  system:   { color: '#2563eb', bg: '#eff6ff', dotColor: '#bfdbfe', label: 'System' },
+  admin:    { color: '#7c3aed', bg: '#f5f3ff', dotColor: '#ddd6fe', label: 'Admin' },
+  user:     { color: '#059669', bg: '#f0fdf4', dotColor: '#a7f3d0', label: 'User' },
 };
 
 interface LogEntry {
@@ -135,11 +111,11 @@ interface LogEntry {
   type: TimelineEntryType;
   title: string;
   description: string;
-  time: string;
   timestamp: string;
   user: string;
   isCritical: boolean;
   attachments: number;
+  severityChange: null | { from: string; to: string };
 }
 
 interface LogUpdatesProps {
@@ -150,347 +126,367 @@ interface LogUpdatesProps {
 const LogUpdates: React.FC<LogUpdatesProps> = ({ report, onBack }) => {
   const [entries, setEntries] = useState<LogEntry[]>(DUMMY_TIMELINE);
   const [searchText, setSearchText] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const [dateFilter, setDateFilter] = useState('last7');
 
-  // New entry form state
+  // Form state
+  const [newType, setNewType] = useState<UpdateType>('status_change');
+  const [priority, setPriority] = useState<Priority>('standard');
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newType, setNewType] = useState<UpdateType>('status_update');
-  const [notifyTeams, setNotifyTeams] = useState(false);
-  const [notifyEOC, setNotifyEOC] = useState(false);
-  const [isCritical, setIsCritical] = useState(false);
+  const [notifyCoordinators, setNotifyCoordinators] = useState(false);
+  const [alertZones, setAlertZones] = useState(false);
+  const [publicAnnouncement, setPublicAnnouncement] = useState(false);
+  const [visibility, setVisibility] = useState<Visibility>('internal');
   const [submitting, setSubmitting] = useState(false);
+
+  const FILTER_TABS: { key: FilterTab; label: string }[] = [
+    { key: 'all', label: 'All Updates' },
+    { key: 'system', label: 'System Events' },
+    { key: 'admin', label: 'Admin Actions' },
+    { key: 'user', label: 'User Reports' },
+  ];
 
   const filteredEntries = entries.filter((e) => {
     const matchesSearch =
       !searchText ||
       e.title.toLowerCase().includes(searchText.toLowerCase()) ||
       e.description.toLowerCase().includes(searchText.toLowerCase());
-    const matchesType = typeFilter === 'all' || e.type === typeFilter;
-    return matchesSearch && matchesType;
+    const matchesTab = activeTab === 'all' || e.type === activeTab;
+    return matchesSearch && matchesTab;
   });
 
-  const handleSubmitUpdate = async () => {
-    if (!newTitle.trim()) {
-      message.warning('Please enter a title for the update');
-      return;
-    }
+  const handlePost = async () => {
     if (!newDescription.trim()) {
       message.warning('Please enter a description');
       return;
     }
-
     setSubmitting(true);
     try {
-      // Wire to API: POST /api/admin/disaster-reports/:id/logs
       const newEntry: LogEntry = {
         id: Date.now(),
-        type: isCritical ? 'critical' : 'admin',
-        title: newTitle,
+        type: priority === 'critical' ? 'critical' : 'admin',
+        title: newTitle || 'Update',
         description: newDescription,
-        time: 'Just now',
         timestamp: new Date().toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' }),
         user: 'Admin User',
-        isCritical,
+        isCritical: priority === 'critical',
         attachments: 0,
+        severityChange: null,
       };
       setEntries((prev) => [newEntry, ...prev]);
-      message.success('Update logged successfully');
+      message.success('Update posted successfully');
       setNewTitle('');
       setNewDescription('');
-      setIsCritical(false);
-      setNotifyTeams(false);
-      setNotifyEOC(false);
-    } catch {
-      message.error('Failed to log update');
+      setPriority('standard');
+      setNotifyCoordinators(false);
+      setAlertZones(false);
+      setPublicAnnouncement(false);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleExport = () => {
-    message.info('Exporting log...');
-  };
+  const criticalCount = entries.filter((e) => e.isCritical).length;
 
   return (
     <div className="log-container">
       {/* Header */}
       <div className="log-header">
-        <Button
-          icon={<ArrowLeftOutlined />}
-          type="text"
-          onClick={onBack}
-          className="log-back-btn"
-        >
-          Back to Reports
-        </Button>
-
         <div className="log-title-row">
-          <div>
-            <h1 className="log-title">Activity Log</h1>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {report.reportId} · {report.location}
-            </Text>
+          <div className="log-title-left">
+            <Button icon={<ArrowLeftOutlined />} type="text" onClick={onBack} className="log-back-btn" />
+            <div>
+              <h1 className="log-title">Update Log</h1>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                Report {report.reportId} · Activity History
+              </Text>
+            </div>
           </div>
-          <Button icon={<DownloadOutlined />} onClick={handleExport}>
-            Export Log
-          </Button>
         </div>
       </div>
+
+      {/* Filter bar */}
+      <Card className="log-filter-bar" size="small">
+        <div className="log-filter-inner">
+          <div className="log-filter-tabs">
+            {FILTER_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                className={`log-tab-btn ${activeTab === tab.key ? 'log-tab-active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="log-filter-right">
+            <Select
+              value={dateFilter}
+              onChange={setDateFilter}
+              style={{ width: 130 }}
+              suffixIcon={<CalendarOutlined />}
+            >
+              <Select.Option value="today">Today</Select.Option>
+              <Select.Option value="last7">Last 7 Days</Select.Option>
+              <Select.Option value="last30">Last 30 Days</Select.Option>
+              <Select.Option value="all">All Time</Select.Option>
+            </Select>
+            <Input
+              placeholder="Search timeline..."
+              prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 200 }}
+              allowClear
+            />
+            <Button icon={<DownloadOutlined />} onClick={() => message.info('Exporting...')}>
+              Export
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <div className="log-layout">
         {/* Timeline column */}
         <div className="log-timeline-col">
-          {/* Filters */}
-          <Card className="log-filter-card" size="small">
-            <Space style={{ width: '100%' }} size={10} wrap>
-              <Input
-                placeholder="Search log..."
-                prefix={<SearchOutlined />}
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                style={{ width: 200 }}
-                allowClear
-              />
-              <Select
-                value={typeFilter}
-                onChange={setTypeFilter}
-                style={{ width: 140 }}
-              >
-                <Select.Option value="all">All Types</Select.Option>
-                <Select.Option value="critical">Critical</Select.Option>
-                <Select.Option value="system">System</Select.Option>
-                <Select.Option value="admin">Admin</Select.Option>
-                <Select.Option value="user">Field Report</Select.Option>
-              </Select>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {filteredEntries.length} entries
-              </Text>
-            </Space>
-          </Card>
+          <Card className="log-timeline-card">
+            <div className="log-timeline-card-header">
+              <Text strong style={{ fontSize: 15, color: '#111827' }}>Incident Timeline</Text>
+              <Text type="secondary" style={{ fontSize: 13 }}>({filteredEntries.length} entries)</Text>
+            </div>
 
-          {/* Timeline entries */}
-          <div className="log-timeline">
-            {filteredEntries.map((entry, idx) => {
-              const cfg = ENTRY_TYPE_CONFIG[entry.type];
-              return (
-                <div key={entry.id} className="log-entry">
-                  {/* Line connector */}
-                  <div className="log-entry-line-col">
+            <div className="log-timeline">
+              {filteredEntries.map((entry, idx) => {
+                const cfg = ENTRY_TYPE_CONFIG[entry.type];
+                return (
+                  <div key={entry.id} className="log-entry">
+                    {/* Dot + connector */}
+                    <div className="log-entry-line-col">
+                      <div className="log-entry-dot" style={{ background: cfg.dotColor, border: `2px solid ${cfg.color}` }} />
+                      {idx < filteredEntries.length - 1 && <div className="log-entry-connector" />}
+                    </div>
+
+                    {/* Card */}
                     <div
-                      className="log-entry-dot"
-                      style={{
-                        background: cfg.bg,
-                        border: `2px solid ${cfg.color}`,
-                        color: cfg.color,
-                      }}
+                      className={`log-entry-card ${entry.isCritical ? 'log-entry-critical' : ''}`}
+                      style={entry.isCritical ? { borderLeft: `3px solid ${cfg.color}`, background: cfg.bg } : {}}
                     >
-                      {cfg.icon}
-                    </div>
-                    {idx < filteredEntries.length - 1 && <div className="log-entry-connector" />}
-                  </div>
+                      <div className="log-entry-header">
+                        <div className="log-entry-title-group">
+                          {entry.isCritical && (
+                            entry.severityChange
+                              ? <WarningOutlined style={{ color: cfg.color, fontSize: 14 }} />
+                              : <ExclamationCircleOutlined style={{ color: cfg.color, fontSize: 14 }} />
+                          )}
+                          {entry.severityChange && (
+                            <ArrowRightOutlined style={{ color: '#6b7280', fontSize: 12 }} />
+                          )}
+                          <Text strong style={{ fontSize: 13, color: '#111827' }}>{entry.title}</Text>
+                        </div>
+                        <div className="log-entry-meta-right">
+                          <Text style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500 }}>{entry.timestamp}</Text>
+                        </div>
+                      </div>
 
-                  {/* Content */}
-                  <Card
-                    className={`log-entry-card ${entry.isCritical ? 'log-entry-critical' : ''}`}
-                    size="small"
-                    style={
-                      entry.isCritical
-                        ? { borderLeft: `3px solid ${cfg.color}`, borderColor: cfg.color }
-                        : {}
-                    }
-                  >
-                    <div className="log-entry-header">
-                      <div className="log-entry-title-group">
-                        <Text strong style={{ fontSize: 13 }}>
-                          {entry.title}
-                        </Text>
-                        {entry.isCritical && (
-                          <Tag
-                            style={{
-                              color: cfg.color,
-                              background: cfg.bg,
-                              border: `1px solid ${cfg.color}40`,
-                              fontSize: 10,
-                              fontWeight: 600,
-                            }}
-                          >
-                            CRITICAL
-                          </Tag>
-                        )}
-                      </div>
-                      <div className="log-entry-meta-right">
-                        <Text type="secondary" style={{ fontSize: 11 }}>
-                          {entry.timestamp} · {entry.time}
-                        </Text>
-                        <Button type="text" size="small" icon={<MoreOutlined />} />
-                      </div>
-                    </div>
-                    <Text type="secondary" style={{ fontSize: 12, display: 'block', margin: '6px 0' }}>
-                      {entry.description}
-                    </Text>
-                    <div className="log-entry-footer">
-                      <Space size={12}>
-                        <span className="log-entry-author">
-                          <UserOutlined style={{ marginRight: 4, color: '#9ca3af' }} />
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            {entry.user}
-                          </Text>
-                        </span>
-                        {entry.attachments > 0 && (
-                          <span>
-                            <PaperClipOutlined style={{ marginRight: 4, color: '#9ca3af' }} />
-                            <Text type="secondary" style={{ fontSize: 11 }}>
-                              {entry.attachments} attachment{entry.attachments > 1 ? 's' : ''}
-                            </Text>
+                      <Text style={{ fontSize: 13, color: '#6b7280', display: 'block', margin: '6px 0' }}>
+                        {entry.description}
+                      </Text>
+
+                      {/* Severity change pills */}
+                      {entry.severityChange && (
+                        <div className="log-severity-change">
+                          <span className="log-severity-pill log-severity-high">{entry.severityChange.from}</span>
+                          <ArrowRightOutlined style={{ color: '#6b7280', fontSize: 11 }} />
+                          <span className="log-severity-pill log-severity-critical">{entry.severityChange.to}</span>
+                        </div>
+                      )}
+
+                      <div className="log-entry-footer">
+                        <div className="log-entry-footer-left">
+                          <span className="log-entry-author">
+                            <UserOutlined style={{ color: '#9ca3af', fontSize: 11, marginRight: 4 }} />
+                            <Text style={{ fontSize: 12, color: '#9ca3af' }}>{entry.user}</Text>
                           </span>
-                        )}
-                      </Space>
-                      <Tag
-                        style={{
-                          color: cfg.color,
-                          background: cfg.bg,
-                          border: `1px solid ${cfg.color}30`,
-                          fontSize: 10,
-                        }}
-                      >
-                        {cfg.label}
-                      </Tag>
+                          <span
+                            className="log-type-tag"
+                            style={{ background: cfg.dotColor, color: cfg.color }}
+                          >
+                            {cfg.label}
+                          </span>
+                          {entry.attachments > 0 && (
+                            <span className="log-entry-author">
+                              <PaperClipOutlined style={{ color: '#9ca3af', fontSize: 11, marginRight: 4 }} />
+                              <Text style={{ fontSize: 12, color: '#9ca3af' }}>{entry.attachments} files</Text>
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </Card>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right panel: new update form + quick actions */}
-        <div className="log-right-col">
-          {/* New Update Form */}
-          <Card className="log-new-entry-card" title="Log New Update">
-            <div className="log-form">
-              <div className="log-form-row">
-                <Text strong style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
-                  Update Type
-                </Text>
-                <Select
-                  value={newType}
-                  onChange={setNewType}
-                  style={{ width: '100%' }}
-                  size="small"
-                >
-                  <Select.Option value="status_update">Status Update</Select.Option>
-                  <Select.Option value="resource_update">Resource Update</Select.Option>
-                  <Select.Option value="situation_report">Situation Report</Select.Option>
-                  <Select.Option value="action_taken">Action Taken</Select.Option>
-                </Select>
-              </div>
-
-              <div className="log-form-row">
-                <Text strong style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
-                  Title
-                </Text>
-                <Input
-                  placeholder="Brief title..."
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  size="small"
-                  maxLength={80}
-                />
-              </div>
-
-              <div className="log-form-row">
-                <Text strong style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
-                  Details
-                </Text>
-                <TextArea
-                  placeholder="Describe the update, actions taken, or current situation..."
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  rows={4}
-                  maxLength={600}
-                  showCount
-                />
-              </div>
-
-              <div className="log-form-row">
-                <Upload beforeUpload={() => false} showUploadList={false}>
-                  <Button size="small" icon={<PaperClipOutlined />}>
-                    Attach File
-                  </Button>
-                </Upload>
-              </div>
-
-              <Divider style={{ margin: '12px 0' }} />
-
-              <div className="log-form-row">
-                <Text strong style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
-                  <BellOutlined style={{ marginRight: 4 }} />
-                  Notify
-                </Text>
-                <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                  <Checkbox
-                    checked={notifyTeams}
-                    onChange={(e) => setNotifyTeams(e.target.checked)}
-                  >
-                    <Text style={{ fontSize: 12 }}>Response teams on scene</Text>
-                  </Checkbox>
-                  <Checkbox
-                    checked={notifyEOC}
-                    onChange={(e) => setNotifyEOC(e.target.checked)}
-                  >
-                    <Text style={{ fontSize: 12 }}>Emergency Operations Centre</Text>
-                  </Checkbox>
-                  <Checkbox
-                    checked={isCritical}
-                    onChange={(e) => setIsCritical(e.target.checked)}
-                  >
-                    <Text style={{ fontSize: 12, color: '#dc2626' }}>
-                      Mark as critical
-                    </Text>
-                  </Checkbox>
-                </Space>
-              </div>
-
-              <Space style={{ width: '100%', justifyContent: 'flex-end', marginTop: 8 }} size={8}>
-                <Button size="small" icon={<SaveOutlined />}>
-                  Save Draft
-                </Button>
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<SendOutlined />}
-                  loading={submitting}
-                  onClick={handleSubmitUpdate}
-                  style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
-                >
-                  Post Update
-                </Button>
-              </Space>
+                  </div>
+                );
+              })}
             </div>
           </Card>
+        </div>
 
-          {/* Quick Actions */}
-          <Card className="log-quick-actions-card" title="Quick Actions" size="small">
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              <Button block icon={<BellOutlined />} size="small" danger>
-                Send Emergency Alert
-              </Button>
-              <Button
-                block
-                icon={<RocketOutlined />}
-                size="small"
-                style={{ borderColor: '#7c3aed', color: '#7c3aed' }}
-              >
-                Dispatch Additional Units
-              </Button>
-              <Button block icon={<EnvironmentOutlined />} size="small">
-                Update Location Pin
-              </Button>
-              <Button block icon={<TeamOutlined />} size="small">
-                Notify All Teams
-              </Button>
-            </Space>
+        {/* Right column */}
+        <div className="log-right-col">
+          {/* Log New Update */}
+          <Card className="log-new-entry-card">
+            <Text strong style={{ fontSize: 16, color: '#111827', display: 'block', marginBottom: 20 }}>
+              Log New Update
+            </Text>
+
+            {/* Update Type */}
+            <div className="log-form-field">
+              <Text strong style={{ fontSize: 13, color: '#111827' }}>Update Type</Text>
+              <Select value={newType} onChange={setNewType} style={{ width: '100%', marginTop: 8 }}>
+                <Select.Option value="status_change">Status Change</Select.Option>
+                <Select.Option value="general_note">General Note</Select.Option>
+                <Select.Option value="resource_request">Resource Request</Select.Option>
+                <Select.Option value="public_alert">Public Alert</Select.Option>
+                <Select.Option value="casualty_update">Casualty Update</Select.Option>
+                <Select.Option value="unit_arrival">Unit Arrival</Select.Option>
+                <Select.Option value="situation_report">Situation Report</Select.Option>
+                <Select.Option value="evacuation_notice">Evacuation Notice</Select.Option>
+              </Select>
+            </div>
+
+            {/* Priority Level */}
+            <div className="log-form-field">
+              <Text strong style={{ fontSize: 13, color: '#111827' }}>Priority Level</Text>
+              <div className="log-priority-group">
+                {(['standard', 'important', 'critical'] as Priority[]).map((p) => (
+                  <button
+                    key={p}
+                    className={`log-priority-btn ${priority === p ? 'log-priority-active' : ''}`}
+                    onClick={() => setPriority(p)}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Title */}
+            <div className="log-form-field">
+              <Text strong style={{ fontSize: 13, color: '#111827' }}>Update Title <Text type="secondary" style={{ fontWeight: 400 }}>(optional)</Text></Text>
+              <Input
+                placeholder="Brief title..."
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                style={{ marginTop: 8 }}
+                maxLength={80}
+              />
+            </div>
+
+            {/* Description */}
+            <div className="log-form-field">
+              <Text strong style={{ fontSize: 13, color: '#111827' }}>Description <span style={{ color: '#dc2626' }}>*</span></Text>
+              <TextArea
+                placeholder="Enter details about this update..."
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                rows={4}
+                maxLength={500}
+                style={{ marginTop: 8, resize: 'vertical' }}
+              />
+              <div style={{ textAlign: 'right', fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                {newDescription.length}/500
+              </div>
+            </div>
+
+            {/* Attachments */}
+            <div className="log-form-field">
+              <Text strong style={{ fontSize: 13, color: '#111827' }}>Attachments <Text type="secondary" style={{ fontWeight: 400 }}>(optional)</Text></Text>
+              <Upload beforeUpload={() => false} showUploadList={false}>
+                <div className="log-attach-zone">
+                  <PaperClipOutlined style={{ fontSize: 20, color: '#9ca3af', marginBottom: 6 }} />
+                  <Text style={{ fontSize: 13, color: '#374151' }}>Attach files</Text>
+                  <Text style={{ fontSize: 11, color: '#9ca3af' }}>Images, PDFs, up to 5MB</Text>
+                </div>
+              </Upload>
+            </div>
+
+            {/* Notifications */}
+            <div className="log-form-field">
+              <Text strong style={{ fontSize: 13, color: '#111827' }}>Notifications</Text>
+              <div className="log-checkboxes">
+                <Checkbox checked={notifyCoordinators} onChange={(e) => setNotifyCoordinators(e.target.checked)}>
+                  <Text style={{ fontSize: 13 }}>Notify emergency coordinators</Text>
+                </Checkbox>
+                <Checkbox checked={alertZones} onChange={(e) => setAlertZones(e.target.checked)}>
+                  <Text style={{ fontSize: 13 }}>Alert affected zones</Text>
+                </Checkbox>
+                <Checkbox checked={publicAnnouncement} onChange={(e) => setPublicAnnouncement(e.target.checked)}>
+                  <Text style={{ fontSize: 13 }}>Public announcement</Text>
+                </Checkbox>
+              </div>
+              <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 4, display: 'block' }}>
+                Selected groups will receive immediate notification
+              </Text>
+            </div>
+
+            {/* Visibility */}
+            <div className="log-form-field">
+              <Text strong style={{ fontSize: 13, color: '#111827' }}>Visibility</Text>
+              <div className="log-visibility-group">
+                <button
+                  className={`log-visibility-btn ${visibility === 'internal' ? 'log-visibility-active' : ''}`}
+                  onClick={() => setVisibility('internal')}
+                >
+                  Internal (team only)
+                </button>
+                <button
+                  className={`log-visibility-btn ${visibility === 'public' ? 'log-visibility-active' : ''}`}
+                  onClick={() => setVisibility('public')}
+                >
+                  Public
+                </button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <Button
+              type="primary"
+              block
+              icon={<SendOutlined />}
+              loading={submitting}
+              onClick={handlePost}
+              style={{ background: '#7c3aed', borderColor: '#7c3aed', height: 44, fontSize: 14, fontWeight: 600, borderRadius: 10, marginTop: 8 }}
+            >
+              Post Update
+            </Button>
+            <Button
+              block
+              icon={<SaveOutlined />}
+              style={{ height: 44, marginTop: 10, borderRadius: 10, fontSize: 14 }}
+              onClick={() => message.info('Saved as draft')}
+            >
+              Save as Draft
+            </Button>
+
+            {/* Quick Stats */}
+            <div className="log-quick-stats">
+              <Text style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '0.05em', display: 'block', marginBottom: 10 }}>
+                QUICK STATS
+              </Text>
+              <div className="log-stats-grid">
+                <div>
+                  <Text style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{entries.length} Total Updates</Text>
+                </div>
+                <div>
+                  <Text style={{ fontSize: 14, fontWeight: 600, color: '#dc2626' }}>{criticalCount} Critical</Text>
+                </div>
+                <div>
+                  <Text style={{ fontSize: 13, color: '#6b7280' }}>Last: 2 mins ago</Text>
+                </div>
+                <div>
+                  <Text style={{ fontSize: 13, color: '#6b7280' }}>{entries.filter(e => e.timestamp.startsWith('14')).length} Today</Text>
+                </div>
+              </div>
+            </div>
           </Card>
         </div>
       </div>

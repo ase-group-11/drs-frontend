@@ -91,6 +91,78 @@
   border-color: #7c3aed;
 }
 
+/* ── Filter selects — gray pill, no border ── */
+.filter-card .ant-select .ant-select-selector {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: #374151 !important;
+}
+
+.filter-card .ant-select-focused .ant-select-selector,
+.filter-card .ant-select:hover .ant-select-selector,
+.filter-card .ant-select-open .ant-select-selector {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.filter-card .ant-select-arrow {
+  color: #6b7280 !important;
+}
+
+/* ── Search input — gray pill, no border ── */
+.filter-card .ant-input-search .ant-input-affix-wrapper,
+.filter-card .ant-input-affix-wrapper {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.filter-card .ant-input-search .ant-input-affix-wrapper:hover,
+.filter-card .ant-input-search .ant-input-affix-wrapper:focus,
+.filter-card .ant-input-affix-wrapper-focused {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.filter-card .ant-input-search .ant-input {
+  background-color: transparent !important;
+}
+
+.filter-card .ant-input-search-button {
+  display: none !important;
+}
+
+.filter-card .ant-input-affix-wrapper:not(:last-child) {
+  border-radius: 8px !important;
+}
+
+/* ── Filter dropdown popup — gray, no blue ── */
+.dr-filter-dropdown .ant-select-item {
+  color: #374151 !important;
+  font-size: 13px !important;
+}
+
+.dr-filter-dropdown .ant-select-item:hover,
+.dr-filter-dropdown .ant-select-item-option-active {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+.dr-filter-dropdown .ant-select-item-option-selected {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+.dr-filter-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
+  color: #374151 !important;
+}
+
 /* Reports List */
 .reports-list {
   display: flex;

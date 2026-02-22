@@ -32,12 +32,7 @@ import {
   PhoneOutlined,
   LockOutlined,
 } from '@ant-design/icons';
-import {
-  getUsers,
-  createUser,
-  updateUser,
-  deleteUser,
-} from '../../../services';
+import { getUsers, createUser, updateUser, deleteUser } from '../../../services';
 import type {
   AdminUser,
   AdminUserRole,
@@ -59,8 +54,8 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<AdminUserStatus, string> = {
-  active: '#059669',
-  suspended: '#dc2626',
+  active: '#008236',
+  suspended: '#d4183d',
   pending: '#d97706',
 };
 
@@ -104,7 +99,6 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ open, mode, user, onClose
           email: user.email,
           phone: user.phone,
           role: user.role,
-          department: user.department,
           status: user.status,
         });
       } else {
@@ -124,7 +118,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ open, mode, user, onClose
           email: values.email,
           phone: values.phone,
           role: values.role,
-          department: values.department,
+          department: 'it',
           password: values.password,
         };
         const result = await createUser(payload);
@@ -141,7 +135,6 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ open, mode, user, onClose
           email: values.email,
           phone: values.phone,
           role: values.role,
-          department: values.department,
           status: values.status,
         };
         const result = await updateUser(user.id, payload);
@@ -154,7 +147,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ open, mode, user, onClose
         }
       }
     } catch (err: any) {
-      if (err?.errorFields) return; // Validation error — antd handles display
+      if (err?.errorFields) return;
       message.error('An error occurred. Please try again.');
     } finally {
       setSubmitting(false);
@@ -163,133 +156,128 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ open, mode, user, onClose
 
   return (
     <Modal
-      title={mode === 'add' ? 'Add New User' : 'Edit User'}
+      title={
+        <div className="um-modal-header">
+          <div className="um-modal-title">{mode === 'add' ? 'Add New User' : 'Edit User'}</div>
+          {mode === 'add' && (
+            <div className="um-modal-subtitle">Create a new user account with the information below.</div>
+          )}
+        </div>
+      }
       open={open}
       onCancel={onClose}
       onOk={handleSubmit}
       okText={mode === 'add' ? 'Create User' : 'Save Changes'}
-      okButtonProps={{ loading: submitting, style: { background: '#7c3aed', borderColor: '#7c3aed' } }}
-      width={560}
+      okButtonProps={{ loading: submitting, style: { background: '#7c3aed', borderColor: '#7c3aed', borderRadius: '10px', fontWeight: 600, height: 40, padding: '0 24px' } }}
+      cancelButtonProps={{ style: { borderRadius: '10px', height: 40, padding: '0 24px' } }}
+      width={520}
       destroyOnClose
+      className="um-modal"
     >
-      <Form form={form} layout="vertical" style={{ marginTop: '16px' }}>
-        <Row gutter={16}>
-          <Col span={24}>
+      <Form form={form} layout="vertical" className="um-modal-form">
+
+        <Form.Item
+          name="fullName"
+          label="Full Name"
+          rules={[
+            { required: true, message: 'Please enter the full name' },
+            { min: 2, message: 'Full name must be at least 2 characters' },
+            { pattern: /^[a-zA-ZÀ-ÿ\s'-]+$/, message: 'Full name can only contain letters' },
+          ]}
+        >
+          <Input placeholder="Enter full name" className="um-modal-input" />
+        </Form.Item>
+
+        <Form.Item
+          name="email"
+          label="Email Address"
+          rules={[
+            { required: true, message: 'Please enter an email address' },
+            { type: 'email', message: 'Please enter a valid email address' },
+          ]}
+        >
+          <Input placeholder="user@example.com" className="um-modal-input" />
+        </Form.Item>
+
+        <Form.Item
+          name="phone"
+          label="Phone Number"
+          rules={[
+            { required: true, message: 'Please enter a phone number' },
+            {
+              validator: (_: any, value: string) => {
+                if (!value) return Promise.resolve();
+                const digits = value.replace(/[\s\-\(\)]/g, '');
+                // Irish: +353 followed by 8XXXXXXXX (9 digits starting with 8)
+                const irish = digits.replace(/^\+353/, '');
+                if (/^8\d{8}$/.test(irish)) return Promise.resolve();
+                // Indian: +91 followed by 6-9XXXXXXXXX (10 digits starting with 6-9)
+                const indian = digits.replace(/^\+91/, '');
+                if (/^[6-9]\d{9}$/.test(indian)) return Promise.resolve();
+                return Promise.reject(new Error('Enter a valid Irish (+353 8X XXX XXXX) or Indian (+91 XXXXX XXXXX) number'));
+              },
+            },
+          ]}
+        >
+          <Input placeholder="+353 87 123 4567" className="um-modal-input" />
+        </Form.Item>
+
+        <Form.Item
+          name="role"
+          label="Role"
+          rules={[{ required: true, message: 'Please select a role' }]}
+        >
+          <Select placeholder="Select role..." className="um-modal-select" popupClassName="um-modal-dropdown">
+            {ROLE_OPTIONS.map((r) => (
+              <Select.Option key={r.value} value={r.value}>{r.label}</Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+
+        {mode === 'edit' && (
+          <Form.Item name="status" label="Status">
+            <Select placeholder="Select status" className="um-modal-select" popupClassName="um-modal-dropdown">
+              {STATUS_OPTIONS.map((s) => (
+                <Select.Option key={s.value} value={s.value}>{s.label}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        )}
+
+        {mode === 'add' && (
+          <>
             <Form.Item
-              name="fullName"
-              label="Full Name"
-              rules={[{ required: true, message: 'Please enter the full name' }]}
-            >
-              <Input prefix={<UserOutlined />} placeholder="e.g. John Murphy" />
-            </Form.Item>
-          </Col>
-        </Row>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              name="email"
-              label="Email Address"
+              name="password"
+              label="Initial Password"
               rules={[
-                { required: true, message: 'Please enter an email' },
-                { type: 'email', message: 'Please enter a valid email' },
+                { required: true, message: 'Please set a password' },
+                { min: 8, message: 'Password must be at least 8 characters' },
+                {
+                  pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
+                  message: 'Must contain uppercase, lowercase, number and special character (@,$,!,%,*,?,&)',
+                },
               ]}
             >
-              <Input prefix={<MailOutlined />} placeholder="user@drs.ie" />
+              <Input.Password placeholder="Enter initial password" className="um-modal-input" />
             </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="phone"
-              label="Phone Number"
-              rules={[{ required: true, message: 'Please enter a phone number' }]}
-            >
-              <Input prefix={<PhoneOutlined />} placeholder="+353 87 000 0000" />
-            </Form.Item>
-          </Col>
-        </Row>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              name="role"
-              label="Role"
-              rules={[{ required: true, message: 'Please select a role' }]}
-            >
-              <Select placeholder="Select role">
-                {ROLE_OPTIONS.map((r) => (
-                  <Select.Option key={r.value} value={r.value}>
-                    {r.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="department"
-              label="Department"
-              rules={[{ required: true, message: 'Please select a department' }]}
-            >
-              <Select placeholder="Select department">
-                {DEPARTMENT_OPTIONS.map((d) => (
-                  <Select.Option key={d.value} value={d.value}>
-                    {d.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-        </Row>
-        {mode === 'edit' && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="status" label="Status">
-                <Select placeholder="Select status">
-                  {STATUS_OPTIONS.map((s) => (
-                    <Select.Option key={s.value} value={s.value}>
-                      {s.label}
-                    </Select.Option>
-                  ))}
-                </Select>
+
+            <div className="um-modal-checkboxes">
+              <Form.Item name="sendWelcomeEmail" valuePropName="checked" noStyle>
+                <label className="um-modal-checkbox-label">
+                  <input type="checkbox" className="um-modal-checkbox" />
+                  <span>Send welcome email with login instructions</span>
+                </label>
               </Form.Item>
-            </Col>
-          </Row>
+              <Form.Item name="requirePasswordChange" valuePropName="checked" noStyle>
+                <label className="um-modal-checkbox-label">
+                  <input type="checkbox" className="um-modal-checkbox" />
+                  <span>Require password change on first login</span>
+                </label>
+              </Form.Item>
+            </div>
+          </>
         )}
-        {mode === 'add' && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="password"
-                label="Password"
-                rules={[
-                  { required: true, message: 'Please set a password' },
-                  { min: 8, message: 'Password must be at least 8 characters' },
-                ]}
-              >
-                <Input.Password prefix={<LockOutlined />} placeholder="Min. 8 characters" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="confirmPassword"
-                label="Confirm Password"
-                dependencies={['password']}
-                rules={[
-                  { required: true, message: 'Please confirm the password' },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      if (!value || getFieldValue('password') === value) {
-                        return Promise.resolve();
-                      }
-                      return Promise.reject(new Error('Passwords do not match'));
-                    },
-                  }),
-                ]}
-              >
-                <Input.Password prefix={<LockOutlined />} placeholder="Re-enter password" />
-              </Form.Item>
-            </Col>
-          </Row>
-        )}
+
       </Form>
     </Modal>
   );
@@ -304,10 +292,14 @@ const UserManagement: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [deletingSelected, setDeletingSelected] = useState(false);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -343,6 +335,46 @@ const UserManagement: React.FC = () => {
     } catch {
       message.error('Failed to delete user');
     }
+  };
+
+  const handleDeleteSelected = () => {
+    const ids = selectedRowKeys.map((k) => String(k));
+    const count = ids.length;
+
+    Modal.confirm({
+      title: 'Delete selected users?',
+      content: `This will permanently delete ${count} user${count > 1 ? 's' : ''}. This cannot be undone.`,
+      okText: 'Delete Selected',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: async () => {
+        setDeletingSelected(true);
+        try {
+          const results = await Promise.allSettled(ids.map((id) => deleteUser(id)));
+
+          const deletedIds: string[] = [];
+          const failedIds: string[] = [];
+
+          results.forEach((r, idx) => {
+            const id = ids[idx];
+            if (r.status === 'fulfilled' && r.value.success) deletedIds.push(id);
+            else failedIds.push(id);
+          });
+
+          if (deletedIds.length) {
+            message.success(`Deleted ${deletedIds.length} user${deletedIds.length > 1 ? 's' : ''}.`);
+          }
+          if (failedIds.length) {
+            message.error(`Failed to delete ${failedIds.length} user${failedIds.length > 1 ? 's' : ''}.`);
+          }
+
+          await fetchUsers();
+          setSelectedRowKeys(failedIds);
+        } finally {
+          setDeletingSelected(false);
+        }
+      },
+    });
   };
 
   const handleExport = () => {
@@ -399,7 +431,7 @@ const UserManagement: React.FC = () => {
             background: `${ROLE_COLORS[role] ?? '#6b7280'}28`,
             color: ROLE_COLORS[role] ?? '#6b7280',
             border: `1px solid ${ROLE_COLORS[role] ?? '#6b7280'}50`,
-            borderRadius: '20px',
+            borderRadius: '10px',
             fontWeight: 500,
             textTransform: 'capitalize',
           }}
@@ -431,7 +463,7 @@ const UserManagement: React.FC = () => {
             background: `${STATUS_COLORS[status]}28`,
             color: STATUS_COLORS[status],
             border: `1px solid ${STATUS_COLORS[status]}50`,
-            borderRadius: '20px',
+            borderRadius: '10px',
             fontWeight: 500,
             textTransform: 'capitalize',
             display: 'inline-flex',
@@ -443,7 +475,7 @@ const UserManagement: React.FC = () => {
             style={{
               width: 7,
               height: 7,
-              borderRadius: '50%',
+              borderRadius: '10px',
               background: STATUS_COLORS[status],
               display: 'inline-block',
               flexShrink: 0,
@@ -523,7 +555,7 @@ const UserManagement: React.FC = () => {
       <div className="um-header">
         <div className="um-header-left">
           <h1 className="um-title">User Management</h1>
-          <p className="um-subtitle">12,458 Total Users</p>
+          <p className="um-subtitle">{users.length.toLocaleString()} Total Users</p>
         </div>
         <Button
           type="primary"
@@ -560,10 +592,10 @@ const UserManagement: React.FC = () => {
               value={statusFilter}
               onChange={setStatusFilter}
               style={{ width: '100%' }}
-              placeholder="All Statuses"
+              placeholder="All Status"
               popupClassName="um-filter-dropdown"
             >
-              <Select.Option value="all">All Statuses</Select.Option>
+              <Select.Option value="all">All Status</Select.Option>
               {STATUS_OPTIONS.map((s) => (
                 <Select.Option key={s.value} value={s.value}>
                   {s.label}
@@ -573,7 +605,7 @@ const UserManagement: React.FC = () => {
           </Col>
           <Col flex="auto">
             <Search
-              placeholder="Search by name, email or ID..."
+              placeholder="Search users..."
               allowClear
               prefix={<SearchOutlined />}
               value={searchText}
@@ -596,9 +628,23 @@ const UserManagement: React.FC = () => {
           <Text>
             {selectedRowKeys.length} user{selectedRowKeys.length > 1 ? 's' : ''} selected
           </Text>
-          <Space>
-            <Button size="small" onClick={() => setSelectedRowKeys([])}>
+
+          <Space size={10} className="um-selection-actions">
+            <Button
+              className="um-selection-btn-outline"
+              onClick={() => setSelectedRowKeys([])}
+              disabled={deletingSelected}
+            >
               Clear selection
+            </Button>
+
+            <Button
+              className="um-selection-btn-danger"
+              onClick={handleDeleteSelected}
+              loading={deletingSelected}
+              disabled={deletingSelected}
+            >
+              Delete Selected
             </Button>
           </Space>
         </div>
@@ -617,12 +663,22 @@ const UserManagement: React.FC = () => {
             dataSource={users}
             rowKey="id"
             pagination={{
-              total: users.length,
-              pageSize: 10,
-              showSizeChanger: true,
-              showTotal: (total) => `${total} users total`,
-              className: 'um-pagination',
-            }}
+            current: currentPage,
+            pageSize,
+            total: users.length,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (total) => `${total} users total`,
+            className: 'um-pagination',
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              setPageSize(size);
+            },
+            onShowSizeChange: (_page, size) => {
+              setCurrentPage(1); // optional: reset to page 1 when size changes
+              setPageSize(size);
+            },
+          }}
             scroll={{ x: 1100 }}
             className="um-table"
             locale={{ emptyText: 'No users found matching your filters' }}
@@ -631,12 +687,7 @@ const UserManagement: React.FC = () => {
       </Card>
 
       {/* Add User Modal */}
-      <UserFormModal
-        open={addModalOpen}
-        mode="add"
-        onClose={() => setAddModalOpen(false)}
-        onSuccess={fetchUsers}
-      />
+      <UserFormModal open={addModalOpen} mode="add" onClose={() => setAddModalOpen(false)} onSuccess={fetchUsers} />
 
       {/* Edit User Modal */}
       <UserFormModal

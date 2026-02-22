@@ -1,21 +1,15 @@
-// NEW FILE
 import React, { useState } from 'react';
 import {
   Modal,
-  Radio,
-  Checkbox,
   Input,
   Button,
-  Tag,
-  Space,
   Typography,
-  Alert,
   message,
 } from 'antd';
 import {
-  ExclamationCircleOutlined,
   WarningOutlined,
-  BellOutlined,
+  DownOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import type { DisasterReport, SeverityLevel } from '../../../types';
 import { escalateDisasterSeverity } from '../../../services';
@@ -23,43 +17,43 @@ import { escalateDisasterSeverity } from '../../../services';
 const { TextArea } = Input;
 const { Text } = Typography;
 
-const SEVERITY_CONFIG: Record<
-  SeverityLevel,
-  { label: string; color: string; bg: string; description: string }
-> = {
-  critical: {
-    label: 'Critical',
-    color: '#dc2626',
-    bg: '#fef2f2',
-    description: 'Immediate threat to life. All available resources required.',
-  },
-  high: {
-    label: 'High',
-    color: '#ea580c',
-    bg: '#fff7ed',
-    description: 'Serious incident. Significant resources and rapid response needed.',
-  },
-  medium: {
-    label: 'Medium',
-    color: '#d97706',
-    bg: '#fffbeb',
-    description: 'Moderate impact. Standard response procedures apply.',
-  },
+const SEVERITY_CONFIG: Record<SeverityLevel, { label: string; color: string; bg: string; border: string; description: string }> = {
   low: {
-    label: 'Low',
+    label: 'Low Priority',
     color: '#2563eb',
     bg: '#eff6ff',
+    border: '#bfdbfe',
     description: 'Minor incident. Minimal resources required.',
+  },
+  medium: {
+    label: 'Medium Priority',
+    color: '#d97706',
+    bg: '#fffbeb',
+    border: '#fde68a',
+    description: 'Moderate impact. Standard response procedures apply.',
+  },
+  high: {
+    label: 'High Priority',
+    color: '#ea580c',
+    bg: '#fff7ed',
+    border: '#fed7aa',
+    description: 'Requires immediate additional resources',
+  },
+  critical: {
+    label: 'Critical Emergency',
+    color: '#dc2626',
+    bg: '#fef2f2',
+    border: '#fecaca',
+    description: 'Maximum response protocol initiated',
   },
 };
 
 const SEVERITY_ORDER: SeverityLevel[] = ['low', 'medium', 'high', 'critical'];
 
-const NOTIFY_OPTIONS = [
-  { label: 'All active response teams', value: 'teams' },
-  { label: 'Emergency Operations Centre', value: 'eoc' },
-  { label: 'Regional Manager', value: 'manager' },
-  { label: 'Send public alert (if applicable)', value: 'public' },
+const AUTO_ACTIONS = [
+  'Notify Emergency Coordinators',
+  'Request Additional Units',
+  'Alert Nearby Zones',
 ];
 
 interface EscalateSeverityModalProps {
@@ -70,273 +64,233 @@ interface EscalateSeverityModalProps {
 }
 
 const EscalateSeverityModal: React.FC<EscalateSeverityModalProps> = ({
-  open,
-  report,
-  onClose,
-  onSuccess,
+  open, report, onClose, onSuccess,
 }) => {
-  const [step, setStep] = useState<1 | 2>(1);
   const [selectedSeverity, setSelectedSeverity] = useState<SeverityLevel | null>(null);
   const [reason, setReason] = useState('');
-  const [notifyOptions, setNotifyOptions] = useState<string[]>(['teams', 'eoc']);
   const [submitting, setSubmitting] = useState(false);
+  const [autoActions, setAutoActions] = useState<string[]>([
+    'Notify Emergency Coordinators',
+    'Request Additional Units',
+    'Alert Nearby Zones',
+  ]);
 
-  // Compute which severity levels can be selected (only escalation — no de-escalation here)
-  const currentSeverityIndex = report ? SEVERITY_ORDER.indexOf(report.severity) : -1;
-  const selectableSeverities = SEVERITY_ORDER.filter(
-    (_, idx) => idx > currentSeverityIndex
-  );
-
-  const handleReset = () => {
-    setStep(1);
-    setSelectedSeverity(null);
-    setReason('');
-    setNotifyOptions(['teams', 'eoc']);
-  };
+  const toggleAction = (action: string) =>
+    setAutoActions((prev) => prev.includes(action) ? prev.filter((a) => a !== action) : [...prev, action]);
 
   const handleClose = () => {
-    handleReset();
+    setSelectedSeverity(null);
+    setReason('');
     onClose();
   };
 
-  const handleNext = () => {
-    if (!selectedSeverity) {
-      message.warning('Please select a new severity level');
-      return;
-    }
-    if (!reason.trim()) {
-      message.warning('Please provide a reason for escalation');
-      return;
-    }
-    setStep(2);
-  };
-
-  const handleConfirm = async () => {
-    if (!report || !selectedSeverity) return;
+  const handleEscalate = async () => {
+    if (!selectedSeverity) { message.warning('Please select a severity level'); return; }
+    if (!reason.trim()) { message.warning('Please provide a reason for escalation'); return; }
+    if (!report) return;
     setSubmitting(true);
     try {
       const result = await escalateDisasterSeverity(report.id, selectedSeverity);
       if (result.success) {
         message.success(`Severity escalated to ${SEVERITY_CONFIG[selectedSeverity].label}`);
-        onSuccess();
-        handleClose();
+        onSuccess(); handleClose();
       } else {
         message.error(result.message || 'Failed to escalate severity');
       }
-    } catch {
-      message.error('Failed to escalate severity');
-    } finally {
-      setSubmitting(false);
-    }
+    } catch { message.error('Failed to escalate severity'); }
+    finally { setSubmitting(false); }
   };
 
   if (!report) return null;
 
-  const currentConfig = SEVERITY_CONFIG[report.severity];
-  const newConfig = selectedSeverity ? SEVERITY_CONFIG[selectedSeverity] : null;
+  const currentIdx = SEVERITY_ORDER.indexOf(report.severity);
+  const escalatableLevels = SEVERITY_ORDER.filter((_, i) => i > currentIdx);
+  const currentCfg = SEVERITY_CONFIG[report.severity];
 
   return (
     <Modal
-      title={
-        <Space>
-          <ExclamationCircleOutlined style={{ color: '#dc2626' }} />
-          <span>Escalate Priority</span>
-          <Tag color="default" style={{ fontWeight: 400, marginLeft: 4 }}>
-            {report.reportId}
-          </Tag>
-        </Space>
-      }
       open={open}
       onCancel={handleClose}
       footer={null}
-      width={520}
+      width={500}
       destroyOnClose
+      title={null}
     >
-      {/* Step indicator */}
-      <div className="escalate-steps">
-        <div className={`escalate-step ${step >= 1 ? 'active' : ''}`}>
-          <span className="escalate-step-dot">{step > 1 ? '✓' : '1'}</span>
-          <span>Select Severity</span>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 10, background: '#fff7ed',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <WarningOutlined style={{ color: '#ea580c', fontSize: 20 }} />
         </div>
-        <div className="escalate-step-line" />
-        <div className={`escalate-step ${step >= 2 ? 'active' : ''}`}>
-          <span className="escalate-step-dot">2</span>
-          <span>Confirm</span>
+        <div>
+          <Text strong style={{ fontSize: 18, color: '#111827', display: 'block' }}>
+            Escalate Disaster Severity
+          </Text>
+          <Text style={{ fontSize: 13, color: '#6b7280' }}>
+            Increase priority for <span style={{ color: '#111827', fontWeight: 600 }}>{report.reportId}</span>
+          </Text>
         </div>
       </div>
 
-      {step === 1 && (
-        <div className="escalate-step1">
-          {/* Current severity */}
-          <div className="escalate-current">
-            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
-              Current Severity
-            </Text>
-            <Tag
-              style={{
-                color: currentConfig.color,
-                background: currentConfig.bg,
-                border: `1px solid ${currentConfig.color}40`,
-                padding: '4px 12px',
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              {currentConfig.label}
-            </Tag>
-          </div>
+      {/* Current severity summary card */}
+      <div style={{
+        background: '#f9fafb', borderRadius: 12, padding: '16px',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: 8, marginBottom: 20,
+      }}>
+        <span style={{
+          background: currentCfg.bg, color: currentCfg.color,
+          border: `1px solid ${currentCfg.border}`,
+          borderRadius: 999, padding: '5px 16px', fontSize: 13, fontWeight: 600,
+        }}>
+          {currentCfg.label}
+        </span>
+        <DownOutlined style={{ color: '#9ca3af', fontSize: 14 }} />
+        <Text style={{ fontSize: 13, color: '#9ca3af' }}>Will be escalated to:</Text>
+      </div>
 
-          {/* New severity selection */}
-          <div style={{ marginBottom: 16 }}>
-            <Text strong style={{ display: 'block', marginBottom: 10, fontSize: 13 }}>
-              Escalate To
+      {/* Severity option cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+        {escalatableLevels.length === 0 ? (
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 16px' }}>
+            <Text style={{ color: '#2563eb', fontSize: 13 }}>
+              ℹ️ This report is already at the highest severity level (Critical).
             </Text>
-            {selectableSeverities.length === 0 ? (
-              <Alert
-                message="This report is already at the highest severity level (Critical)."
-                type="info"
-                showIcon
-              />
-            ) : (
-              <Radio.Group
-                value={selectedSeverity}
-                onChange={(e) => setSelectedSeverity(e.target.value)}
-                style={{ width: '100%' }}
+          </div>
+        ) : (
+          escalatableLevels.map((sev) => {
+            const cfg = SEVERITY_CONFIG[sev];
+            const isSelected = selectedSeverity === sev;
+            return (
+              <div
+                key={sev}
+                onClick={() => setSelectedSeverity(sev)}
+                style={{
+                  border: `1.5px solid ${isSelected ? cfg.color : '#e5e7eb'}`,
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                  background: isSelected ? cfg.bg : '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s',
+                }}
               >
-                <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                  {selectableSeverities.map((sev) => {
-                    const cfg = SEVERITY_CONFIG[sev];
-                    return (
-                      <Radio key={sev} value={sev} className="escalate-radio-option">
-                        <div className="escalate-radio-content">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <WarningOutlined style={{ color: cfg.color }} />
-                            <Text strong style={{ color: cfg.color }}>
-                              {cfg.label}
-                            </Text>
-                          </div>
-                          <Text type="secondary" style={{ fontSize: 11, marginLeft: 22 }}>
-                            {cfg.description}
-                          </Text>
-                        </div>
-                      </Radio>
-                    );
-                  })}
-                </Space>
-              </Radio.Group>
-            )}
-          </div>
+                <div>
+                  <Text strong style={{ fontSize: 15, color: isSelected ? cfg.color : '#111827', display: 'block', marginBottom: 2 }}>
+                    {cfg.label}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#6b7280' }}>{cfg.description}</Text>
+                </div>
+                {isSelected && (
+                  <CheckCircleOutlined style={{ color: cfg.color, fontSize: 20, flexShrink: 0 }} />
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
 
-          {/* Reason */}
-          <div style={{ marginBottom: 16 }}>
-            <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
-              Reason for Escalation <span style={{ color: '#dc2626' }}>*</span>
-            </Text>
-            <TextArea
-              rows={3}
-              placeholder="Describe what has changed to require escalation..."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              maxLength={300}
-              showCount
-            />
-          </div>
-
-          {/* Notifications */}
-          <div>
-            <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
-              <BellOutlined style={{ marginRight: 6, color: '#6b7280' }} />
-              Notify
-            </Text>
-            <Checkbox.Group
-              value={notifyOptions}
-              onChange={(vals) => setNotifyOptions(vals as string[])}
-            >
-              <Space direction="vertical" size={6}>
-                {NOTIFY_OPTIONS.map((opt) => (
-                  <Checkbox key={opt.value} value={opt.value}>
-                    <Text style={{ fontSize: 13 }}>{opt.label}</Text>
-                  </Checkbox>
-                ))}
-              </Space>
-            </Checkbox.Group>
-          </div>
+      {/* Reason */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+          <Text strong style={{ fontSize: 14, color: '#111827' }}>Reason for Escalation</Text>
+          <span style={{ color: '#dc2626' }}>*</span>
         </div>
-      )}
-
-      {step === 2 && newConfig && (
-        <div className="escalate-step2">
-          <Alert
-            message={
-              <span>
-                You are about to escalate <strong>{report.reportId}</strong> from{' '}
-                <span style={{ color: currentConfig.color, fontWeight: 600 }}>
-                  {currentConfig.label}
-                </span>{' '}
-                to{' '}
-                <span style={{ color: newConfig.color, fontWeight: 600 }}>
-                  {newConfig.label}
-                </span>
-              </span>
-            }
-            type="warning"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-          <div className="escalate-summary">
-            <div className="escalate-summary-row">
-              <Text type="secondary">Location</Text>
-              <Text>{report.location}</Text>
-            </div>
-            <div className="escalate-summary-row">
-              <Text type="secondary">New Severity</Text>
-              <Tag style={{ color: newConfig.color, background: newConfig.bg, border: `1px solid ${newConfig.color}40`, fontWeight: 600 }}>
-                {newConfig.label}
-              </Tag>
-            </div>
-            <div className="escalate-summary-row">
-              <Text type="secondary">Reason</Text>
-              <Text style={{ maxWidth: 220, textAlign: 'right' }}>{reason}</Text>
-            </div>
-            <div className="escalate-summary-row">
-              <Text type="secondary">Notifications</Text>
-              <Text>{notifyOptions.length} group{notifyOptions.length !== 1 ? 's' : ''}</Text>
-            </div>
-          </div>
-          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 12 }}>
-            This action will be logged and cannot be undone without an administrator override.
-          </Text>
+        <TextArea
+          placeholder="Explain why severity needs to be increased..."
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={4}
+          maxLength={500}
+          style={{ background: '#f3f4f6', border: 'none', borderRadius: 10, resize: 'none' }}
+        />
+        <div style={{ textAlign: 'right', fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
+          {reason.length}/500
         </div>
-      )}
+      </div>
+
+      {/* Automatic Actions */}
+      <div style={{
+        background: '#f0f4ff', borderRadius: 12, padding: '16px', marginBottom: 24,
+      }}>
+        <Text strong style={{ fontSize: 14, color: '#111827', display: 'block', marginBottom: 12 }}>
+          Automatic Actions
+        </Text>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {AUTO_ACTIONS.map((action) => {
+            const checked = autoActions.includes(action);
+            return (
+              <div key={action} onClick={() => toggleAction(action)} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <div style={{
+                  width: 20, height: 20, borderRadius: 5, flexShrink: 0,
+                  background: checked ? '#6b7280' : '#fff',
+                  border: `2px solid ${checked ? '#6b7280' : '#d1d5db'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.15s',
+                }}>
+                  {checked && (
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <Text style={{ fontSize: 13, color: '#374151', userSelect: 'none' }}>{action}</Text>
+              </div>
+            );
+          })}
+          {selectedSeverity === 'critical' && (() => {
+            const checked = autoActions.includes('Initiate Evacuation Protocol');
+            return (
+              <div
+                onClick={() => toggleAction('Initiate Evacuation Protocol')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                  background: '#fef2f2', borderRadius: 8,
+                  margin: '2px -16px -16px -16px', padding: '10px 16px 12px 16px',
+                }}
+              >
+                <div style={{
+                  width: 20, height: 20, borderRadius: 5, flexShrink: 0,
+                  background: checked ? '#6b7280' : '#fff',
+                  border: `2px solid ${checked ? '#6b7280' : '#d1d5db'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.15s',
+                }}>
+                  {checked && (
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <Text style={{ fontSize: 13, color: '#dc2626', fontWeight: 500, userSelect: 'none' }}>Initiate Evacuation Protocol</Text>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
 
       {/* Footer */}
-      <div className="escalate-footer">
-        <Button onClick={handleClose}>Cancel</Button>
-        <Space>
-          {step === 2 && (
-            <Button onClick={() => setStep(1)}>Back</Button>
-          )}
-          {step === 1 ? (
-            <Button
-              type="primary"
-              danger
-              onClick={handleNext}
-              disabled={selectableSeverities.length === 0}
-            >
-              Review Escalation
-            </Button>
-          ) : (
-            <Button
-              type="primary"
-              danger
-              icon={<ExclamationCircleOutlined />}
-              loading={submitting}
-              onClick={handleConfirm}
-            >
-              Confirm Escalation
-            </Button>
-          )}
-        </Space>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <Button onClick={handleClose} style={{ borderRadius: 10, height: 42, padding: '0 20px' }}>
+          Cancel
+        </Button>
+        <Button
+          loading={submitting}
+          onClick={handleEscalate}
+          disabled={escalatableLevels.length === 0}
+          style={{
+            borderRadius: 10, height: 42, padding: '0 22px', fontWeight: 600,
+            background: selectedSeverity ? SEVERITY_CONFIG[selectedSeverity].color : escalatableLevels.length === 0 ? '#d1d5db' : '#ea580c',
+            borderColor: selectedSeverity ? SEVERITY_CONFIG[selectedSeverity].color : escalatableLevels.length === 0 ? '#d1d5db' : '#ea580c',
+            color: '#fff',
+          }}
+        >
+          Escalate Severity
+        </Button>
       </div>
     </Modal>
   );
