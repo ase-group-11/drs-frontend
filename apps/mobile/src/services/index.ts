@@ -7,3 +7,4 @@ export {
   validateFullName,
   validateOTP,
 } from './authService';
+export { disasterService } from './disasterService';

@@ -8,7 +8,7 @@ import {
   SafeAreaView,
   TextInput,
 } from 'react-native';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { borderRadius, spacing } from '@theme/spacing';
 import { typography } from '@theme/typography';

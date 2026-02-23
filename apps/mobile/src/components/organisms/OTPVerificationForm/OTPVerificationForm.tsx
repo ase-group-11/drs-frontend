@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { Text } from '@atoms/Text';
-import { Button } from '@atoms/Button';
+import { Text } from '@/components/atoms/Text';
+import { Button } from '@/components/atoms/Button';
 import { OTPInputGroup } from '@molecules/OTPInputGroup';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';

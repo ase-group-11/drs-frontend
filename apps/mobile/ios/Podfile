@@ -23,7 +23,18 @@ target 'mobile' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  # ============================================
+  # MAPBOX CONFIGURATION - ADDED
+  # ============================================
+  pre_install do |installer|
+    $RNMapboxMaps.pre_install(installer)
+  end
+
   post_install do |installer|
+    # Mapbox post install (MUST come first)
+    $RNMapboxMaps.post_install(installer)
+    
+    # React Native post install
     react_native_post_install(
       installer,
       config[:reactNativePath],

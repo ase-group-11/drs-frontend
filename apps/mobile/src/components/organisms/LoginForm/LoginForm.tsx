@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { Text } from '@atoms/Text';
-import { Button } from '@atoms/Button';
+import { Text } from '@/components/atoms/Text';
+import { Button } from '@/components/atoms/Button';
 import { PhoneInput } from '@molecules/PhoneInput';
 import { spacing } from '@theme/spacing';
 import { DEFAULT_COUNTRY } from '@constants/index';

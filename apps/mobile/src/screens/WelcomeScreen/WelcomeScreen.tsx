@@ -6,8 +6,8 @@ import {
   StatusBar,
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { Text } from '@atoms/Text';
-import { Button } from '@atoms/Button';
+import { Text } from '@/components/atoms/Text';
+import { Button } from '@/components/atoms/Button';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import type { WelcomeScreenProps } from '@types/navigation';

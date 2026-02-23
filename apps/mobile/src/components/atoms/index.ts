@@ -1,5 +1,9 @@
-export { Text, type TextProps } from './Text';
-export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button';
-export { Input, type InputProps } from './Input';
-export { Logo, type LogoProps } from './Logo';
-export { OTPInput, type OTPInputProps } from './OTPInput';
+export { Button } from './Button';
+export { Text } from './Text';
+export { Input } from './Input';
+export { Logo } from './Logo';
+export { OTPInput } from './OTPInput';
+export { Badge } from './Badge';
+export { Avatar } from './Avatar';
+export { IconButton } from './IconButton';
+export { StatusDot } from './StatusDot';

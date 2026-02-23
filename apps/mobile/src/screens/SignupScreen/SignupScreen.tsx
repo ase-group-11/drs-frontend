@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { AuthTemplate } from '@templates/AuthTemplate';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { SignupForm } from '@organisms/SignupForm';
 import { authService, formatPhoneForApi, ApiError } from '@services/authService';
 import { spacing } from '@theme/spacing';

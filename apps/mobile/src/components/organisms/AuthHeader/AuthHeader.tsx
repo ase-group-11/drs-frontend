@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Logo } from '@atoms/Logo';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { spacing } from '@theme/spacing';
 
 export interface AuthHeaderProps {

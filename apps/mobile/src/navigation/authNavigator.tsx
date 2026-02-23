@@ -1,36 +1,25 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import {
-  LoginScreen,
-  SignupScreen,
-  OTPVerificationScreen,
-  WelcomeScreen,
-} from '@screens/index';
-import type { AuthStackParamList } from '@types/navigation';
-import { colors } from '@theme/colors';
+import { LoginScreen } from '@screens/LoginScreen';
+import { SignupScreen } from '@screens/SignupScreen';
+import { OTPVerificationScreen } from '@screens/OTPVerificationScreen';
+import { WelcomeScreen } from '@screens/WelcomeScreen';
+import type { AuthStackParamList } from '../types/navigation';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export const AuthNavigator: React.FC = () => {
   return (
-    <Stack.Navigator
+    <Stack.Navigator 
       initialRouteName="Login"
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: colors.white },
-        animation: 'slide_from_right',
       }}
     >
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />
       <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
-      <Stack.Screen 
-        name="Welcome" 
-        component={WelcomeScreen}
-        options={{
-          animation: 'fade',
-        }}
-      />
+      <Stack.Screen name="Welcome" component={WelcomeScreen} />
     </Stack.Navigator>
   );
 };
