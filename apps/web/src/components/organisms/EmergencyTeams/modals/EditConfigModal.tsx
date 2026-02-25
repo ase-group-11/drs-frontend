@@ -119,13 +119,80 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
       key: 'basic',
       label: <span><SettingOutlined /> <span className="et-tab-label">Basic</span></span>,
       children: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className='ecm-basic-tab' style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Unit ID</Text>
-            <Input value={unitId} disabled style={{ background: '#f3f4f6' }} />
+            <Input value={unitId} disabled style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8 }} />
           </div>
           <div>
             <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Unit Type</Text>
+            <style>{`
+              /* Slider - black track + handle like Figma */
+        .ant-slider-track, .ant-slider-track-1 {
+          background-color: #111827 !important;
+          height: 10px !important;
+          border-radius: 5px !important;
+        }
+        .ant-slider-rail {
+          height: 10px !important;
+          background-color: #e5e7eb !important;
+          border-radius: 5px !important;
+        }
+        .ant-slider-handle, .ant-slider-handle-1 {
+          border: 2px solid #111827 !important;
+          background-color: #fff !important;
+          box-shadow: none !important;
+          border-radius: 50% !important;
+          width: 18px !important;
+          height: 18px !important;
+          margin-top: -4px !important;
+        }
+        .ant-slider-handle::after {
+          display: none !important;
+        }
+        .ant-slider-handle:focus::after,
+        .ant-slider-handle:hover::after {
+          display: none !important;
+        }
+        .ant-slider:hover .ant-slider-track {
+          background-color: #374151 !important;
+        }
+        /* Checkboxes - black like Figma */
+        .ant-checkbox-checked .ant-checkbox-inner {
+          background-color: #111827 !important;
+          border-color: #111827 !important;
+          border-radius: 4px !important;
+        }
+        .ant-checkbox-wrapper:hover .ant-checkbox-inner,
+        .ant-checkbox:hover .ant-checkbox-inner,
+        .ant-checkbox-input:focus + .ant-checkbox-inner {
+          border-color: #374151 !important;
+        }
+        .ant-checkbox-checked::after {
+          border-color: #111827 !important;
+        }
+        .ecm-crew-select .ant-select-selector {
+          background: #f3f4f6 !important;
+          border: 1px solid #e5e7eb !important;
+          border-radius: 8px !important;
+          height: 40px !important;
+          align-items: center !important;
+        }
+        .ecm-crew-select .ant-select-selection-item {
+          line-height: 40px !important;
+          color: #374151 !important;
+        }
+        .ecm-basic-tab .ant-select-selector {
+                background: #f3f4f6 !important;
+                border: 1px solid #e5e7eb !important;
+                border-radius: 8px !important;
+              }
+              .ecm-basic-tab .ant-select-focused .ant-select-selector,
+              .ecm-basic-tab .ant-select-selector:focus {
+                box-shadow: none !important;
+                border-color: #d1d5db !important;
+              }
+            `}</style>
             <Select value={unitTypeSelected} onChange={setUnitTypeSelected} style={{ width: '100%' }}>
               <Select.Option value="Fire Engine">Fire Engine</Select.Option>
               <Select.Option value="Fire Ladder">Fire Ladder</Select.Option>
@@ -144,7 +211,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', padding: '10px 14px', borderRadius: 8 }}>
             <Text style={{ fontSize: 13 }}>Unit Active for Deployment</Text>
-            <Switch checked={isActive} onChange={setIsActive} style={isActive ? { background: '#7c3aed' } : {}} />
+            <Switch checked={isActive} onChange={setIsActive} style={isActive ? { background: '#111827' } : {}} />
           </div>
         </div>
       ),
@@ -156,42 +223,49 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Maximum Crew Capacity</Text>
-            <Input type="number" min={1} max={6} value={crewSize} onChange={(e) => setCrewSize(parseInt(e.target.value) || 1)} />
+            <Input type="number" min={1} max={6} value={crewSize} onChange={(e) => setCrewSize(parseInt(e.target.value) || 1)} style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 8, height: 42 }} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 260, overflowY: 'auto' }}>
+          <Text strong style={{ fontSize: 13, display: 'block', marginBottom: 8, color: '#111827' }}>Current Crew Members</Text>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
             {crewMembers.map((member) => (
               <div key={member.id} style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                   <Input
                     placeholder="Name"
                     value={member.name}
                     onChange={(e) => updateCrewMember(member.id, 'name', e.target.value)}
+                    style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, height: 40 }}
                   />
-                  <Select value={member.role} onChange={(v) => updateCrewMember(member.id, 'role', v)}>
+                  <Select
+                    value={member.role}
+                    onChange={(v) => updateCrewMember(member.id, 'role', v)}
+                    style={{ height: 40, width: '100%' }}
+                    className="ecm-crew-select"
+                  >
                     <Select.Option value="Team Leader">Team Leader</Select.Option>
                     <Select.Option value="Driver">Driver</Select.Option>
                     <Select.Option value="Responder">Responder</Select.Option>
                     <Select.Option value="Medic">Medic</Select.Option>
                   </Select>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <Input
                     placeholder="Contact number"
                     value={member.contact}
                     onChange={(e) => updateCrewMember(member.id, 'contact', e.target.value)}
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, height: 40 }}
                   />
-                  <Button
-                    type="text"
-                    danger
-                    icon={<CloseOutlined />}
+                  <button
                     onClick={() => removeCrewMember(member.id)}
-                  />
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16, padding: '4px 6px', display: 'flex', alignItems: 'center' }}
+                  >
+                    <CloseOutlined />
+                  </button>
                 </div>
               </div>
             ))}
           </div>
-          <Button type="dashed" block icon={<PlusOutlined />} onClick={addCrewMember} style={{ borderStyle: 'dashed' }}>
+          <Button type="dashed" block icon={<PlusOutlined />} onClick={addCrewMember} style={{ borderStyle: 'dashed', height: 44, fontSize: 14, fontWeight: 500, borderRadius: 8, color: '#374151', borderColor: '#d1d5db', background: '#fff' }}>
             Add Crew Member
           </Button>
         </div>
@@ -205,11 +279,11 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Vehicle Model</Text>
-              <Input value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} />
+              <Input value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, height: 42 }} />
             </div>
             <div>
               <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>License Plate</Text>
-              <Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value)} />
+              <Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value)} style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, height: 42 }} />
             </div>
           </div>
           <div>
@@ -238,7 +312,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
             <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
               Maximum Response Radius: {responseRadius} km
             </Text>
-            <Slider min={5} max={50} step={5} value={responseRadius} onChange={(v) => setResponseRadius(v)} />
+            <Slider min={5} max={50} step={5} value={responseRadius} onChange={(v) => setResponseRadius(v)} trackStyle={{ background: "#111827", height: 10, borderRadius: 5 }} handleStyle={{ borderColor: "#111827", border: "2.5px solid #111827", background: "#fff", width: 18, height: 18, marginTop: -4, boxShadow: "none" }} railStyle={{ background: "#e5e7eb", height: 10, borderRadius: 5 }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
               <Text type="secondary" style={{ fontSize: 11 }}>5 km</Text>
               <Text type="secondary" style={{ fontSize: 11 }}>50 km</Text>
@@ -249,7 +323,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
               <Text style={{ fontSize: 13, display: 'block' }}>Auto-accept standard deployments</Text>
               <Text type="secondary" style={{ fontSize: 11 }}>Unit will be dispatched without manual confirmation</Text>
             </div>
-            <Switch checked={autoAccept} onChange={setAutoAccept} style={autoAccept ? { background: '#7c3aed' } : {}} />
+            <Switch checked={autoAccept} onChange={setAutoAccept} style={autoAccept ? { background: '#111827' } : {}} />
           </div>
         </div>
       ),
@@ -266,7 +340,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
               <Switch
                 checked={value}
                 onChange={(checked) => setNotifications({ ...notifications, [key]: checked })}
-                style={value ? { background: '#7c3aed' } : {}}
+                style={value ? { background: '#111827' } : {}}
               />
             </div>
           ))}
@@ -296,6 +370,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
               placeholder="Add maintenance notes..."
               value={maintenanceNotes}
               onChange={(e) => setMaintenanceNotes(e.target.value)}
+              style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, resize: 'none' }}
             />
           </div>
         </div>
@@ -306,11 +381,13 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
   return (
     <Modal
       title={
-        <Space>
-          <SettingOutlined />
-          <span>Edit Unit Configuration</span>
-          <Text type="secondary" style={{ fontWeight: 400, fontSize: 13 }}>Unit {unitId} – {unitType}</Text>
-        </Space>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <SettingOutlined style={{ fontSize: 20, color: '#374151', marginTop: 3 }} />
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>Edit Unit Configuration</div>
+            <div style={{ fontSize: 13, fontWeight: 400, color: '#9ca3af', marginTop: 2 }}>Unit {unitId} – {unitType}</div>
+          </div>
+        </div>
       }
       open={open}
       onCancel={onClose}
@@ -324,24 +401,75 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
           items={tabItems}
           style={{ flex: 1 }}
           tabBarStyle={{ marginBottom: 16 }}
+          tabBarGutter={4}
+          renderTabBar={(props, DefaultTabBar) => (
+            <div style={{
+              display: 'flex',
+              gap: 2,
+              background: '#f3f4f6',
+              borderRadius: 50,
+              padding: 4,
+              marginBottom: 16,
+            }}>
+              {tabItems.map((tab) => {
+                const isActive = props.activeKey === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => props.onTabClick?.(tab.key, {} as any)}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 5,
+                      padding: '8px 10px',
+                      borderRadius: 50,
+                      border: isActive ? '1px solid #e5e7eb' : 'none',
+                      background: isActive ? '#fff' : 'transparent',
+                      cursor: 'pointer',
+                      fontWeight: isActive ? 700 : 400,
+                      fontSize: 13,
+                      color: isActive ? '#111827' : '#6b7280',
+                      boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
+                      whiteSpace: 'nowrap',
+                      outline: 'none',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <span style={{ color: isActive ? '#7c3aed' : '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ color: isActive ? '#111827' : '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {tab.label}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
-        <Button type="text" danger onClick={() => message.info('Reset to default — wire to API when ready')}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
+        <Button type="text" danger onClick={() => message.info('Reset to default — wire to API when ready')}
+          style={{ color: '#ef4444', fontWeight: 500, padding: '0 8px' }}>
           Reset to Default
         </Button>
-        <Space>
-          <Button onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button
-            type="primary"
-            loading={saving}
-            onClick={handleSave}
-            style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </Button>
-        </Space>
+        <Button
+          onClick={onClose}
+          disabled={saving}
+          style={{ height: 44, paddingInline: 24, borderRadius: 8, fontWeight: 600, border: '1.5px solid #e5e7eb', color: '#111827' }}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="primary"
+          loading={saving}
+          onClick={handleSave}
+          style={{ height: 44, paddingInline: 24, borderRadius: 8, fontWeight: 600, background: '#7c3aed', borderColor: '#7c3aed' }}
+        >
+          {saving ? 'Saving...' : 'Save Changes'}
+        </Button>
       </div>
     </Modal>
   );

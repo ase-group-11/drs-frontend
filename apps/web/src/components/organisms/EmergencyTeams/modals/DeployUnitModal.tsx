@@ -153,7 +153,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({
       footer={null}
       width={650}
       destroyOnClose
-      styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}
+      styles={{ body: { maxHeight: '75vh', overflowY: 'auto', paddingRight: 20 } }}
     >
       <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 20 }}>
         {unitType} – {station}
@@ -177,7 +177,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({
           {loadingDisasters ? (
             <Spin />
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 280, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 280, overflowY: 'auto', paddingRight: 16 }}>
               {disasters.map((d) => {
                 const sevCfg = SEVERITY_COLORS[d.severity] || SEVERITY_COLORS.medium;
                 const isSelected = selectedId === d.id;
@@ -212,6 +212,21 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({
                               <Text style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
                                 <ClockCircleOutlined style={{ marginRight: 3 }} />Est. {d.eta} mins
                               </Text>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                2 units responding
+                              </Text>
+                              <span style={{
+                                background: '#dcfce7',
+                                color: '#16a34a',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                borderRadius: 20,
+                                padding: '2px 10px',
+                              }}>
+                                Active - In Progress
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -272,6 +287,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({
         {/* Priority */}
         <div>
           <Text strong style={{ fontSize: 13, display: 'block', marginBottom: 10 }}>Deployment Priority</Text>
+          <div className="dum-radio">
           <Radio.Group value={priority} onChange={(e) => setPriority(e.target.value)}>
             <Space direction="vertical" size={8}>
               {([['standard', '#3b82f6', 'Standard'], ['emergency', '#f97316', 'Emergency'], ['code-red', '#ef4444', 'Code Red']] as const).map(([val, color, label]) => (
@@ -284,6 +300,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({
               ))}
             </Space>
           </Radio.Group>
+          </div>
         </div>
 
         {/* Crew readiness */}
@@ -300,7 +317,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({
         {/* Notes */}
         <div>
           <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>Special Instructions (Optional)</Text>
-          <TextArea rows={2} placeholder="Add any special instructions..." value={notes} onChange={(e) => setNotes(e.target.value)} style={{ resize: 'none' }} />
+          <TextArea rows={2} placeholder="Add any special instructions..." value={notes} onChange={(e) => setNotes(e.target.value)} style={{ resize: 'none', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8 }} />
         </div>
 
         {/* Pre-deployment checklist */}
@@ -342,6 +359,21 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({
           </Button>
         </Space>
       </div>
+    <style>{`
+        .dum-radio .ant-radio-checked .ant-radio-inner {
+          background-color: #111827 !important;
+          border-color: #111827 !important;
+        }
+        .dum-radio .ant-radio-wrapper .ant-radio-inner::after {
+          background-color: #fff !important;
+        }
+        .dum-radio .ant-radio:hover .ant-radio-inner {
+          border-color: #374151 !important;
+        }
+        .dum-radio .ant-radio-checked::after {
+          border-color: #111827 !important;
+        }
+      `}</style>
     </Modal>
   );
 };

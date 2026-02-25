@@ -7,6 +7,7 @@ import {
   SendOutlined,
   SettingOutlined,
   DeleteOutlined,
+  CloseCircleOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import type { EmergencyTeam } from '../../../types';
@@ -67,9 +68,17 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
     <div style={{ paddingBottom: 24 }}>
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <Button icon={<ArrowLeftOutlined />} type="text" onClick={onBack} style={{ padding: 0, height: 32, color: '#6b7280' }}>
-          Back to Teams
-        </Button>
+        <button
+          onClick={onBack}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#6b7280', fontSize: 14, fontWeight: 500, padding: '4px 8px',
+            borderRadius: 8,
+          }}
+        >
+          <ArrowLeftOutlined style={{ fontSize: 14 }} />
+        </button>
         <div>
           <Text strong style={{ fontSize: 20, display: 'block' }}>Unit {team.unitId} Details</Text>
           <Text type="secondary" style={{ fontSize: 13 }}>Comprehensive profile and history</Text>
@@ -189,10 +198,15 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
               </Button>
               <Button
                 block
-                danger
-                icon={<DeleteOutlined />}
+                icon={<CloseCircleOutlined />}
                 size="large"
                 onClick={() => setDecommissionOpen(true)}
+                style={{
+                  color: '#ef4444',
+                  borderColor: '#fecaca',
+                  background: '#fff',
+                  fontWeight: 500,
+                }}
               >
                 Decommission Unit
               </Button>

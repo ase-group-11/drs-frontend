@@ -1,4 +1,4 @@
-// NEW FILE
+// UPDATED FILE — Redesigned to match Figma
 import React, { useState } from 'react';
 import {
   Modal,
@@ -8,7 +8,6 @@ import {
   Checkbox,
   Typography,
   Tag,
-  Space,
   Upload,
   message as antMessage,
 } from 'antd';
@@ -17,7 +16,6 @@ import {
   PaperClipOutlined,
   CheckCircleOutlined,
   LoadingOutlined,
-  WarningOutlined,
   EnvironmentOutlined,
 } from '@ant-design/icons';
 import type { EmergencyTeam } from '../../../../types';
@@ -26,7 +24,7 @@ const { TextArea } = Input;
 const { Text } = Typography;
 
 const TYPE_ICON_MAP: Record<string, string> = {
-  Fire: '🚒',
+  Fire: '🔥',
   Ambulance: '🚑',
   Police: '🚓',
   Rescue: '🚁',
@@ -40,10 +38,23 @@ const MESSAGE_TEMPLATES: Record<string, string> = {
   situation: 'Update: Situation has been assessed. Proceed with caution.',
 };
 
-const PRIORITY_CONFIG = {
-  standard: { label: 'Standard', border: '#2563eb', bg: '#eff6ff', text: '#2563eb' },
-  urgent: { label: 'Urgent', border: '#ea580c', bg: '#fff7ed', text: '#ea580c' },
-  emergency: { label: 'Emergency', border: '#dc2626', bg: '#fef2f2', text: '#dc2626' },
+// Per-type label colors (shown even when not selected)
+const TYPE_LABEL_COLORS: Record<string, string> = {
+  standard: '#2563eb',
+  urgent: '#ea580c',
+  emergency: '#dc2626',
+};
+
+const TYPE_BORDER_ACTIVE: Record<string, string> = {
+  standard: '#2563eb',
+  urgent: '#ea580c',
+  emergency: '#dc2626',
+};
+
+const TYPE_BG_ACTIVE: Record<string, string> = {
+  standard: '#eff6ff',
+  urgent: '#fff7ed',
+  emergency: '#fef2f2',
 };
 
 interface MessageModalProps {
@@ -51,6 +62,14 @@ interface MessageModalProps {
   team: EmergencyTeam | null;
   onClose: () => void;
 }
+
+const inputStyle: React.CSSProperties = {
+  background: '#f3f4f6',
+  border: '1px solid #e5e7eb',
+  borderRadius: 8,
+  fontSize: 14,
+  color: '#374151',
+};
 
 const MessageModal: React.FC<MessageModalProps> = ({ open, team, onClose }) => {
   const [messageType, setMessageType] = useState<'standard' | 'urgent' | 'emergency'>('standard');
@@ -88,7 +107,6 @@ const MessageModal: React.FC<MessageModalProps> = ({ open, team, onClose }) => {
   const handleSend = async () => {
     if (!msg.trim()) return;
     setSending(true);
-    // Simulate API call — wire to /api/admin/teams/:id/message when ready
     await new Promise((r) => setTimeout(r, 1500));
     setSending(false);
     setSuccess(true);
@@ -99,18 +117,20 @@ const MessageModal: React.FC<MessageModalProps> = ({ open, team, onClose }) => {
   };
 
   const typeIcon = TYPE_ICON_MAP[team.type] || '🚒';
+  const deliveryText = `Radio${smsBackup ? ' + SMS' : ''}`;
 
-  // Success screen
+  // ── Success screen ──────────────────────────────────────────────────────────
   if (success) {
     return (
-      <Modal open={open} onCancel={handleClose} footer={null} width={440} destroyOnClose>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 0', gap: 16 }}>
+      <Modal open={open} onCancel={handleClose} footer={null} width={480} destroyOnClose
+        styles={{ content: { borderRadius: 12 } }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: 16 }}>
           <div style={{ width: 64, height: 64, background: '#f0fdf4', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <CheckCircleOutlined style={{ color: '#16a34a', fontSize: 32 }} />
           </div>
           <div style={{ textAlign: 'center' }}>
-            <Text strong style={{ fontSize: 18, display: 'block' }}>Message Sent Successfully</Text>
-            <Text type="secondary" style={{ fontSize: 13 }}>
+            <Text strong style={{ fontSize: 18, display: 'block', marginBottom: 6 }}>Message Sent Successfully</Text>
+            <Text type="secondary" style={{ fontSize: 14 }}>
               Unit {team.unitId} will receive this message via radio{smsBackup ? ' and SMS' : ''}
             </Text>
           </div>
@@ -121,27 +141,54 @@ const MessageModal: React.FC<MessageModalProps> = ({ open, team, onClose }) => {
 
   return (
     <Modal
-      title={`Message Unit ${team.unitId}`}
       open={open}
       onCancel={handleClose}
       footer={null}
-      width={500}
+      width={600}
       destroyOnClose
-      styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}
+      closeIcon={<span style={{ fontSize: 18, color: '#9ca3af' }}>✕</span>}
+      styles={{
+        body: { padding: 0 },
+        content: { borderRadius: 12, overflow: 'hidden', padding: 0 },
+      }}
     >
-      <div style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Unit info strip */}
-        <div style={{ background: '#f9fafb', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 40, height: 40, background: '#e5e7eb', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
+      {/* ── Scrollable body ──────────────────────────────────────────────────── */}
+      <div style={{ maxHeight: '82vh', overflowY: 'auto', padding: '28px 28px 0' }}>
+
+        {/* Title + subtitle */}
+        <Text style={{ fontSize: 20, fontWeight: 800, color: '#111827', display: 'block', marginBottom: 4 }}>
+          Message Unit {team.unitId}
+        </Text>
+        <Text style={{ fontSize: 14, color: '#6b7280', display: 'block', marginBottom: 20 }}>
+          Send a direct message to the unit
+        </Text>
+
+        {/* ── Unit info strip ─────────────────────────────────────────────── */}
+        <div style={{
+          background: '#f0f9ff',
+          border: '1px solid #e0f2fe',
+          borderRadius: 10,
+          padding: '14px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          marginBottom: 24,
+        }}>
+          <div style={{
+            width: 48, height: 48, background: '#e5e7eb', borderRadius: 10,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0,
+          }}>
             {typeIcon}
           </div>
           <div style={{ flex: 1 }}>
-            <Text strong style={{ fontSize: 13 }}>{team.unitId} – {team.type} Response</Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              <Tag style={{ background: '#dbeafe', color: '#1d4ed8', border: 0, borderRadius: 20, fontSize: 11 }}>
+            <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 4 }}>
+              {team.unitId} – {team.type} Response
+            </Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Tag style={{ background: '#dbeafe', color: '#1d4ed8', border: 0, borderRadius: 20, fontSize: 12, fontWeight: 500, padding: '1px 10px' }}>
                 {team.status}
               </Tag>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>
                 <EnvironmentOutlined style={{ marginRight: 3 }} />
                 {team.location}
               </Text>
@@ -149,144 +196,239 @@ const MessageModal: React.FC<MessageModalProps> = ({ open, team, onClose }) => {
           </div>
         </div>
 
-        {/* Message type selector */}
-        <div>
-          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8, color: '#374151' }}>Message Type</Text>
-          <div style={{ display: 'flex', gap: 8 }}>
+        {/* ── Message Type ────────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 20 }}>
+          <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 10, color: '#111827' }}>
+            Message Type
+          </Text>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             {(['standard', 'urgent', 'emergency'] as const).map((type) => {
-              const cfg = PRIORITY_CONFIG[type];
               const active = messageType === type;
+              const labelColor = TYPE_LABEL_COLORS[type];
               return (
-                <div
+                <button
                   key={type}
                   onClick={() => setMessageType(type)}
                   style={{
-                    flex: 1,
-                    border: `2px solid ${active ? cfg.border : '#e5e7eb'}`,
-                    borderRadius: 8,
-                    padding: '8px 12px',
+                    border: `2px solid ${active ? TYPE_BORDER_ACTIVE[type] : '#e5e7eb'}`,
+                    borderRadius: 10,
+                    padding: '12px 8px',
                     cursor: 'pointer',
-                    background: active ? cfg.bg : '#fff',
+                    background: active ? TYPE_BG_ACTIVE[type] : '#fff',
                     transition: 'all 0.15s',
+                    textAlign: 'center',
+                    outline: 'none',
                   }}
                 >
-                  <Text style={{ fontSize: 13, fontWeight: 500, color: active ? cfg.text : '#6b7280' }}>
-                    {cfg.label}
+                  <Text style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: active ? labelColor : (type === 'standard' ? '#6b7280' : labelColor),
+                  }}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
                   </Text>
-                </div>
+                </button>
               );
             })}
           </div>
         </div>
 
-        {/* Priority warning */}
+        {/* ── Warning banner for urgent/emergency ───────────────────────── */}
         {messageType !== 'standard' && (
-          <div
-            style={{
-              padding: '10px 12px',
-              borderLeft: `3px solid ${PRIORITY_CONFIG[messageType].border}`,
-              background: PRIORITY_CONFIG[messageType].bg,
-              borderRadius: '0 6px 6px 0',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 8,
-            }}
-          >
-            <WarningOutlined style={{ color: PRIORITY_CONFIG[messageType].border, marginTop: 2 }} />
-            <Text style={{ fontSize: 13, color: '#374151' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding: '12px 14px',
+            background: messageType === 'urgent' ? '#fff7ed' : '#fef2f2',
+            borderLeft: `4px solid ${messageType === 'urgent' ? '#ea580c' : '#dc2626'}`,
+            borderRadius: '0 8px 8px 0',
+            marginBottom: 20,
+          }}>
+            <span style={{ fontSize: 16, color: messageType === 'urgent' ? '#ea580c' : '#dc2626', flexShrink: 0, marginTop: 1 }}>⚠</span>
+            <Text style={{ fontSize: 14, color: '#374151' }}>
               This message will be marked as {messageType} and will trigger alerts
             </Text>
           </div>
         )}
 
-        {/* Template selector */}
-        <div>
-          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8, color: '#374151' }}>
+        {/* ── Quick Templates ─────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 20 }}>
+          <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 8, color: '#111827' }}>
             Quick Templates
           </Text>
-          <Select value={template} onChange={handleTemplateChange} style={{ width: '100%' }}>
-            <Select.Option value="custom">Custom Message</Select.Option>
-            <Select.Option value="status-update">Status Update Request</Select.Option>
-            <Select.Option value="return-base">Return to Base</Select.Option>
-            <Select.Option value="resources">Additional Resources Needed</Select.Option>
-            <Select.Option value="situation">Situation Update</Select.Option>
-          </Select>
+          <div className="mm-select-wrap">
+            <Select
+              value={template}
+              onChange={handleTemplateChange}
+              style={{ width: '100%', height: 44 }}
+            >
+              <Select.Option value="custom">Custom Message</Select.Option>
+              <Select.Option value="status-update">Status Update Request</Select.Option>
+              <Select.Option value="return-base">Return to Base</Select.Option>
+              <Select.Option value="resources">Additional Resources Needed</Select.Option>
+              <Select.Option value="situation">Situation Update</Select.Option>
+            </Select>
+          </div>
         </div>
 
-        {/* Message body */}
-        <div>
-          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8, color: '#374151' }}>
+        {/* ── Message textarea ─────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 8 }}>
+          <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 8, color: '#111827' }}>
             Message
           </Text>
           <TextArea
-            rows={4}
+            rows={5}
             placeholder="Type your message here..."
             value={msg}
             onChange={(e) => e.target.value.length <= 500 && setMsg(e.target.value)}
-            style={{ resize: 'none' }}
+            style={{
+              ...inputStyle,
+              resize: 'none',
+              height: 'auto',
+            }}
           />
-          <div style={{ textAlign: 'right', fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+          <div style={{ textAlign: 'right', fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
             {msg.length}/500
           </div>
         </div>
 
-        {/* Attachments */}
-        <div>
-          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8, color: '#374151' }}>
+        {/* ── Attachments ─────────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 20 }}>
+          <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 8, color: '#111827' }}>
             Attachments (optional)
           </Text>
-          <Upload beforeUpload={() => false} showUploadList={false}>
-            <div
-              style={{
-                border: '2px dashed #d1d5db',
-                background: '#f9fafb',
-                borderRadius: 8,
-                padding: '16px 24px',
-                textAlign: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <PaperClipOutlined style={{ fontSize: 22, color: '#9ca3af', display: 'block', marginBottom: 6 }} />
-              <Text type="secondary" style={{ fontSize: 13 }}>Click to attach files or drag and drop</Text>
-              <br />
-              <Text type="secondary" style={{ fontSize: 11 }}>PDF, Images up to 10MB</Text>
+          <Upload beforeUpload={() => false} showUploadList={false} style={{ display: 'block', width: '100%' }}>
+            <div style={{
+              border: '2px dashed #c4c9d4',
+              background: '#eef1f6',
+              borderRadius: 10,
+              padding: '28px 24px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              width: '100%',
+              boxSizing: 'border-box',
+            }}>
+              <PaperClipOutlined style={{ fontSize: 24, color: '#9ca3af', display: 'block', marginBottom: 8 }} />
+              <Text style={{ fontSize: 14, color: '#6b7280', display: 'block' }}>
+                Click to attach files or drag and drop
+              </Text>
+              <Text style={{ fontSize: 12, color: '#9ca3af' }}>PDF, Images up to 10MB</Text>
             </div>
           </Upload>
         </div>
 
-        {/* Delivery options */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <Checkbox checked={smsBackup} onChange={(e) => setSmsBackup(e.target.checked)}>
-            <Text style={{ fontSize: 13 }}>Send SMS backup</Text>
-          </Checkbox>
-          <Checkbox checked={readReceipt} onChange={(e) => setReadReceipt(e.target.checked)}>
-            <Text style={{ fontSize: 13 }}>Request read receipt</Text>
-          </Checkbox>
-          <Checkbox checked={allCrew} onChange={(e) => setAllCrew(e.target.checked)}>
-            <Text style={{ fontSize: 13 }}>Send to all crew members</Text>
-          </Checkbox>
+        {/* ── Delivery options ─────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+          {[
+            { checked: smsBackup, onChange: setSmsBackup, label: 'Send SMS backup' },
+            { checked: readReceipt, onChange: setReadReceipt, label: 'Request read receipt' },
+            { checked: allCrew, onChange: setAllCrew, label: 'Send to all crew members' },
+          ].map(({ checked, onChange, label }) => (
+            <Checkbox
+              key={label}
+              checked={checked}
+              onChange={(e) => onChange(e.target.checked)}
+              style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}
+            >
+              {label}
+            </Checkbox>
+          ))}
         </div>
 
-        {/* Footer */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid #f3f4f6', flexWrap: 'wrap', gap: 8 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            Via: Radio{smsBackup ? ' + SMS' : ''}
+      </div>
+
+      {/* ── Sticky footer ────────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px 28px',
+        background: '#f9fafb',
+        borderTop: '1px solid #e5e7eb',
+        gap: 16,
+      }}>
+        {/* Delivery info - left side */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/><circle cx="12" cy="12" r="2"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <Text style={{ fontSize: 13, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            Will be delivered via: {deliveryText}
           </Text>
-          <Space>
-            <Button onClick={handleClose} disabled={sending}>Cancel</Button>
-            <Button
-              type="primary"
-              icon={sending ? <LoadingOutlined /> : <SendOutlined />}
-              loading={sending}
-              disabled={!msg.trim()}
-              onClick={handleSend}
-              style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
-            >
-              {sending ? 'Sending...' : 'Send Message'}
-            </Button>
-          </Space>
+        </div>
+        {/* Buttons - right side */}
+        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+          <Button
+            onClick={handleClose}
+            disabled={sending}
+            style={{
+              height: 46, paddingInline: 24, borderRadius: 10,
+              fontWeight: 600, fontSize: 14,
+              border: '1.5px solid #e5e7eb', color: '#111827',
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="primary"
+            icon={sending ? <LoadingOutlined /> : <SendOutlined />}
+            loading={sending}
+            disabled={!msg.trim()}
+            onClick={handleSend}
+            style={{
+              height: 46, paddingInline: 24, borderRadius: 10,
+              fontWeight: 600, fontSize: 14,
+              background: '#c4b5fd',
+              borderColor: '#c4b5fd',
+            }}
+          >
+            {sending ? 'Sending...' : 'Send Message'}
+          </Button>
         </div>
       </div>
+
+      {/* ── Inline styles for Select ─────────────────────────────────────────── */}
+      <style>{`
+        .mm-select-wrap .ant-select-selector {
+          background: #f3f4f6 !important;
+          border: 1px solid #e5e7eb !important;
+          border-radius: 8px !important;
+          height: 44px !important;
+          align-items: center !important;
+          font-size: 14px !important;
+        }
+        .mm-select-wrap .ant-select-selection-item {
+          font-size: 14px !important;
+          color: #374151 !important;
+          line-height: 44px !important;
+        }
+        .mm-select-wrap .ant-select-focused .ant-select-selector,
+        .mm-select-wrap .ant-select-selector:focus {
+          box-shadow: none !important;
+          border-color: #d1d5db !important;
+        }
+        .mm-textarea-gray textarea {
+          background: #f3f4f6 !important;
+          border: 1px solid #e5e7eb !important;
+          border-radius: 8px !important;
+        }
+        .mm-textarea-gray textarea:focus {
+          box-shadow: none !important;
+          border-color: #d1d5db !important;
+        }
+        /* Checkboxes — black when checked, matching Figma */
+        .ant-checkbox-checked .ant-checkbox-inner {
+          background-color: #111827 !important;
+          border-color: #111827 !important;
+        }
+        .ant-checkbox-checked:after {
+          border-color: #111827 !important;
+        }
+        .ant-checkbox-wrapper:hover .ant-checkbox-inner,
+        .ant-checkbox:hover .ant-checkbox-inner {
+          border-color: #374151 !important;
+        }
+      `}</style>
     </Modal>
   );
 };

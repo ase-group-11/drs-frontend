@@ -1,4 +1,4 @@
-// NEW FILE
+// UPDATED FILE — Redesigned to match Figma
 import React, { useState } from 'react';
 import {
   Modal,
@@ -7,12 +7,10 @@ import {
   Select,
   Button,
   Typography,
-  Divider,
-  Space,
   message,
 } from 'antd';
 import {
-  TeamOutlined,
+  UsergroupAddOutlined,
   UserOutlined,
   MailOutlined,
   PhoneOutlined,
@@ -36,6 +34,48 @@ interface CreateTeamModalProps {
   onClose: () => void;
   onSuccess: () => void;
 }
+
+// ── Shared label style ─────────────────────────────────────────────────────────
+const FieldLabel: React.FC<{ text: string; required?: boolean }> = ({ text, required }) => (
+  <div style={{ marginBottom: 6 }}>
+    <Text style={{ fontSize: 14, fontWeight: 500, color: '#111827' }}>
+      {text}
+    </Text>
+    {required && (
+      <Text style={{ color: '#ef4444', marginLeft: 4, fontSize: 14 }}>*</Text>
+    )}
+  </div>
+);
+
+// ── Section divider matching Figma ─────────────────────────────────────────────
+const SectionHeader: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  action?: React.ReactNode;
+}> = ({ icon, title, action }) => (
+  <div style={{ marginBottom: 20, marginTop: 8 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ color: '#7c3aed', fontSize: 20, display: 'flex', alignItems: 'center' }}>
+          {icon}
+        </span>
+        <Text style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{title}</Text>
+      </div>
+      {action}
+    </div>
+    <div style={{ height: 1, background: '#e5e7eb' }} />
+  </div>
+);
+
+// ── Styled input wrapper (gray bg to match Figma) ──────────────────────────────
+const inputStyle: React.CSSProperties = {
+  background: '#f3f4f6',
+  border: '1px solid #e5e7eb',
+  borderRadius: 8,
+  fontSize: 14,
+  color: '#374151',
+  height: 44,
+};
 
 const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSuccess }) => {
   const [form] = Form.useForm();
@@ -97,186 +137,284 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
 
   return (
     <Modal
-      title="Create Emergency Team"
       open={open}
       onCancel={handleClose}
       footer={null}
-      width={600}
+      width={620}
       destroyOnClose
-      styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}
+      closeIcon={<span style={{ fontSize: 18, color: '#9ca3af' }}>✕</span>}
+      styles={{
+        body: { padding: 0 },
+        content: { borderRadius: 12, overflow: 'hidden', padding: 0 },
+      }}
     >
-      <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 20 }}>
-        Add a new emergency response team to the system
-      </Text>
+      {/* Scrollable body */}
+      <div style={{ maxHeight: '80vh', overflowY: 'auto', padding: '28px 28px 0' }}>
+        {/* Modal title */}
+        <Text style={{ fontSize: 22, fontWeight: 800, color: '#111827', display: 'block', marginBottom: 6 }}>
+          Create Emergency Team
+        </Text>
+        <Text style={{ fontSize: 14, color: '#6b7280', display: 'block', marginBottom: 28 }}>
+          Add a new emergency response team to the system
+        </Text>
 
-      <Form form={form} layout="vertical" requiredMark={false}>
-        {/* Team Information */}
-        <Divider orientation="left" orientationMargin={0} style={{ margin: '0 0 16px' }}>
-          <Space size={6}>
-            <TeamOutlined style={{ color: '#7c3aed' }} />
-            <Text strong style={{ fontSize: 13 }}>Team Information</Text>
-          </Space>
-        </Divider>
+        <Form form={form} layout="vertical" requiredMark={false}>
 
-        <Form.Item
-          name="teamName"
-          label="Team Name"
-          rules={[{ required: true, message: 'Please enter the team name' }]}
-        >
-          <Input placeholder="e.g., Fire Unit F-12" />
-        </Form.Item>
+          {/* ── Team Information ─────────────────────────────────────────────── */}
+          <SectionHeader icon={<UsergroupAddOutlined />} title="Team Information" />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <Form.Item
-            name="teamType"
-            label="Team Type"
-            rules={[{ required: true, message: 'Please select a type' }]}
+            name="teamName"
+            style={{ marginBottom: 20 }}
+            rules={[{ required: true, message: 'Please enter the team name' }]}
           >
-            <Select placeholder="Select type">
-              <Select.Option value="fire">Fire</Select.Option>
-              <Select.Option value="ambulance">Ambulance</Select.Option>
-              <Select.Option value="police">Police</Select.Option>
-              <Select.Option value="rescue">Rescue</Select.Option>
-            </Select>
+            <FieldLabel text="Team Name" required />
+            <Input
+              placeholder="e.g., Fire Unit F-12"
+              style={inputStyle}
+            />
           </Form.Item>
 
-          <Form.Item name="numberOfMembers" label="Number of Members">
-            <Input type="number" min={1} placeholder="e.g., 4" />
-          </Form.Item>
-        </div>
-
-        {/* Team Leader */}
-        <Divider orientation="left" orientationMargin={0} style={{ margin: '8px 0 16px' }}>
-          <Space size={6}>
-            <UserOutlined style={{ color: '#7c3aed' }} />
-            <Text strong style={{ fontSize: 13 }}>Team Leader</Text>
-          </Space>
-        </Divider>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <Form.Item
-            name="leaderName"
-            label="Leader Name"
-            rules={[{ required: true, message: 'Please enter the leader name' }]}
-          >
-            <Input placeholder="e.g., John Smith" />
-          </Form.Item>
-
-          <Form.Item name="leaderPhone" label="Phone Number">
-            <Input prefix={<PhoneOutlined />} placeholder="+353 1 234 5678" />
-          </Form.Item>
-        </div>
-
-        <Form.Item
-          name="leaderEmail"
-          label="Email Address"
-          rules={[
-            { required: true, message: 'Please enter an email' },
-            { type: 'email', message: 'Please enter a valid email' },
-          ]}
-        >
-          <Input prefix={<MailOutlined />} placeholder="leader@emergency.ie" />
-        </Form.Item>
-
-        {/* Crew Members */}
-        <Divider orientation="left" orientationMargin={0} style={{ margin: '8px 0 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            <Space size={6}>
-              <TeamOutlined style={{ color: '#7c3aed' }} />
-              <Text strong style={{ fontSize: 13 }}>Crew Members</Text>
-            </Space>
-          </div>
-        </Divider>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
-          {crewMembers.map((member, idx) => (
-            <div
-              key={member.id}
-              style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#f9fafb', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb' }}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 8 }}>
+            <Form.Item
+              name="teamType"
+              style={{ marginBottom: 20 }}
+              rules={[{ required: true, message: 'Please select a type' }]}
             >
-              <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <Text style={{ fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 4 }}>Member {idx + 1} – Name</Text>
-                  <Input
-                    size="small"
-                    placeholder="e.g., Jane Doe"
-                    value={member.name}
-                    onChange={(e) => updateCrew(member.id, 'name', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Text style={{ fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 4 }}>Member {idx + 1} – Email</Text>
-                  <Input
-                    size="small"
-                    placeholder="jane@emergency.ie"
-                    value={member.email}
-                    onChange={(e) => updateCrew(member.id, 'email', e.target.value)}
-                  />
+              <FieldLabel text="Team Type" required />
+              <div className="ct-select-wrap">
+                <Select
+                  placeholder="Select type"
+                  style={{ height: 44, width: '100%' }}
+                >
+                  <Select.Option value="fire">Fire</Select.Option>
+                  <Select.Option value="ambulance">Ambulance</Select.Option>
+                  <Select.Option value="police">Police</Select.Option>
+                  <Select.Option value="rescue">Rescue</Select.Option>
+                </Select>
+              </div>
+            </Form.Item>
+
+            <Form.Item name="numberOfMembers" style={{ marginBottom: 20 }}>
+              <FieldLabel text="Number of Members" />
+              <Input
+                type="number"
+                min={1}
+                placeholder="e.g., 4"
+                style={inputStyle}
+              />
+            </Form.Item>
+          </div>
+
+          {/* ── Team Leader ──────────────────────────────────────────────────── */}
+          <SectionHeader icon={<UserOutlined />} title="Team Leader" />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Form.Item
+              name="leaderName"
+              style={{ marginBottom: 20 }}
+              rules={[{ required: true, message: 'Please enter the leader name' }]}
+            >
+              <FieldLabel text="Leader Name" required />
+              <Input placeholder="e.g., John Smith" style={inputStyle} />
+            </Form.Item>
+
+            <Form.Item name="leaderPhone" style={{ marginBottom: 20 }}>
+              <FieldLabel text="Phone Number" />
+              <Input
+                prefix={<PhoneOutlined style={{ color: '#9ca3af' }} />}
+                placeholder="e.g., +353 1 234 5678"
+                style={inputStyle}
+              />
+            </Form.Item>
+          </div>
+
+          <Form.Item
+            name="leaderEmail"
+            style={{ marginBottom: 20 }}
+            rules={[
+              { required: true, message: 'Please enter an email' },
+              { type: 'email', message: 'Please enter a valid email' },
+            ]}
+          >
+            <FieldLabel text="Email Address" required />
+            <Input
+              prefix={<MailOutlined style={{ color: '#9ca3af' }} />}
+              placeholder="e.g., john.smith@emergency.ie"
+              style={inputStyle}
+            />
+          </Form.Item>
+
+          {/* ── Crew Members ─────────────────────────────────────────────────── */}
+          <SectionHeader
+            icon={<UsergroupAddOutlined />}
+            title="Crew Members"
+            action={
+              <Button
+                onClick={handleAddCrew}
+                icon={<PlusOutlined />}
+                style={{
+                  borderColor: '#7c3aed',
+                  color: '#7c3aed',
+                  borderRadius: 8,
+                  fontWeight: 500,
+                  height: 36,
+                }}
+              >
+                Add Member
+              </Button>
+            }
+          />
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+            {crewMembers.map((member, idx) => (
+              <div
+                key={member.id}
+                style={{
+                  background: '#f9fafb',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 10,
+                  padding: '14px 16px',
+                }}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
+                  {/* Name */}
+                  <div>
+                    <Text style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 6 }}>
+                      Member {idx + 1} - Name
+                    </Text>
+                    <Input
+                      placeholder="e.g., Jane Doe"
+                      value={member.name}
+                      onChange={(e) => updateCrew(member.id, 'name', e.target.value)}
+                      style={{ ...inputStyle, height: 40 }}
+                    />
+                  </div>
+
+                  {/* Email */}
+                  <div>
+                    <Text style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 6 }}>
+                      Member {idx + 1} - Email
+                    </Text>
+                    <Input
+                      placeholder="e.g., jane@emergency.ie"
+                      value={member.email}
+                      onChange={(e) => updateCrew(member.id, 'email', e.target.value)}
+                      style={{ ...inputStyle, height: 40 }}
+                    />
+                  </div>
+
+                  {/* Delete */}
+                  <button
+                    onClick={() => handleRemoveCrew(member.id)}
+                    disabled={crewMembers.length === 1}
+                    style={{
+                      width: 36,
+                      height: 40,
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: crewMembers.length === 1 ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: crewMembers.length === 1 ? '#d1d5db' : '#ef4444',
+                      fontSize: 16,
+                      borderRadius: 6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <DeleteOutlined />
+                  </button>
                 </div>
               </div>
-              <Button
-                type="text"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                disabled={crewMembers.length === 1}
-                onClick={() => handleRemoveCrew(member.id)}
-                style={{ marginTop: 20 }}
+            ))}
+          </div>
+
+          {/* ── Location & Contact ───────────────────────────────────────────── */}
+          <SectionHeader icon={<EnvironmentOutlined />} title="Location & Contact" />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 8 }}>
+            <Form.Item
+              name="location"
+              style={{ marginBottom: 20 }}
+              rules={[{ required: true, message: 'Please enter the location' }]}
+            >
+              <FieldLabel text="Base Location" required />
+              <Input
+                prefix={<EnvironmentOutlined style={{ color: '#9ca3af' }} />}
+                placeholder="e.g., Dublin Central Station"
+                style={inputStyle}
               />
-            </div>
-          ))}
-        </div>
+            </Form.Item>
 
-        <Button
-          type="dashed"
-          block
-          icon={<PlusOutlined />}
-          onClick={handleAddCrew}
-          style={{ borderColor: '#c4b5fd', color: '#7c3aed' }}
-        >
-          Add Member
-        </Button>
+            <Form.Item name="contactNumber" style={{ marginBottom: 20 }}>
+              <FieldLabel text="Contact Number" />
+              <Input
+                prefix={<PhoneOutlined style={{ color: '#9ca3af' }} />}
+                placeholder="e.g., +353 1 987 6543"
+                style={inputStyle}
+              />
+            </Form.Item>
+          </div>
 
-        {/* Location & Contact */}
-        <Divider orientation="left" orientationMargin={0} style={{ margin: '16px 0' }}>
-          <Space size={6}>
-            <EnvironmentOutlined style={{ color: '#7c3aed' }} />
-            <Text strong style={{ fontSize: 13 }}>Location & Contact</Text>
-          </Space>
-        </Divider>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <Form.Item
-            name="location"
-            label="Base Location"
-            rules={[{ required: true, message: 'Please enter the location' }]}
-          >
-            <Input prefix={<EnvironmentOutlined />} placeholder="Dublin Central Station" />
-          </Form.Item>
+      <style>{`
+        .ct-select-wrap .ant-select-selector {
+          background: #f3f4f6 !important;
+          border: 1px solid #e5e7eb !important;
+          border-radius: 8px !important;
+          height: 44px !important;
+          align-items: center !important;
+        }
+        .ct-select-wrap .ant-select-selection-placeholder,
+        .ct-select-wrap .ant-select-selection-item {
+          font-size: 14px !important;
+          color: #374151 !important;
+        }
+      `}</style>
+        </Form>
+      </div>
 
-          <Form.Item name="contactNumber" label="Contact Number">
-            <Input prefix={<PhoneOutlined />} placeholder="+353 1 987 6543" />
-          </Form.Item>
-        </div>
-      </Form>
-
-      {/* Footer */}
+      {/* ── Sticky Footer ──────────────────────────────────────────────────────── */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: 10,
-          paddingTop: 16,
-          borderTop: '1px solid #f3f4f6',
-          marginTop: 8,
+          alignItems: 'center',
+          gap: 12,
+          padding: '16px 28px',
+          background: '#f9fafb',
+          borderTop: '1px solid #e5e7eb',
         }}
       >
-        <Button onClick={handleClose}>Cancel</Button>
+        <Button
+          onClick={handleClose}
+          disabled={submitting}
+          style={{
+            height: 44,
+            paddingInline: 24,
+            borderRadius: 8,
+            fontWeight: 500,
+            fontSize: 14,
+            border: '1px solid #e5e7eb',
+            color: '#374151',
+          }}
+        >
+          Cancel
+        </Button>
         <Button
           type="primary"
           loading={submitting}
           onClick={handleSubmit}
-          style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
+          style={{
+            height: 44,
+            paddingInline: 24,
+            borderRadius: 8,
+            fontWeight: 600,
+            fontSize: 14,
+            background: '#7c3aed',
+            borderColor: '#7c3aed',
+          }}
         >
           Create Team
         </Button>

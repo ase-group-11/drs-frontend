@@ -112,9 +112,48 @@
   flex-shrink: 0;
 }
 
+.searchWrap :global(.ant-input-affix-wrapper) {
+  height: 32px !important;
+}
+
+/* Kill all borders/backgrounds on every possible Ant wrapper */
+.searchInput,
+.searchInput :global(.ant-input-outlined),
+.searchInput :global(.ant-input-affix-wrapper),
+.searchInput :global(.ant-input-affix-wrapper-lg) {
+  background: #f3f4f6 !important;
+  border: 1.5px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  padding: 0 12px !important;
+}
+
+.searchInput :global(.ant-input-affix-wrapper:hover),
+.searchInput :global(.ant-input-affix-wrapper:focus),
+.searchInput :global(.ant-input-affix-wrapper-focused),
+.searchInput :global(.ant-input-affix-wrapper-focused:hover) {
+  border-color: #d1d5db !important;
+  box-shadow: none !important;
+  background: #f3f4f6 !important;
+  outline: none !important;
+}
+
+/* Inner input - same gray, no extra border */
 .searchInput :global(.ant-input) {
-  background: #f9fafb !important;
-  border-color: #e5e7eb !important;
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.searchInput :global(.ant-input::placeholder) {
+  color: #9ca3af !important;
+}
+
+.searchInput :global(.ant-input-prefix) {
+  color: #9ca3af !important;
+  margin-right: 8px !important;
 }
 
 /* ── Teams Grid ───────────────────────────────── */
