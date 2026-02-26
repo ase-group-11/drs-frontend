@@ -5,7 +5,6 @@ import {
   Input,
   Select,
   Switch,
-  Tabs,
   Form,
   Typography,
   Card,
@@ -77,29 +76,29 @@ const GeneralTab: React.FC = () => {
       <Form form={form} layout="vertical" requiredMark={false}>
         <div className={styles.fieldGrid2}>
           <Form.Item name="systemName" label="System Name" rules={[{ required: true }]}>
-            <Input />
+            <Input variant="filled" />
           </Form.Item>
           <Form.Item name="adminEmail" label="Admin Email" rules={[{ required: true }, { type: 'email' }]}>
-            <Input />
+            <Input variant="filled" />
           </Form.Item>
         </div>
         <div className={styles.fieldGrid3}>
           <Form.Item name="timezone" label="Timezone">
-            <Select>
+            <Select variant="filled">
               <Select.Option value="europe-dublin">Europe/Dublin (GMT+0)</Select.Option>
               <Select.Option value="europe-london">Europe/London (GMT+0)</Select.Option>
               <Select.Option value="america-ny">America/New York (GMT-5)</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="language" label="Language">
-            <Select>
+            <Select variant="filled">
               <Select.Option value="en">English</Select.Option>
               <Select.Option value="ga">Irish</Select.Option>
               <Select.Option value="fr">French</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="dateFormat" label="Date Format">
-            <Select>
+            <Select variant="filled">
               <Select.Option value="dd-mm-yyyy">DD/MM/YYYY</Select.Option>
               <Select.Option value="mm-dd-yyyy">MM/DD/YYYY</Select.Option>
               <Select.Option value="yyyy-mm-dd">YYYY-MM-DD</Select.Option>
@@ -134,10 +133,10 @@ interface ToggleRowProps {
 const ToggleRow: React.FC<ToggleRowProps> = ({ title, description, checked, onChange, last }) => (
   <div className={`${styles.toggleRow} ${last ? styles.toggleRowLast : ''}`}>
     <div>
-      <Text strong style={{ fontSize: 13, display: 'block' }}>{title}</Text>
-      <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text>
+      <Text strong style={{ fontSize: 14, display: 'block', color: '#111827' }}>{title}</Text>
+      <Text type="secondary" style={{ fontSize: 13 }}>{description}</Text>
     </div>
-    <Switch checked={checked} onChange={onChange} style={checked ? { background: '#7c3aed' } : {}} />
+    <Switch checked={checked} onChange={onChange} style={checked ? { background: '#111827' } : {}} />
   </div>
 );
 
@@ -151,7 +150,6 @@ const NotificationsTab: React.FC = () => {
     soundAlerts: false,
   });
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadNotifications();
@@ -166,20 +164,12 @@ const NotificationsTab: React.FC = () => {
   const update = (key: keyof NotificationSettings) => (val: boolean) =>
     setSettings((prev) => ({ ...prev, [key]: val }));
 
-  const handleSave = async () => {
-    setSaving(true);
-    const res = await saveNotificationSettings(settings);
-    if (res.success) message.success('Notification settings saved');
-    else message.error(res.message || 'Failed to save');
-    setSaving(false);
-  };
-
   if (loading) return <div className={styles.tabLoading}><Spin /></div>;
 
   return (
-    <div className={styles.notifGrid}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card className={styles.settingsCard}>
-        <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 16 }}>Email Notifications</Text>
+        <Text style={{ fontSize: 15, display: 'block', marginBottom: 20, color: '#111827' }}>Email Notifications</Text>
         <ToggleRow title="Critical Alerts" description="Receive email for critical incidents" checked={settings.criticalAlerts} onChange={update('criticalAlerts')} />
         <ToggleRow title="Daily Summary" description="Daily report digest" checked={settings.dailySummary} onChange={update('dailySummary')} />
         <ToggleRow title="Team Updates" description="Team status changes" checked={settings.teamUpdates} onChange={update('teamUpdates')} />
@@ -187,20 +177,9 @@ const NotificationsTab: React.FC = () => {
       </Card>
 
       <Card className={styles.settingsCard}>
-        <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 16 }}>Push Notifications</Text>
+        <Text style={{ fontSize: 15, display: 'block', marginBottom: 20, color: '#111827' }}>Push Notifications</Text>
         <ToggleRow title="Desktop Notifications" description="Browser push notifications" checked={settings.desktopNotifications} onChange={update('desktopNotifications')} />
         <ToggleRow title="Sound Alerts" description="Audio alert for critical events" checked={settings.soundAlerts} onChange={update('soundAlerts')} last />
-        <div className={styles.formFooter} style={{ borderTop: '1px solid #f3f4f6', paddingTop: 16, marginTop: 8 }}>
-          <span />
-          <Button
-            type="primary"
-            loading={saving}
-            onClick={handleSave}
-            style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
-          >
-            Save Settings
-          </Button>
-        </div>
       </Card>
     </div>
   );
@@ -270,7 +249,7 @@ const SecurityTab: React.FC = () => {
   };
 
   return (
-    <Card className={styles.settingsCard} style={{ maxWidth: 480 }}>
+    <Card className={styles.settingsCard}>
       <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 20 }}>
         Password & Authentication
       </Text>
@@ -281,7 +260,7 @@ const SecurityTab: React.FC = () => {
           label="Current Password"
           rules={[{ required: true, message: 'Please enter your current password' }]}
         >
-          <Input.Password placeholder="Enter current password" />
+          <Input.Password variant="filled" placeholder="Enter current password" />
         </Form.Item>
 
         <Form.Item
@@ -292,7 +271,7 @@ const SecurityTab: React.FC = () => {
             { min: 8, message: 'Password must be at least 8 characters' },
           ]}
         >
-          <Input.Password placeholder="Enter new password" />
+          <Input.Password variant="filled" placeholder="Enter new password" />
         </Form.Item>
 
         <Form.Item
@@ -300,7 +279,7 @@ const SecurityTab: React.FC = () => {
           label="Confirm Password"
           rules={[{ required: true, message: 'Please confirm your password' }]}
         >
-          <Input.Password placeholder="Confirm new password" />
+          <Input.Password variant="filled" placeholder="Confirm new password" />
         </Form.Item>
 
         <Button
@@ -394,48 +373,16 @@ const SystemTab: React.FC = () => {
 
 // ─── Main Settings Component ─────────────────────────────────────────────────
 const Settings: React.FC = () => {
-  const tabItems = [
-    {
-      key: 'general',
-      label: (
-        <span className={styles.tabLabel}>
-          <SettingOutlined />
-          <span>General</span>
-        </span>
-      ),
-      children: <GeneralTab />,
-    },
-    {
-      key: 'notifications',
-      label: (
-        <span className={styles.tabLabel}>
-          <BellOutlined />
-          <span>Notifications</span>
-        </span>
-      ),
-      children: <NotificationsTab />,
-    },
-    {
-      key: 'security',
-      label: (
-        <span className={styles.tabLabel}>
-          <LockOutlined />
-          <span>Security</span>
-        </span>
-      ),
-      children: <SecurityTab />,
-    },
-    {
-      key: 'system',
-      label: (
-        <span className={styles.tabLabel}>
-          <DatabaseOutlined />
-          <span>System</span>
-        </span>
-      ),
-      children: <SystemTab />,
-    },
+  const [activeTab, setActiveTab] = useState('general');
+
+  const tabs = [
+    { key: 'general', icon: <SettingOutlined />, label: 'General', children: <GeneralTab /> },
+    { key: 'notifications', icon: <BellOutlined />, label: 'Notifications', children: <NotificationsTab /> },
+    { key: 'security', icon: <LockOutlined />, label: 'Security', children: <SecurityTab /> },
+    { key: 'system', icon: <DatabaseOutlined />, label: 'System', children: <SystemTab /> },
   ];
+
+  const activeContent = tabs.find((t) => t.key === activeTab)?.children;
 
   return (
     <div className={styles.container}>
@@ -445,7 +392,22 @@ const Settings: React.FC = () => {
           Manage your system preferences and configuration
         </Text>
       </div>
-      <Tabs items={tabItems} className={styles.mainTabs} />
+
+      {/* Segmented tab bar */}
+      <div className={styles.segmentedNav}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            className={`${styles.segmentedTab} ${activeTab === tab.key ? styles.segmentedTabActive : ''}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16 }}>{activeContent}</div>
     </div>
   );
 };
