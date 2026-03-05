@@ -410,6 +410,8 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
               borderRadius: 50,
               padding: 4,
               marginBottom: 16,
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch' as any,
             }}>
               {tabItems.map((tab) => {
                 const isActive = props.activeKey === tab.key;
@@ -418,7 +420,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
                     key={tab.key}
                     onClick={() => props.onTabClick?.(tab.key, {} as any)}
                     style={{
-                      flex: 1,
+                      flex: '0 0 auto',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -450,7 +452,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
         />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
         <Button type="text" danger onClick={() => message.info('Reset to default — wire to API when ready')}
           style={{ color: '#ef4444', fontWeight: 500, padding: '0 8px' }}>
           Reset to Default

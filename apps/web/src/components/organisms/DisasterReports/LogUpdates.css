@@ -443,3 +443,48 @@
   border-color: #7c3aed;
   background: #f0eeff;
 }
+@media (max-width: 768px) {
+  .log-filter-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .log-filter-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .log-filter-right {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .log-filter-right .ant-select {
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .log-filter-right .ant-input-affix-wrapper {
+    flex: 1;
+    min-width: 120px;
+    width: auto !important;
+  }
+
+  .log-filter-right .ant-btn {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .log-filter-right {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .log-filter-right .ant-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}

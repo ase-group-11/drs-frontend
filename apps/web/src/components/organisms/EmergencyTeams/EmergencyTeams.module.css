@@ -324,3 +324,52 @@
   align-items: center;
   padding: 60px 0;
 }
+/* ═══════════════════════════════════════
+   RESPONSIVE — Mobile
+═══════════════════════════════════════ */
+@media (max-width: 768px) {
+  .teamsGrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .filterBar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .typeFilters {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .searchWrap {
+    width: 100%;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .addBtn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .cardBody {
+    padding: 14px 16px;
+  }
+
+  .cardFooter {
+    padding: 8px 16px;
+  }
+
+  .unitId {
+    font-size: 16px !important;
+  }
+}

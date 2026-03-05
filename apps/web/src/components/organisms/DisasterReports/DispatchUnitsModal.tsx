@@ -311,22 +311,23 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({
       {/* Footer */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: 12,
         padding: '14px 24px', borderTop: '1px solid #f3f4f6',
       }}>
-        <div>
-          <Text style={{ fontSize: 13, color: '#374151', display: 'block', fontWeight: 500 }}>
+        <div style={{ minWidth: 0, flexShrink: 1 }}>
+          <Text style={{ fontSize: 13, color: '#374151', display: 'block', fontWeight: 500, whiteSpace: 'nowrap' }}>
             {selectedIds.length === 0 ? 'No units selected' : `${selectedIds.length} unit${selectedIds.length > 1 ? 's' : ''} selected`}
           </Text>
           {selectedIds.length > 0 && (() => {
             const fastestEta = Math.min(...AVAILABLE_UNITS.filter(u => selectedIds.includes(u.id)).map(u => u.eta));
             return (
-              <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: 500 }}>
+              <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: 500, whiteSpace: 'nowrap' }}>
                 Earliest arrival: {fastestEta} mins
               </Text>
             );
           })()}
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
           <Button onClick={handleClose} style={{ borderRadius: 10, height: 42, padding: '0 20px' }}>
             Cancel
           </Button>

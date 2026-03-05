@@ -4,26 +4,50 @@
   min-height: 100vh;
 }
 
-/* ✅ FIXED SIDEBAR */
+/* ✅ FIXED SIDEBAR (desktop only) */
 .admin-sider {
   background: #ffffff;
   border-right: 1px solid #f0f0f0;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
-
-  position: fixed;     /* ✅ key */
+  position: fixed;
   left: 0;
   top: 0;
   bottom: 0;
   height: 100vh;
   z-index: 100;
-  overflow: hidden;    /* keep inner scroll controlled */
+  overflow: hidden;
 }
 
-/* ✅ Make sider content a column so footer sticks to bottom */
-.admin-sider .ant-layout-sider-children {
+/* Make sider content a column so footer sticks to bottom */
+.admin-sider .ant-layout-sider-children,
+.admin-sider-inner {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* Mobile drawer inner content */
+.admin-mobile-drawer .ant-drawer-body {
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.admin-sider-inner {
+  overflow: hidden;
+}
+
+.mobile-drawer-close {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 0;
+  flex-shrink: 0;
+}
+
+.drawer-close-btn {
+  color: #6b7280;
 }
 
 /* Header/Logo */
@@ -107,12 +131,12 @@
   white-space: nowrap;
 }
 
-/* ✅ MENU SCROLLS, FOOTER STAYS */
+/* MENU SCROLLS, FOOTER STAYS */
 .admin-menu {
   border-right: none;
   padding: 8px 12px;
-  flex: 1;              /* ✅ take remaining height */
-  overflow-y: auto;     /* ✅ scroll menu */
+  flex: 1;
+  overflow-y: auto;
 }
 
 .admin-menu .ant-menu-item {
@@ -182,12 +206,13 @@
   cursor: pointer;
 }
 
-/* ✅ MAIN CONTENT WRAPPER (offset handled in TSX inline style) */
+/* MAIN CONTENT WRAPPER */
 .admin-main {
   min-height: 100vh;
+  transition: margin-left 0.2s;
 }
 
-/* ✅ FIXED HEADER */
+/* FIXED HEADER */
 .admin-header {
   background: #ffffff;
   border-bottom: 1px solid #f0f0f0;
@@ -197,11 +222,11 @@
   justify-content: space-between;
   height: 64px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-
-  position: fixed;  /* ✅ key */
+  position: fixed;
   top: 0;
   right: 0;
   z-index: 90;
+  transition: left 0.2s;
 }
 
 .header-left {
@@ -265,14 +290,48 @@
   color: #6b7280;
 }
 
-/* ✅ CONTENT OFFSET BELOW FIXED HEADER */
+/* CONTENT OFFSET BELOW FIXED HEADER */
 .admin-content {
   margin: 88px 24px 24px; /* 64(header) + 24 spacing */
   min-height: calc(100vh - 88px);
 }
 
-/* Responsive */
+/* ═══════════════════════════════════════
+   RESPONSIVE — Tablet (768px–1024px)
+═══════════════════════════════════════ */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .search-input {
+    width: 180px;
+  }
+}
+
+/* ═══════════════════════════════════════
+   RESPONSIVE — Mobile (<768px)
+═══════════════════════════════════════ */
 @media (max-width: 768px) {
+  /* Hide desktop sidebar */
+  .admin-sider {
+    display: none;
+  }
+
+  /* Header spans full width on mobile */
+  .admin-header {
+    left: 0 !important;
+    padding: 0 16px;
+  }
+
+  /* No left margin on mobile */
+  .admin-main {
+    margin-left: 0 !important;
+  }
+
+  /* Tighter content padding */
+  .admin-content {
+    margin: 80px 12px 16px;
+    min-height: calc(100vh - 80px);
+  }
+
+  /* Hide search bar and breadcrumb to save space */
   .search-input {
     display: none;
   }
@@ -281,7 +340,25 @@
     display: none;
   }
 
+  /* Tighten header-right gap */
+  .header-right {
+    gap: 8px;
+  }
+
+  .divider {
+    display: none;
+  }
+}
+
+/* ═══════════════════════════════════════
+   RESPONSIVE — Small mobile (<480px)
+═══════════════════════════════════════ */
+@media (max-width: 480px) {
   .admin-content {
-    margin: 80px 16px 16px;
+    margin: 80px 8px 16px;
+  }
+
+  .admin-header {
+    padding: 0 12px;
   }
 }

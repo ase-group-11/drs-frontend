@@ -341,23 +341,22 @@ const MessageModal: React.FC<MessageModalProps> = ({ open, team, onClose }) => {
       {/* ── Sticky footer ────────────────────────────────────────────────────── */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '16px 28px',
+        flexDirection: 'column',
+        padding: '12px 28px 16px',
         background: '#f9fafb',
         borderTop: '1px solid #e5e7eb',
-        gap: 16,
+        gap: 10,
       }}>
-        {/* Delivery info - left side */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        {/* Delivery info */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/><circle cx="12" cy="12" r="2"/></svg>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          <Text style={{ fontSize: 13, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          <Text style={{ fontSize: 13, color: '#9ca3af' }}>
             Will be delivered via: {deliveryText}
           </Text>
         </div>
-        {/* Buttons - right side */}
-        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
           <Button
             onClick={handleClose}
             disabled={sending}

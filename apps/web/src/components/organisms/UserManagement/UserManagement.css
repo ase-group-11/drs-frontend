@@ -582,3 +582,72 @@
 .ant-select-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
   color: #374151 !important;
 }
+/* ═══════════════════════════════════════
+   RESPONSIVE — Mobile
+═══════════════════════════════════════ */
+@media (max-width: 768px) {
+  .um-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .um-add-btn {
+    width: 100%;
+  }
+
+  .um-filter-card .ant-card-body {
+    padding: 12px !important;
+  }
+
+  /* Stack filter row vertically */
+  .um-filter-card .ant-row {
+    gap: 8px !important;
+  }
+
+  .um-filter-card .ant-col {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Let the table scroll horizontally — never hide or squeeze columns */
+  .um-table-card {
+    overflow: hidden;
+  }
+
+  .um-table .ant-table {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent any column text from wrapping */
+  .um-table .ant-table-cell {
+    white-space: nowrap !important;
+    padding: 10px 12px !important;
+  }
+
+  .um-user-cell {
+    gap: 8px;
+  }
+
+  .um-selection-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .um-pagination {
+    padding: 12px 16px !important;
+  }
+
+  .um-pagination .ant-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .um-title {
+    font-size: 18px;
+  }
+}
