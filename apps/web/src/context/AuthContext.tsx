@@ -38,6 +38,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } else {
           // Clear any stale non-admin session
           localStorage.removeItem('token');
+          localStorage.removeItem('refreshToken');
           localStorage.removeItem('user');
         }
       }
@@ -65,6 +66,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setToken(result.data.token);
         localStorage.setItem('token', result.data.token);
         localStorage.setItem('user', JSON.stringify(result.data.user));
+        if (result.data.refreshToken) {
+          localStorage.setItem('refreshToken', result.data.refreshToken);
+        }
         navigate('/admin/dashboard');
       } else {
         throw new Error(result.message);

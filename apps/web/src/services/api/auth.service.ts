@@ -51,16 +51,20 @@ export const verifySignupOTP = async (data: {
       otp: data.otpCode,
     });
 
+    // API returns: { team_member: {...}, tokens: { access_token, refresh_token, ... } }
+    const teamMember = response.data.team_member;
+    const tokens = response.data.tokens;
+
     const userData: User = {
-      userId: response.data.team_member_id || response.data.id,
-      phoneNumber: response.data.phone_number,
-      fullName: response.data.full_name,
-      email: response.data.email,
-      role: response.data.role,
-      department: response.data.department,
-      employeeId: response.data.employee_id,
+      userId: teamMember?.id || response.data.team_member_id || response.data.id,
+      phoneNumber: teamMember?.phone_number || response.data.phone_number,
+      fullName: teamMember?.full_name || response.data.full_name,
+      email: teamMember?.email || response.data.email,
+      role: teamMember?.role || response.data.role,
+      department: teamMember?.department || response.data.department,
+      employeeId: teamMember?.employee_id || response.data.employee_id,
       isVerified: true,
-      createdAt: response.data.created_at,
+      createdAt: teamMember?.created_at || response.data.created_at,
     };
 
     return {
@@ -68,7 +72,8 @@ export const verifySignupOTP = async (data: {
       message: 'Account verified successfully',
       data: {
         user: userData,
-        token: response.data.access_token || 'mock-jwt-token',
+        token: tokens?.access_token,
+        refreshToken: tokens?.refresh_token,
       },
     };
   } catch (error: any) {
@@ -109,6 +114,7 @@ export const login = async (email: string, password: string): Promise<ApiRespons
       data: {
         user: userData,
         token: tokens.access_token,
+        refreshToken: tokens.refresh_token,  // ← both tokens returned so AuthContext saves both to localStorage
       },
     };
   } catch (error: any) {
@@ -150,5 +156,6 @@ export const changePassword = async (data: {
 
 export const logout = (): void => {
   localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
 };

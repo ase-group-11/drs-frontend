@@ -45,12 +45,39 @@ console.error = (...args: any[]) => {
   ) {
     return;
   }
+  // Suppress expected console.error logs from service catch blocks during tests.
+  // These are intentional — services log errors before returning { success: false }.
+  // We test the return value, not the log output.
+  if (typeof args[0] === 'string') {
+    const serviceErrorPrefixes = [
+      'Login error:',
+      'Signup OTP error:',
+      'OTP verification error:',
+      'Change password error:',
+      'Update report status error:',
+      'Escalate severity error:',
+      'Dispatch units error:',
+      'getUsers API',
+      'createUser API',
+      'updateUser API',
+      'deleteUser API',
+      // Catch any remaining service-layer error log pattern
+      'error:', 'Error:',
+    ];
+    if (serviceErrorPrefixes.some(prefix => args[0].includes(prefix))) {
+      return;
+    }
+  }
   originalError(...args);
 };
 
 const originalWarn = console.warn.bind(console);
 console.warn = (...args: any[]) => {
-  if (typeof args[0] === 'string' && args[0].includes('React Router Future Flag Warning')) {
+  if (typeof args[0] === 'string' && (
+    args[0].includes('React Router Future Flag Warning') ||
+    args[0].includes('API failed, using fallback data') ||
+    args[0].includes('fallback data')
+  )) {
     return;
   }
   originalWarn(...args);
