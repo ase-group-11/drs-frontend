@@ -54,6 +54,7 @@ export const API_ENDPOINTS = {
     CREATE: '/emergency-units/',
     UPDATE: (id: string) => `/emergency-units/${id}`,
     DELETE: (id: string) => `/emergency-units/${id}`,
+    UNIT_BY_ID: (id: string) => `/emergency-units/${id}`,
     DEPLOY: (disasterId: string) => `/disasters/${disasterId}/dispatch`,
     DECOMMISSION: (id: string) => `/emergency-units/${id}`,
     ACTIVE_DISASTERS: '/disasters/active',

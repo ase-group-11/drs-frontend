@@ -4,6 +4,7 @@ import { API_ENDPOINTS } from '../../config';
 import type {
   EmergencyTeam,
   EmergencyUnitRaw,
+  EmergencyUnitDetail,
   EmergencyUnitsApiResponse,
   CreateTeamPayload,
   DeployUnitPayload,
@@ -43,7 +44,7 @@ const mapUnit = (raw: EmergencyUnitRaw): EmergencyTeam => {
     crewSize:         `${raw.crew_count}/${raw.capacity}`,
     crewMax:          raw.capacity,
     crewCount:        raw.crew_count,
-    location:         raw.station_name,
+    location:         raw.station_address ?? raw.station_name,
     commanderName:    raw.commander_name,
     totalDeployments: raw.total_deployments,
   };
@@ -67,6 +68,23 @@ export const getTeams = async (): Promise<AdminApiResponse<EmergencyTeam[]> & { 
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to fetch emergency units.',
+    };
+  }
+};
+
+export const getTeamById = async (id: string): Promise<AdminApiResponse<EmergencyUnitDetail>> => {
+  try {
+    const response = await apiClient.get<EmergencyUnitDetail>(API_ENDPOINTS.TEAMS.UNIT_BY_ID(id));
+    return {
+      success: true,
+      message: 'Unit details fetched successfully',
+      data: response.data,
+    };
+  } catch (error: any) {
+    console.error('getTeamById error:', error);
+    return {
+      success: false,
+      message: error.response?.data?.detail || 'Failed to fetch unit details.',
     };
   }
 };

@@ -261,7 +261,7 @@ const DisasterReports: React.FC = () => {
 
       {/* Filter Bar */}
       <Card className="filter-card">
-        <Row gutter={[16, 16]} align="middle" style={{ flexWrap: 'nowrap' }}>
+        <Row gutter={[12, 12]} align="middle">
           <Col flex="none">
             <Space size={8}>
               <Button
@@ -289,7 +289,7 @@ const DisasterReports: React.FC = () => {
             </Space>
           </Col>
 
-          <Col flex="180px">
+          <Col flex="160px">
             <Select value={selectedSeverity} onChange={setSelectedSeverity} style={{ width: '100%' }} popupClassName="dr-filter-dropdown">
               <Select.Option value="all">All Severity</Select.Option>
               <Select.Option value="critical">Critical</Select.Option>
@@ -299,17 +299,17 @@ const DisasterReports: React.FC = () => {
             </Select>
           </Col>
 
-          <Col flex="180px">
+          <Col flex="160px">
             <Select value={selectedType} onChange={setSelectedType} style={{ width: '100%' }} popupClassName="dr-filter-dropdown">
               <Select.Option value="all">All Types</Select.Option>
-              <Select.Option value="fire">Fire</Select.Option>
-              <Select.Option value="flood">Flood</Select.Option>
-              <Select.Option value="accident">Accident</Select.Option>
-              <Select.Option value="storm">Storm</Select.Option>
+              <Select.Option value="FIRE">Fire</Select.Option>
+              <Select.Option value="FLOOD">Flood</Select.Option>
+              <Select.Option value="ACCIDENT">Accident</Select.Option>
+              <Select.Option value="STORM">Storm</Select.Option>
             </Select>
           </Col>
 
-          <Col flex="auto">
+          <Col flex="auto" style={{ minWidth: 120 }}>
             <Search
               placeholder="Search reports..."
               value={searchText}

@@ -89,6 +89,60 @@ export interface TeamFilters {
   search?: string;
 }
 
+// Detailed unit response from GET /api/v1/emergency-units/{id}
+export interface EmergencyUnitDetail {
+  id: string;
+  unit_code: string;
+  unit_name: string;
+  description: string | null;
+  unit_type: string;
+  department: string;
+  unit_status: string;
+  station: {
+    name: string;
+    address: string;
+    lat: number;
+    lon: number;
+  };
+  vehicle: {
+    model: string;
+    license_plate: string;
+    year: number;
+    equipment: { item: string; present: boolean }[];
+  } | null;
+  stats: {
+    crew_count: number;
+    capacity: number;
+    total_deployments: number;
+    avg_response_time: string | null;
+    avg_response_time_seconds: number | null;
+    success_rate: number | null;
+    last_deployed_at: string | null;
+  };
+  commander: {
+    id: string;
+    name: string;
+    phone: string;
+    email: string;
+  } | null;
+  crew_roster: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    department: string;
+    status: string;
+  }[];
+  current_assignment: {
+    deployment_id: string;
+    disaster_tracking_id: string;
+    disaster_type: string;
+    location: string;
+    deployment_status: string;
+    dispatched_at: string;
+  } | null;
+}
+
 // API response wrapper from GET /api/v1/emergency-units/
 export interface EmergencyUnitsApiResponse {
   units: EmergencyUnitRaw[];
@@ -107,6 +161,7 @@ export interface EmergencyUnitRaw {
   department: string;
   unit_status: string;
   station_name: string;
+  station_address: string | null;
   crew_count: number;
   capacity: number;
   commander_name: string | null;

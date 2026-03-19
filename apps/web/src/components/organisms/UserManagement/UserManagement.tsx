@@ -570,8 +570,8 @@ const UserManagement: React.FC = () => {
 
       {/* Filter bar */}
       <Card className="um-filter-card">
-        <Row gutter={[12, 12]} align="middle" style={{ flexWrap: 'nowrap' }}>
-          <Col flex="160px">
+        <Row gutter={[12, 12]} align="middle">
+          <Col flex="140px">
             <Select
               value={roleFilter}
               onChange={setRoleFilter}
@@ -587,7 +587,7 @@ const UserManagement: React.FC = () => {
               ))}
             </Select>
           </Col>
-          <Col flex="160px">
+          <Col flex="140px">
             <Select
               value={statusFilter}
               onChange={setStatusFilter}
@@ -603,7 +603,7 @@ const UserManagement: React.FC = () => {
               ))}
             </Select>
           </Col>
-          <Col flex="auto">
+          <Col flex="auto" style={{ minWidth: 120 }}>
             <Search
               placeholder="Search users..."
               allowClear
