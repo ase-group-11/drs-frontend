@@ -60,7 +60,21 @@ const MOCK_UNIT = {
   department: 'FIRE',
   unit_status: 'AVAILABLE',
   capacity: 4,
+  crew_count: 3,
   station_name: 'Tara Street Station',
+  commander_name: null,
+  total_deployments: 2,
+  avg_response_time: null,
+  success_rate: null,
+};
+
+// Full API response wrapper shape
+const MOCK_UNITS_RESPONSE = {
+  units: [MOCK_UNIT],
+  total_count: 1,
+  active_count: 1,
+  deployed_count: 0,
+  by_department: { FIRE: 1 },
 };
 
 const MOCK_DISASTER = {
@@ -87,13 +101,13 @@ describe('getTeams()', () => {
 
   describe('return shape — passes now, must still pass after integration', () => {
     it('returns success: true', async () => {
-      mockApiClient.get.mockResolvedValueOnce({ data: [MOCK_UNIT] });
+      mockApiClient.get.mockResolvedValueOnce({ data: MOCK_UNITS_RESPONSE });
       const result = await getTeams();
       expect(result.success).toBe(true);
     });
 
     it('returns a data property', async () => {
-      mockApiClient.get.mockResolvedValueOnce({ data: [MOCK_UNIT] });
+      mockApiClient.get.mockResolvedValueOnce({ data: MOCK_UNITS_RESPONSE });
       const result = await getTeams();
       expect(result).toHaveProperty('data');
     });
@@ -101,7 +115,7 @@ describe('getTeams()', () => {
 
   describe('endpoint — RED until service uses correct URL', () => {
     it('calls GET /emergency-units/', async () => {
-      mockApiClient.get.mockResolvedValueOnce({ data: [MOCK_UNIT] });
+      mockApiClient.get.mockResolvedValueOnce({ data: MOCK_UNITS_RESPONSE });
       await getTeams();
       // ❌ Currently fails — service calls /api/admin/teams
       // ✅ Will pass once service is updated to /emergency-units/

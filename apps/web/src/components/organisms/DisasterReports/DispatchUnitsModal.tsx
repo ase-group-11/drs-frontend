@@ -93,7 +93,7 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({
     if (!report) return;
     setSubmitting(true);
     try {
-      const result = await dispatchUnits(report.id, selectedIds.length);
+      const result = await dispatchUnits(report.id, selectedIds);
       if (result.success) {
         message.success(`${selectedIds.length} unit${selectedIds.length > 1 ? 's' : ''} dispatched`);
         onSuccess(); handleClose();

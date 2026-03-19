@@ -103,9 +103,10 @@ const EscalateSeverityModal: React.FC<EscalateSeverityModalProps> = ({
 
   if (!report) return null;
 
-  const currentIdx = SEVERITY_ORDER.indexOf(report.severity);
+  const severity = report.severity as SeverityLevel;
+  const currentIdx = SEVERITY_ORDER.indexOf(severity);
   const escalatableLevels = SEVERITY_ORDER.filter((_, i) => i > currentIdx);
-  const currentCfg = SEVERITY_CONFIG[report.severity];
+  const currentCfg = SEVERITY_CONFIG[severity];
 
   return (
     <Modal

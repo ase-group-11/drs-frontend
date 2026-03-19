@@ -3,6 +3,9 @@ export type DisasterType = 'fire' | 'flood' | 'accident' | 'storm';
 export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low';
 export type ReportStatus = 'reported' | 'assessing' | 'active' | 'resolved';
 
+// API disaster_status values from real API
+export type DisasterStatus = 'ACTIVE' | 'MONITORING' | 'RESOLVED' | 'ARCHIVED' | 'CRITICAL';
+
 export interface DashboardStats {
   totalUsers: number;
   totalUsersChange: number;
@@ -34,20 +37,54 @@ export interface ActivityLog {
   statusColor: string;
 }
 
+// UI-facing shape used by DisasterReports component
 export interface DisasterReport {
   id: string;
-  type: DisasterType;
-  title: string;
-  reportId: string;
-  location: string;
-  zone: string;
-  time: string;
-  units: number;
-  severity: SeverityLevel;
+  trackingId: string;        // from tracking_id
+  type: string;              // raw API type e.g. 'FIRE', 'FLOOD'
+  title: string;             // derived: capitalised type
+  reportId: string;          // from tracking_id
+  location: string;          // from location_address
+  locationCoords: { lat: number; lon: number }; // from location
+  zone: string;              // derived from location_address
+  time: string;              // from time_ago
+  units: number;             // from units_assigned
+  severity: string;          // lowercased from API severity
   description: string;
-  responseStatus: number;
+  responseStatus: number;    // derived from disaster_status
   createdAt: string;
-  updatedAt: string;
+  disasterStatus: DisasterStatus; // raw status from API
+  peopleAffected: number;
+  reportCount: number;
+}
+
+// Raw shape from GET /api/v1/disasters/all
+export interface DisasterRaw {
+  id: string;
+  tracking_id: string;
+  type: string;
+  severity: string;
+  disaster_status: DisasterStatus;
+  description: string;
+  location: { lat: number; lon: number };
+  location_address: string;
+  people_affected: number;
+  units_assigned: number;
+  report_count: number;
+  created_at: string;
+  time_ago: string;
+}
+
+export interface DisastersApiResponse {
+  disasters: DisasterRaw[];
+  count: number;
+  summary: {
+    critical: number;
+    active: number;
+    resolved: number;
+    monitoring: number;
+    archived: number;
+  };
 }
 
 export interface ResponseStep {

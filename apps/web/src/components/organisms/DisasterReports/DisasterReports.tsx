@@ -13,7 +13,6 @@ import {
   Select,
   Input,
   Tag,
-  Badge,
   Progress,
   message,
   Spin,
@@ -55,12 +54,13 @@ const DisasterReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<DisasterReport[]>([]);
   const [filteredReports, setFilteredReports] = useState<DisasterReport[]>([]);
-  const [view, setView] = useState<'list' | 'map'>('list'); // ✅ kanban removed
+  const [view, setView] = useState<'list' | 'map'>('list');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedTimeFilter, setSelectedTimeFilter] = useState('today');
+  const [selectedTimeFilter, setSelectedTimeFilter] = useState('active');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
   const [searchText, setSearchText] = useState('');
+  const [summary, setSummary] = useState<{ critical: number; active: number; resolved: number; monitoring: number; archived: number } | null>(null);
 
   // Sub-page navigation
   const [currentView, setCurrentView] = useState<DisasterView>('list');
@@ -78,11 +78,20 @@ const DisasterReports: React.FC = () => {
   const filterReports = useCallback(() => {
     let filtered = [...reports];
 
+    // Active tab: ACTIVE + MONITORING statuses only
+    // All tab: show everything
+    if (selectedTimeFilter === 'active') {
+      filtered = filtered.filter((r) =>
+        r.disasterStatus === 'ACTIVE' || r.disasterStatus === 'MONITORING'
+      );
+    }
+    // 'all' — no status filter, show everything
+
     if (selectedSeverity !== 'all') {
       filtered = filtered.filter((r) => r.severity === selectedSeverity);
     }
     if (selectedType !== 'all') {
-      filtered = filtered.filter((r) => r.type === selectedType);
+      filtered = filtered.filter((r) => r.type.toLowerCase() === selectedType.toLowerCase());
     }
     if (searchText) {
       const q = searchText.toLowerCase();
@@ -92,17 +101,6 @@ const DisasterReports: React.FC = () => {
           r.location.toLowerCase().includes(q) ||
           r.description.toLowerCase().includes(q)
       );
-    }
-
-    // Time filter
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-
-    if (selectedTimeFilter === 'today') {
-      filtered = filtered.filter((r) => new Date(r.createdAt).getTime() >= startOfToday);
-    } else if (selectedTimeFilter === '7days') {
-      filtered = filtered.filter((r) => new Date(r.createdAt).getTime() >= sevenDaysAgo);
     }
 
     setFilteredReports(filtered);
@@ -115,9 +113,12 @@ const DisasterReports: React.FC = () => {
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const response = await getDisasterReports();
-      if (response.data) {
+      const response = await getDisasterReports() as any;
+      if (response.success && response.data) {
         setReports(response.data);
+        if (response.summary) setSummary(response.summary);
+      } else {
+        message.error(response.message || 'Failed to load disaster reports');
       }
     } catch {
       message.error('Failed to load disaster reports');
@@ -165,10 +166,15 @@ const DisasterReports: React.FC = () => {
   };
 
   const typeIcons: Record<string, React.ReactNode> = {
-    fire: <FireOutlined style={{ color: '#ef4444', fontSize: 20 }} />,
-    flood: <CloudOutlined style={{ color: '#3b82f6', fontSize: 20 }} />,
+    FIRE:     <FireOutlined style={{ color: '#ef4444', fontSize: 20 }} />,
+    FLOOD:    <CloudOutlined style={{ color: '#3b82f6', fontSize: 20 }} />,
+    ACCIDENT: <WarningOutlined style={{ color: '#f97316', fontSize: 20 }} />,
+    STORM:    <ThunderboltOutlined style={{ color: '#6b7280', fontSize: 20 }} />,
+    // lowercase fallbacks
+    fire:     <FireOutlined style={{ color: '#ef4444', fontSize: 20 }} />,
+    flood:    <CloudOutlined style={{ color: '#3b82f6', fontSize: 20 }} />,
     accident: <WarningOutlined style={{ color: '#f97316', fontSize: 20 }} />,
-    storm: <ThunderboltOutlined style={{ color: '#6b7280', fontSize: 20 }} />,
+    storm:    <ThunderboltOutlined style={{ color: '#6b7280', fontSize: 20 }} />,
   };
 
   const severityColors: Record<string, string> = {
@@ -185,11 +191,9 @@ const DisasterReports: React.FC = () => {
     low: 'LOW',
   };
 
-  const criticalCount = reports.filter((r) => r.severity === 'critical').length;
-  const activeCount = reports.filter(
-    (r) => r.severity === 'high' || r.severity === 'medium'
-  ).length;
-  const resolvedCount = reports.filter((r) => r.responseStatus >= 90).length;
+  const criticalCount = summary?.critical ?? reports.filter((r) => r.severity === 'critical').length;
+  const activeCount = summary ? (summary.active + summary.monitoring) : reports.filter((r) => r.disasterStatus === 'ACTIVE' || r.disasterStatus === 'MONITORING').length;
+  const resolvedCount = summary?.resolved ?? reports.filter((r) => r.disasterStatus === 'RESOLVED').length;
 
   // ─── Sub-page renders ────────────────────────────────────────────────────────
 
@@ -261,26 +265,26 @@ const DisasterReports: React.FC = () => {
           <Col flex="none">
             <Space size={8}>
               <Button
-                type={selectedTimeFilter === 'today' ? 'primary' : 'default'}
-                onClick={() => setSelectedTimeFilter('today')}
+                type={selectedTimeFilter === 'active' ? 'primary' : 'default'}
+                onClick={() => setSelectedTimeFilter('active')}
                 style={
-                  selectedTimeFilter === 'today'
+                  selectedTimeFilter === 'active'
                     ? { background: '#7c3aed', borderColor: '#7c3aed', borderRadius: 8 }
                     : { borderRadius: 8 }
                 }
               >
-                Today
+                Active
               </Button>
               <Button
-                type={selectedTimeFilter === '7days' ? 'primary' : 'default'}
-                onClick={() => setSelectedTimeFilter('7days')}
+                type={selectedTimeFilter === 'all' ? 'primary' : 'default'}
+                onClick={() => setSelectedTimeFilter('all')}
                 style={
-                  selectedTimeFilter === '7days'
+                  selectedTimeFilter === 'all'
                     ? { background: '#7c3aed', borderColor: '#7c3aed', borderRadius: 8 }
                     : { borderRadius: 8 }
                 }
               >
-                7 Days
+                All
               </Button>
             </Space>
           </Col>

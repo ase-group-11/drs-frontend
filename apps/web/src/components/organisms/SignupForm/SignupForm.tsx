@@ -23,7 +23,6 @@ interface SignupFormValues {
 const SignupForm: React.FC = () => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
-    const [isFormValid, setIsFormValid] = useState(false);
     const [countryCode, setCountryCode] = useState('+353');
     const navigate = useNavigate();
 
@@ -42,12 +41,8 @@ const SignupForm: React.FC = () => {
             values.confirmPassword;
 
         form.validateFields({ validateOnly: true })
-            .then(() => {
-                setIsFormValid(!!allFieldsFilled);
-            })
-            .catch(() => {
-                setIsFormValid(false);
-            });
+            .then(() => {})
+            .catch(() => {});
     };
 
     const validateMobileNumber = (_: any, value: string) => {
@@ -135,11 +130,11 @@ const SignupForm: React.FC = () => {
                         rules={[{ required: true, message: 'Please select salutation' }]}
                     >
                         <Select placeholder="Select" size="large" suffixIcon={null}>
-                            <Option value="mr">Mr.</Option>
-                            <Option value="ms">Ms.</Option>
-                            <Option value="mrs">Mrs.</Option>
-                            <Option value="dr">Dr.</Option>
-                            <Option value="prof">Prof.</Option>
+                            <Option value="Mr.">Mr.</Option>
+                            <Option value="Ms.">Ms.</Option>
+                            <Option value="Mrs.">Mrs.</Option>
+                            <Option value="Dr.">Dr.</Option>
+                            <Option value="Prof.">Prof.</Option>
                         </Select>
                     </Form.Item>
                 </Col>

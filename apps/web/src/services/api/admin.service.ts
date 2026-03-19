@@ -7,6 +7,8 @@ import type {
   DistributionDataPoint,
   ActivityLog,
   DisasterReport,
+  DisasterRaw,
+  DisastersApiResponse,
   SystemAlert,
   AdminApiResponse,
 } from '../../types';
@@ -76,195 +78,6 @@ const DUMMY_ACTIVITY_LOGS: ActivityLog[] = [
     user: 'Admin User',
     status: 'Pending',
     statusColor: 'warning',
-  },
-];
-
-const DUMMY_DISASTER_REPORTS: DisasterReport[] = [
-  // ── Today ──
-  {
-    id: '1',
-    type: 'fire',
-    title: 'Fire',
-    reportId: 'DR-2025-0023',
-    location: '12 Grafton Street',
-    zone: 'Zone A - Dublin City',
-    time: '15 mins ago',
-    units: 3,
-    severity: 'critical',
-    description: 'Large structure fire in commercial building. Multiple floors affected. Immediate evacuation in progress.',
-    responseStatus: 65,
-    createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    type: 'flood',
-    title: 'Flood',
-    reportId: 'DR-2025-0022',
-    location: 'Clontarf Promenade',
-    zone: 'Zone B - Coastal',
-    time: '45 mins ago',
-    units: 2,
-    severity: 'high',
-    description: 'Coastal flooding due to high tide and storm surge. Several properties at risk.',
-    responseStatus: 45,
-    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '3',
-    type: 'accident',
-    title: 'Accident',
-    reportId: 'DR-2025-0021',
-    location: 'M50 Junction 9',
-    zone: 'Zone C - Highway',
-    time: '2 hours ago',
-    units: 1,
-    severity: 'medium',
-    description: 'Multi-vehicle collision on motorway. Minor injuries reported. Lane closure in effect.',
-    responseStatus: 80,
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '4',
-    type: 'storm',
-    title: 'Storm Damage',
-    reportId: 'DR-2025-0020',
-    location: 'Phoenix Park',
-    zone: 'Zone D - Parks',
-    time: '3 hours ago',
-    units: 2,
-    severity: 'low',
-    description: 'Fallen trees blocking pathways. No injuries. Cleanup in progress.',
-    responseStatus: 90,
-    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '5',
-    type: 'fire',
-    title: 'Fire',
-    reportId: 'DR-2025-0019',
-    location: 'Phibsborough Road',
-    zone: 'Zone A - Dublin City',
-    time: '5 hours ago',
-    units: 2,
-    severity: 'high',
-    description: 'Residential fire on top floor. Residents evacuated safely. Firefighters on scene.',
-    responseStatus: 70,
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  // ── Yesterday (1 day ago) ──
-  {
-    id: '6',
-    type: 'flood',
-    title: 'Flood',
-    reportId: 'DR-2025-0018',
-    location: 'Grand Canal Dock',
-    zone: 'Zone B - Coastal',
-    time: '1 day ago',
-    units: 3,
-    severity: 'critical',
-    description: 'Severe flooding in docklands area. Multiple roads impassable. Emergency pumps deployed.',
-    responseStatus: 55,
-    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '7',
-    type: 'accident',
-    title: 'Accident',
-    reportId: 'DR-2025-0017',
-    location: 'Liffey Valley Retail Park',
-    zone: 'Zone C - Highway',
-    time: '1 day ago',
-    units: 2,
-    severity: 'medium',
-    description: 'Bus collision with barrier in car park. 4 passengers with minor injuries, ambulance dispatched.',
-    responseStatus: 95,
-    createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  // ── 2 days ago ──
-  {
-    id: '8',
-    type: 'storm',
-    title: 'Storm Damage',
-    reportId: 'DR-2025-0016',
-    location: 'Sandymount Strand',
-    zone: 'Zone B - Coastal',
-    time: '2 days ago',
-    units: 1,
-    severity: 'low',
-    description: 'Storm debris on coastal walk. Minor structural damage to seafront shelters.',
-    responseStatus: 100,
-    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  // ── 3 days ago ──
-  {
-    id: '9',
-    type: 'fire',
-    title: 'Fire',
-    reportId: 'DR-2025-0015',
-    location: 'Tallaght Industrial Estate',
-    zone: 'Zone E - Industrial',
-    time: '3 days ago',
-    units: 5,
-    severity: 'critical',
-    description: 'Large warehouse fire. Chemical storage involved. Hazmat team and 5 units deployed.',
-    responseStatus: 40,
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '10',
-    type: 'accident',
-    title: 'Accident',
-    reportId: 'DR-2025-0014',
-    location: 'Drumcondra Road',
-    zone: 'Zone A - Dublin City',
-    time: '3 days ago',
-    units: 1,
-    severity: 'low',
-    description: 'Minor rear-end collision outside school. No injuries. Traffic management required.',
-    responseStatus: 100,
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  // ── 5 days ago ──
-  {
-    id: '11',
-    type: 'flood',
-    title: 'Flood',
-    reportId: 'DR-2025-0013',
-    location: 'River Dodder, Rathfarnham',
-    zone: 'Zone F - River',
-    time: '5 days ago',
-    units: 4,
-    severity: 'high',
-    description: 'River burst its banks after heavy overnight rainfall. Residential properties flooded.',
-    responseStatus: 85,
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  // ── 6 days ago ──
-  {
-    id: '12',
-    type: 'storm',
-    title: 'Storm Damage',
-    reportId: 'DR-2025-0012',
-    location: 'Dún Laoghaire Pier',
-    zone: 'Zone B - Coastal',
-    time: '6 days ago',
-    units: 2,
-    severity: 'medium',
-    description: 'Storm-force winds caused pier damage and overturned vehicles in harbour car park.',
-    responseStatus: 75,
-    createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
   },
 ];
 
@@ -381,88 +194,108 @@ export const getSystemAlerts = async (): Promise<AdminApiResponse<SystemAlert[]>
 };
 
 // Disaster Reports APIs
-export const getDisasterReports = async (
-  filters?: {
-    severity?: string;
-    type?: string;
-    status?: string;
-  }
-): Promise<AdminApiResponse<DisasterReport[]>> => {
+
+// Maps raw API disaster to UI DisasterReport shape
+const STATUS_TO_PROGRESS: Record<string, number> = {
+  ACTIVE:     60,
+  MONITORING: 30,
+  RESOLVED:   100,
+  ARCHIVED:   100,
+  CRITICAL:   80,
+};
+
+const mapDisaster = (raw: DisasterRaw): DisasterReport => ({
+  id:              raw.id,
+  trackingId:      raw.tracking_id,
+  type:            raw.type,
+  title:           raw.type.charAt(0) + raw.type.slice(1).toLowerCase(),
+  reportId:        raw.tracking_id,
+  location:        raw.location_address,
+  locationCoords:  raw.location,
+  zone:            raw.location_address.split(',').slice(-1)[0]?.trim() || '',
+  time:            raw.time_ago,
+  units:           raw.units_assigned,
+  severity:        raw.severity.toLowerCase(),
+  description:     raw.description,
+  responseStatus:  STATUS_TO_PROGRESS[raw.disaster_status] ?? 0,
+  createdAt:       raw.created_at,
+  disasterStatus:  raw.disaster_status,
+  peopleAffected:  raw.people_affected,
+  reportCount:     raw.report_count,
+});
+
+export const getDisasterReports = async (): Promise<AdminApiResponse<DisasterReport[]> & { summary?: DisastersApiResponse['summary'] }> => {
   try {
-    const response = await apiClient.get(API_ENDPOINTS.ADMIN.DISASTER_REPORTS, {
-      params: filters,
-    });
+    const response = await apiClient.get<DisastersApiResponse>(API_ENDPOINTS.ADMIN.DISASTERS_ALL);
     return {
       success: true,
       message: 'Disaster reports fetched successfully',
-      data: response.data,
+      data: response.data.disasters.map(mapDisaster),
+      summary: response.data.summary,
     };
   } catch (error: any) {
-    console.warn('Disaster reports API failed, using fallback data:', error);
+    console.error('getDisasterReports error:', error);
     return {
-      success: true,
-      message: 'Using fallback data',
-      data: DUMMY_DISASTER_REPORTS,
+      success: false,
+      message: error.response?.data?.detail || 'Failed to fetch disaster reports.',
     };
   }
 };
 
 export const getDisasterReportById = async (id: string): Promise<AdminApiResponse<DisasterReport>> => {
   try {
-    const response = await apiClient.get(`${API_ENDPOINTS.ADMIN.DISASTER_REPORTS}/${id}`);
+    const response = await apiClient.get<DisasterRaw>(API_ENDPOINTS.ADMIN.DISASTER_BY_ID(id));
     return {
       success: true,
       message: 'Disaster report fetched successfully',
-      data: response.data,
+      data: mapDisaster(response.data),
     };
   } catch (error: any) {
-    console.warn('Disaster report API failed, using fallback data:', error);
-    const report = DUMMY_DISASTER_REPORTS.find((r) => r.id === id) || DUMMY_DISASTER_REPORTS[0];
+    console.error('getDisasterReportById error:', error);
     return {
-      success: true,
-      message: 'Using fallback data',
-      data: report,
+      success: false,
+      message: error.response?.data?.detail || 'Failed to fetch disaster report.',
     };
   }
 };
 
 export const updateDisasterReportStatus = async (
   id: string,
-  status: string
+  resolutionNotes: string
 ): Promise<AdminApiResponse> => {
   try {
-    const response = await apiClient.patch(`${API_ENDPOINTS.ADMIN.DISASTER_REPORTS}/${id}/status`, {
-      status,
+    const response = await apiClient.post(API_ENDPOINTS.ADMIN.DISASTER_RESOLVE(id), {
+      resolution_notes: resolutionNotes,
     });
     return {
       success: true,
-      message: 'Report status updated successfully',
+      message: 'Disaster resolved successfully',
       data: response.data,
     };
   } catch (error: any) {
-    console.error('Update report status error:', error);
+    console.error('updateDisasterReportStatus error:', error);
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to update report status',
+      message: error.response?.data?.detail || 'Failed to resolve disaster',
     };
   }
 };
 
 export const escalateDisasterSeverity = async (
   id: string,
-  severity: string
+  newSeverity: string
 ): Promise<AdminApiResponse> => {
   try {
-    const response = await apiClient.patch(`${API_ENDPOINTS.ADMIN.DISASTER_REPORTS}/${id}/severity`, {
-      severity,
+    const response = await apiClient.post(API_ENDPOINTS.ADMIN.DISASTER_ESCALATE(id), {
+      new_severity: newSeverity,
     });
     return {
       success: true,
-      message: 'Report severity escalated successfully',
+      message: 'Disaster severity escalated successfully',
       data: response.data,
     };
   } catch (error: any) {
-    console.error('Escalate severity error:', error);
+    console.error('escalateDisasterSeverity error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to escalate severity',
@@ -470,10 +303,10 @@ export const escalateDisasterSeverity = async (
   }
 };
 
-export const dispatchUnits = async (id: string, units: number): Promise<AdminApiResponse> => {
+export const dispatchUnits = async (id: string, unitIds: string[]): Promise<AdminApiResponse> => {
   try {
-    const response = await apiClient.post(`${API_ENDPOINTS.ADMIN.DISASTER_REPORTS}/${id}/dispatch`, {
-      units,
+    const response = await apiClient.post(API_ENDPOINTS.ADMIN.DISASTER_DISPATCH(id), {
+      unit_ids: unitIds,
     });
     return {
       success: true,
@@ -481,7 +314,7 @@ export const dispatchUnits = async (id: string, units: number): Promise<AdminApi
       data: response.data,
     };
   } catch (error: any) {
-    console.error('Dispatch units error:', error);
+    console.error('dispatchUnits error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to dispatch units',

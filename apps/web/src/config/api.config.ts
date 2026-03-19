@@ -32,6 +32,13 @@ export const API_ENDPOINTS = {
     ACTIVITY_LOGS: '/admin/dashboard/activity',
     SYSTEM_ALERTS: '/admin/dashboard/alerts',
     DISASTER_REPORTS: '/admin/disaster-reports',
+    // Real API disaster endpoints
+    DISASTERS_ACTIVE: '/disasters/active',
+    DISASTERS_ALL: '/disasters/all',
+    DISASTER_BY_ID: (id: string) => `/disasters/${id}`,
+    DISASTER_RESOLVE: (id: string) => `/disasters/${id}/resolve`,
+    DISASTER_ESCALATE: (id: string) => `/disasters/${id}/escalate`,
+    DISASTER_DISPATCH: (id: string) => `/disasters/${id}/dispatch`,
   },
   // User Management
   USER_MANAGEMENT: {
@@ -43,13 +50,13 @@ export const API_ENDPOINTS = {
   },
   // Emergency Teams
   TEAMS: {
-    LIST: '/api/admin/teams',
-    CREATE: '/api/admin/teams',
-    UPDATE: (id: string) => `/api/admin/teams/${id}`,
-    DELETE: (id: string) => `/api/admin/teams/${id}`,
-    DEPLOY: (id: string) => `/api/admin/teams/${id}/deploy`,
-    DECOMMISSION: (id: string) => `/api/admin/teams/${id}/decommission`,
-    ACTIVE_DISASTERS: '/api/admin/teams/active-disasters',
+    LIST: '/emergency-units/',
+    CREATE: '/emergency-units/',
+    UPDATE: (id: string) => `/emergency-units/${id}`,
+    DELETE: (id: string) => `/emergency-units/${id}`,
+    DEPLOY: (disasterId: string) => `/disasters/${disasterId}/dispatch`,
+    DECOMMISSION: (id: string) => `/emergency-units/${id}`,
+    ACTIVE_DISASTERS: '/disasters/active',
   },
   // Settings
   SETTINGS: {

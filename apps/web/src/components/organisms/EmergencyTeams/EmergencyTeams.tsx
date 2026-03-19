@@ -59,19 +59,12 @@ const TYPE_ICON: Record<string, React.ReactNode> = {
   Rescue: <TruckOutlined />,
 };
 
-const FILTER_BUTTONS = [
-  { key: 'all', label: 'All Teams' },
-  { key: 'fire', label: 'Fire (45)' },
-  { key: 'ambulance', label: 'Ambulance (32)' },
-  { key: 'police', label: 'Police (50)' },
-  { key: 'rescue', label: 'Rescue (29)' },
-];
-
 const EmergencyTeams: React.FC = () => {
   const [teams, setTeams] = useState<EmergencyTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [meta, setMeta] = useState<{ total_count: number; active_count: number; deployed_count: number; by_department: Record<string, number> } | null>(null);
 
   // Modal states
   const [contactOpen, setContactOpen] = useState(false);
@@ -89,8 +82,13 @@ const EmergencyTeams: React.FC = () => {
   const loadTeams = async () => {
     setLoading(true);
     try {
-      const res = await getTeams();
-      if (res.data) setTeams(res.data);
+      const res = await getTeams() as any;
+      if (res.success && res.data) {
+        setTeams(res.data);
+        if (res.meta) setMeta(res.meta);
+      } else {
+        message.error(res.message || 'Failed to load teams');
+      }
     } catch {
       message.error('Failed to load teams');
     } finally {
@@ -98,14 +96,30 @@ const EmergencyTeams: React.FC = () => {
     }
   };
 
+  // Department filter keys match API department values (FIRE, POLICE, MEDICAL, IT)
   const filteredTeams = teams.filter((t) => {
-    const matchType =
-      selectedFilter === 'all' || t.type.toLowerCase() === selectedFilter;
+    const matchDept =
+      selectedFilter === 'all' ||
+      t.department.toUpperCase() === selectedFilter.toUpperCase();
     const matchSearch =
+      !searchQuery ||
       t.unitId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.station.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchType && matchSearch;
+      t.station.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.unitName?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchDept && matchSearch;
   });
+
+  // Build dynamic counts from API meta or fall back to counting teams array
+  const deptCount = (dept: string) =>
+    meta?.by_department?.[dept] ?? teams.filter((t) => t.department === dept).length;
+
+  const filterButtons = [
+    { key: 'all',     label: `All Teams` },
+    { key: 'FIRE',    label: `Fire (${deptCount('FIRE')})` },
+    { key: 'MEDICAL', label: `Ambulance (${deptCount('MEDICAL')})` },
+    { key: 'POLICE',  label: `Police (${deptCount('POLICE')})` },
+    { key: 'IT',      label: `Rescue (${deptCount('IT')})` },
+  ];
 
   const handleContact = (team: EmergencyTeam) => {
     setSelectedTeam(team);
@@ -139,16 +153,16 @@ const EmergencyTeams: React.FC = () => {
         <div>
           <Text className={styles.pageTitle}>Emergency Teams</Text>
           <div className={styles.headerMeta}>
-            <span className={styles.metaTotal}>156 Total Teams</span>
+            <span className={styles.metaTotal}>{meta?.total_count ?? teams.length} Total Teams</span>
             <span className={styles.metaDivider} />
             <span className={styles.metaActive}>
               <span className={styles.dotGreen} />
-              142 Active
+              {meta?.active_count ?? teams.filter(t => t.statusType === 'available').length} Active
             </span>
             <span className={styles.metaDivider} />
             <span className={styles.metaDeployed}>
               <span className={styles.dotBlue} />
-              23 Deployed
+              {meta?.deployed_count ?? teams.filter(t => t.statusType === 'deployed').length} Deployed
             </span>
           </div>
         </div>
@@ -166,7 +180,7 @@ const EmergencyTeams: React.FC = () => {
       {/* Filter Bar */}
       <div className={styles.filterBar}>
         <div className={styles.typeFilters}>
-          {FILTER_BUTTONS.map(({ key, label }) => (
+          {filterButtons.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setSelectedFilter(key)}
