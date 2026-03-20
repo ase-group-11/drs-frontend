@@ -1,11 +1,13 @@
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+// metro.config.js
+// Polyfill for Node.js < 20
+if (!Array.prototype.toReversed) {
+  Array.prototype.toReversed = function() {
+    return this.slice().reverse();
+  };
+}
 
-/**
- * Metro configuration
- * https://reactnative.dev/docs/metro
- *
- * @type {import('@react-native/metro-config').MetroConfig}
- */
+const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
+
 const config = {};
 
 module.exports = mergeConfig(getDefaultConfig(__dirname), config);
