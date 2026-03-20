@@ -1,47 +1,51 @@
-import React, { useState } from 'react';
-import {
-  Modal,
-  Switch,
-  Input,
-  Button,
-  Select,
-  Typography,
-  message,
-} from 'antd';
-import {
-  EnvironmentOutlined,
-  ClockCircleOutlined,
-  TeamOutlined,
-} from '@ant-design/icons';
+import React, { useState, useEffect } from 'react';
+import { Modal, Switch, Input, Button, Select, Typography, message, Spin } from 'antd';
+import { EnvironmentOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons';
 import type { DisasterReport } from '../../../types';
 import { dispatchUnits } from '../../../services';
+import apiClient from '../../../lib/axios';
 
 const { TextArea } = Input;
 const { Text } = Typography;
 
-const AVAILABLE_UNITS = [
-  { id: 'u1', unitId: 'F-05', type: 'Fire',      emoji: '🚒', station: 'Tara Street Station', crew: '4/4', location: 'Tara Street',   eta: 5,  km: 2.3 },
-  { id: 'u2', unitId: 'A-08', type: 'Ambulance',  emoji: '🚑', station: 'St James Hospital',   crew: '2/2', location: 'St James',       eta: 7,  km: 3.1 },
-  { id: 'u3', unitId: 'F-11', type: 'Fire',        emoji: '🚒', station: 'North Strand Station',crew: '4/4', location: 'North Strand',   eta: 4,  km: 1.8 },
-  { id: 'u4', unitId: 'P-15', type: 'Police',      emoji: '🚓', station: 'Pearse Street Station',crew: '2/2', location: 'Pearse Street', eta: 6,  km: 2.7 },
-  { id: 'u5', unitId: 'A-12', type: 'Ambulance',  emoji: '🚑', station: 'Mater Hospital',      crew: '2/2', location: 'Mater',          eta: 9,  km: 4.2 },
-  { id: 'u6', unitId: 'R-02', type: 'Rescue',      emoji: '🚁', station: 'Dublin Airport',      crew: '3/4', location: 'Airport',        eta: 15, km: 8.5 },
-];
+// ─── Haversine distance (km) ──────────────────────────────────────────────────
+const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+};
+const etaMins = (km: number) => Math.round((km / 40) * 60);
 
+interface UnitDisplay {
+  id: string;
+  unitCode: string;
+  type: string;
+  emoji: string;
+  station: string;
+  crew: string;
+  status: string;
+  km: number | null;
+  eta: number | null;
+}
+
+const DEPT_EMOJI: Record<string, string> = { FIRE: '🚒', MEDICAL: '🚑', POLICE: '🚓', IT: '🚁' };
+const DEPT_LABEL: Record<string, string> = { FIRE: 'Fire', MEDICAL: 'Ambulance', POLICE: 'Police', IT: 'Rescue' };
 const TYPE_COLORS: Record<string, { text: string; bg: string }> = {
   Fire:      { text: '#dc2626', bg: '#fef2f2' },
   Ambulance: { text: '#2563eb', bg: '#eff6ff' },
   Police:    { text: '#7c3aed', bg: '#f5f3ff' },
   Rescue:    { text: '#d97706', bg: '#fffbeb' },
 };
-
 const PRIORITY_OPTIONS = [
-  { value: 'emergency',     label: 'Emergency',    dot: '#dc2626' },
-  { value: 'high_priority', label: 'High Priority', dot: '#f97316' },
-  { value: 'standard',      label: 'Standard',     dot: '#2563eb' },
+  { value: 'CRITICAL',      label: 'Critical',      dot: '#dc2626' },
+  { value: 'HIGH_PRIORITY', label: 'High Priority', dot: '#f97316' },
+  { value: 'STANDARD',      label: 'Standard',      dot: '#2563eb' },
 ];
 
-type FilterTab = 'all' | 'Fire' | 'Ambulance' | 'Police' | 'Rescue';
+type FilterTab = 'all' | 'FIRE' | 'MEDICAL' | 'POLICE' | 'IT';
 
 interface DispatchUnitsModalProps {
   open: boolean;
@@ -50,42 +54,73 @@ interface DispatchUnitsModalProps {
   onSuccess: () => void;
 }
 
-const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({
-  open, report, onClose, onSuccess,
-}) => {
+const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, onClose, onSuccess }) => {
+  const [units, setUnits] = useState<UnitDisplay[]>([]);
+  const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
-  const [availableOnly, setAvailableOnly] = useState(true);
-  const [search, setSearch] = useState('');
-  const [priority, setPriority] = useState('standard');
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [priority, setPriority] = useState('STANDARD');
   const [instructions, setInstructions] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const TABS: { key: FilterTab; label: string }[] = [
-    { key: 'all', label: 'All Units' },
-    { key: 'Fire', label: 'Fire Teams' },
-    { key: 'Ambulance', label: 'Ambulance' },
-    { key: 'Police', label: 'Police' },
-    { key: 'Rescue', label: 'Rescue' },
+    { key: 'all', label: 'All Units' }, { key: 'FIRE', label: 'Fire' },
+    { key: 'MEDICAL', label: 'Ambulance' }, { key: 'POLICE', label: 'Police' },
+    { key: 'IT', label: 'Rescue' },
   ];
 
-  const filtered = AVAILABLE_UNITS.filter((u) => {
-    const matchesTab = filterTab === 'all' || u.type === filterTab;
-    const matchesSearch =
-      !search ||
-      u.unitId.toLowerCase().includes(search.toLowerCase()) ||
-      u.type.toLowerCase().includes(search.toLowerCase()) ||
-      u.station.toLowerCase().includes(search.toLowerCase());
-    return matchesTab && matchesSearch;
+  useEffect(() => { if (open) fetchUnits(); }, [open]);
+
+  const fetchUnits = async () => {
+    setLoading(true);
+    try {
+      const listRes = await apiClient.get<{ units: any[] }>('/emergency-units/');
+      const rawUnits = listRes.data?.units ?? [];
+      const disLat = report?.locationCoords?.lat;
+      const disLon = report?.locationCoords?.lon;
+
+      const detailPromises = rawUnits.map(async (raw): Promise<UnitDisplay> => {
+        let km: number | null = null;
+        let eta: number | null = null;
+        try {
+          const det = await apiClient.get<{ station: { lat: number; lon: number } }>(`/emergency-units/${raw.id}`);
+          const sLat = det.data?.station?.lat;
+          const sLon = det.data?.station?.lon;
+          if (disLat != null && disLon != null && sLat != null && sLon != null) {
+            km = Math.round(haversineKm(disLat, disLon, sLat, sLon) * 10) / 10;
+            eta = etaMins(km);
+          }
+        } catch {}
+        return {
+          id: raw.id, unitCode: raw.unit_code,
+          type: DEPT_LABEL[raw.department] ?? 'Rescue',
+          emoji: DEPT_EMOJI[raw.department] ?? '🚒',
+          station: raw.station_name,
+          crew: `${raw.crew_count}/${raw.capacity}`,
+          status: raw.unit_status, km, eta,
+        };
+      });
+
+      const resolved = await Promise.all(detailPromises);
+      resolved.sort((a, b) => (a.km ?? 999) - (b.km ?? 999));
+      setUnits(resolved);
+    } catch { message.error('Failed to load units'); }
+    finally { setLoading(false); }
+  };
+
+  const filtered = units.filter((u) => {
+    const matchTab = filterTab === 'all' || DEPT_LABEL[filterTab] === u.type;
+    const matchAvail = !availableOnly || u.status === 'AVAILABLE';
+    return matchTab && matchAvail;
   });
 
   const toggle = (id: string) =>
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
   const handleClose = () => {
-    setSelectedIds([]); setFilterTab('all'); setSearch('');
-    setPriority('standard'); setInstructions('');
-    onClose();
+    setSelectedIds([]); setFilterTab('all'); setAvailableOnly(false);
+    setPriority('STANDARD'); setInstructions(''); onClose();
   };
 
   const handleDispatch = async () => {
@@ -93,7 +128,7 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({
     if (!report) return;
     setSubmitting(true);
     try {
-      const result = await dispatchUnits(report.id, selectedIds);
+      const result = await dispatchUnits(report.id, selectedIds, priority, instructions);
       if (result.success) {
         message.success(`${selectedIds.length} unit${selectedIds.length > 1 ? 's' : ''} dispatched`);
         onSuccess(); handleClose();
@@ -102,252 +137,183 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({
     finally { setSubmitting(false); }
   };
 
-  const priorityDot = PRIORITY_OPTIONS.find((p) => p.value === priority)?.dot ?? '#2563eb';
+  const selectedUnits = units.filter((u) => selectedIds.includes(u.id));
+  const fastestEta = selectedUnits.length > 0 ? Math.min(...selectedUnits.map((u) => u.eta ?? 999)) : null;
 
   return (
     <Modal
-      open={open}
-      onCancel={handleClose}
-      footer={null}
-      width={640}
-      destroyOnClose
-      title={null}
-      styles={{ body: { padding: 0 } }}
+      open={open} onCancel={handleClose} footer={null} width={480}
+      destroyOnClose title={null}
+      styles={{ body: { padding: 0 }, content: { borderRadius: 12, overflow: 'hidden', padding: 0 } }}
     >
-      <div style={{ padding: '24px 24px 0' }}>
-        {/* Title */}
-        <Text strong style={{ fontSize: 18, color: '#111827', display: 'block', marginBottom: 4 }}>
+      {/* Scrollable body */}
+      <div style={{ maxHeight: '78vh', overflowY: 'auto', padding: '16px 20px 0' }}>
+
+        <Text style={{ fontSize: 16, fontWeight: 700, color: '#111827', display: 'block', marginBottom: 2 }}>
           Dispatch Emergency Units
         </Text>
-        <Text style={{ fontSize: 13, color: '#6b7280', display: 'block', marginBottom: 16 }}>
-          Select units to deploy to {report?.reportId}
+        <Text style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 12 }}>
+          Select units to deploy to {report?.trackingId}
         </Text>
 
         {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setFilterTab(tab.key)}
+            <button key={tab.key} onClick={() => setFilterTab(tab.key)}
               style={{
-                padding: '6px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                fontSize: 13, fontWeight: 500,
+                padding: '4px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                fontSize: 11, fontWeight: 500, transition: 'all 0.15s',
                 background: filterTab === tab.key ? '#7c3aed' : '#f3f4f6',
                 color: filterTab === tab.key ? '#fff' : '#374151',
-                transition: 'all 0.15s',
-              }}
-            >
+              }}>
               {tab.label}
             </button>
           ))}
         </div>
 
         {/* Available Only toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <Switch
-            checked={availableOnly}
-            onChange={setAvailableOnly}
-            style={{ background: availableOnly ? '#111827' : '#d1d5db' }}
-          />
-          <Text style={{ fontSize: 13, color: '#374151' }}>Available Only</Text>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <Switch checked={availableOnly} onChange={setAvailableOnly}
+            style={{ background: availableOnly ? '#111827' : '#d1d5db' }} />
+          <Text style={{ fontSize: 12, color: '#374151' }}>Available Only</Text>
         </div>
 
-        {/* Section header */}
-        <Text strong style={{ fontSize: 15, color: '#111827', display: 'block', marginBottom: 12 }}>
-          Available Units
-        </Text>
-      </div>
+        <Text strong style={{ fontSize: 13, color: '#111827', display: 'block', marginBottom: 8 }}>Units</Text>
 
-      {/* Scrollable unit grid + deployment details */}
-      <div style={{ maxHeight: 420, overflowY: 'auto', padding: '0 24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          {filtered.map((unit) => {
-            const selected = selectedIds.includes(unit.id);
-            const colors = TYPE_COLORS[unit.type];
-            return (
-              <div
-                key={unit.id}
-                onClick={() => toggle(unit.id)}
-                style={{
-                  border: `1.5px solid ${selected ? '#7c3aed' : '#e5e7eb'}`,
-                  borderRadius: 12,
-                  padding: 14,
-                  cursor: 'pointer',
-                  background: selected ? '#faf5ff' : '#fff',
-                  position: 'relative',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {/* Checkbox top-right */}
-                <div style={{
-                  position: 'absolute', top: 12, right: 12,
-                  width: 22, height: 22,
-                  border: `2px solid ${selected ? '#7c3aed' : '#d1d5db'}`,
-                  borderRadius: 6,
-                  background: selected ? '#7c3aed' : '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  {selected && (
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  )}
-                </div>
+        {/* Unit grid */}
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}><Spin /></div>
+        ) : filtered.length === 0 ? (
+          <Text type="secondary" style={{ fontSize: 12, fontStyle: 'italic', display: 'block', paddingBottom: 12 }}>No units found</Text>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+            {filtered.map((unit) => {
+              const selected = selectedIds.includes(unit.id);
+              const colors = TYPE_COLORS[unit.type] ?? TYPE_COLORS.Rescue;
+              const isAvailable = unit.status === 'AVAILABLE';
+              return (
+                <div key={unit.id} onClick={() => toggle(unit.id)}
+                  style={{
+                    border: `1.5px solid ${selected ? '#7c3aed' : '#e5e7eb'}`,
+                    borderRadius: 10, padding: '10px 10px 8px', cursor: 'pointer',
+                    background: selected ? '#faf5ff' : '#fff',
+                    position: 'relative', transition: 'all 0.15s',
+                  }}>
+                  {/* Status badge */}
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 20,
+                    background: isAvailable ? '#dcfce7' : '#fee2e2',
+                    color: isAvailable ? '#16a34a' : '#dc2626',
+                  }}>
+                    {unit.status}
+                  </span>
 
-                {/* Emoji + ID + type tag */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 24 }}>{unit.emoji}</span>
-                  <div>
-                    <Text strong style={{ fontSize: 15, color: '#111827' }}>{unit.unitId}</Text>
+                  {/* Checkbox */}
+                  <div style={{
+                    position: 'absolute', top: 8, right: 8, width: 18, height: 18,
+                    border: `2px solid ${selected ? '#7c3aed' : '#d1d5db'}`,
+                    borderRadius: 4, background: selected ? '#7c3aed' : '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {selected && (
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+
+                  {/* Emoji + ID + type */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '6px 0 4px' }}>
+                    <span style={{ fontSize: 18 }}>{unit.emoji}</span>
                     <div>
-                      <span style={{
-                        background: colors.bg, color: colors.text,
-                        borderRadius: 999, padding: '2px 10px', fontSize: 12, fontWeight: 500,
-                      }}>
-                        {unit.type}
-                      </span>
+                      <Text strong style={{ fontSize: 13, color: '#111827' }}>{unit.unitCode}</Text>
+                      <div>
+                        <span style={{ background: colors.bg, color: colors.text, borderRadius: 999, padding: '1px 7px', fontSize: 10, fontWeight: 500 }}>
+                          {unit.type}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Station */}
-                <Text style={{ fontSize: 12, color: '#374151', display: 'block', marginBottom: 6, fontWeight: 500 }}>
-                  {unit.station}
-                </Text>
+                  <Text style={{ fontSize: 11, color: '#374151', display: 'block', marginBottom: 4, fontWeight: 500 }}>
+                    {unit.station}
+                  </Text>
 
-                {/* Crew */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <TeamOutlined style={{ color: '#6b7280', fontSize: 12 }} />
-                  <Text style={{ fontSize: 12, color: '#6b7280' }}>{unit.crew} crew</Text>
-                </div>
-
-                {/* Location */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <EnvironmentOutlined style={{ color: '#6b7280', fontSize: 12 }} />
-                  <Text style={{ fontSize: 12, color: '#6b7280' }}>{unit.location}</Text>
-                </div>
-
-                {/* ETA + km */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <ClockCircleOutlined style={{ color: '#7c3aed', fontSize: 12 }} />
-                    <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600 }}>Est. {unit.eta} mins</Text>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                    <TeamOutlined style={{ color: '#9ca3af', fontSize: 10 }} />
+                    <Text style={{ fontSize: 11, color: '#6b7280' }}>{unit.crew} crew</Text>
                   </div>
-                  <Text style={{ fontSize: 12, color: '#9ca3af' }}>{unit.km} km away</Text>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <ClockCircleOutlined style={{ color: '#7c3aed', fontSize: 10 }} />
+                      <Text style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>
+                        {unit.eta != null ? `Est. ${unit.eta} mins` : 'ETA N/A'}
+                      </Text>
+                    </div>
+                    {unit.km != null && (
+                      <Text style={{ fontSize: 10, color: '#9ca3af' }}>{unit.km} km</Text>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Deployment Details */}
-        <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 20, marginBottom: 16 }}>
-          <Text strong style={{ fontSize: 15, color: '#111827', display: 'block', marginBottom: 16 }}>
+        <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 12, marginBottom: 14 }}>
+          <Text strong style={{ fontSize: 13, color: '#111827', display: 'block', marginBottom: 10 }}>
             Deployment Details
           </Text>
 
-          <Text strong style={{ fontSize: 13, color: '#111827', display: 'block', marginBottom: 8 }}>
-            Priority Level
-          </Text>
-          <div className="dispatch-priority-select">
-            <Select
-              value={priority}
-              onChange={setPriority}
-              style={{ width: '100%', marginBottom: 16 }}
-              optionLabelProp="label"
-              variant="filled"
-            >
+          <Text strong style={{ fontSize: 11, color: '#111827', display: 'block', marginBottom: 4 }}>Priority Level</Text>
+          <div className="dispatch-priority-select" style={{ marginBottom: 10 }}>
+            <Select value={priority} onChange={setPriority} style={{ width: '100%' }}
+              optionLabelProp="label" variant="filled" size="small">
               {PRIORITY_OPTIONS.map((p) => (
-                <Select.Option key={p.value} value={p.value} label={
-                  <span><span style={{ color: p.dot, fontSize: 10, marginRight: 8 }}>●</span>{p.label}</span>
-                }>
-                  <span><span style={{ color: p.dot, fontSize: 10, marginRight: 8 }}>●</span>{p.label}</span>
+                <Select.Option key={p.value} value={p.value}
+                  label={<span><span style={{ color: p.dot, fontSize: 9, marginRight: 6 }}>●</span>{p.label}</span>}>
+                  <span><span style={{ color: p.dot, fontSize: 9, marginRight: 6 }}>●</span>{p.label}</span>
                 </Select.Option>
               ))}
             </Select>
           </div>
 
-          <Text strong style={{ fontSize: 13, color: '#111827', display: 'block', marginBottom: 8 }}>
-            Special Instructions
-          </Text>
-          <TextArea
-            placeholder="Add special instructions for the response team..."
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            rows={3}
-            style={{ background: '#f3f4f6', border: 'none', borderRadius: 10, resize: 'none' }}
-          />
+          <Text strong style={{ fontSize: 11, color: '#111827', display: 'block', marginBottom: 4 }}>Special Instructions</Text>
+          <TextArea placeholder="Add special instructions..." value={instructions}
+            onChange={(e) => setInstructions(e.target.value)} rows={2}
+            style={{ background: '#f3f4f6', border: 'none', borderRadius: 8, resize: 'none', fontSize: 12 }} />
 
-          {/* Selected summary box */}
-          {selectedIds.length > 0 && (() => {
-            const fastestEta = Math.min(...AVAILABLE_UNITS.filter(u => selectedIds.includes(u.id)).map(u => u.eta));
-            return (
-              <div style={{
-                marginTop: 16,
-                background: '#f5f3ff',
-                border: '1px solid #ddd6fe',
-                borderRadius: 12,
-                padding: '14px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-              }}>
-                <EnvironmentOutlined style={{ color: '#7c3aed', fontSize: 18, flexShrink: 0 }} />
-                <div>
-                  <Text strong style={{ fontSize: 14, color: '#111827', display: 'block' }}>
-                    {selectedIds.length} unit{selectedIds.length > 1 ? 's' : ''} selected
-                  </Text>
-                  <Text style={{ fontSize: 13, color: '#7c3aed', fontWeight: 500 }}>
+          {selectedIds.length > 0 && (
+            <div style={{ marginTop: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <EnvironmentOutlined style={{ color: '#7c3aed', fontSize: 14, flexShrink: 0 }} />
+              <div>
+                <Text strong style={{ fontSize: 12, color: '#111827', display: 'block' }}>
+                  {selectedIds.length} unit{selectedIds.length > 1 ? 's' : ''} selected
+                </Text>
+                {fastestEta != null && fastestEta < 999 && (
+                  <Text style={{ fontSize: 11, color: '#7c3aed', fontWeight: 500 }}>
                     Fastest arrival: {fastestEta} mins
                   </Text>
-                </div>
+                )}
               </div>
-            );
-          })()}
+            </div>
+          )}
         </div>
+
       </div>
 
       {/* Footer */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: 12,
-        padding: '14px 24px', borderTop: '1px solid #f3f4f6',
-      }}>
-        <div style={{ minWidth: 0, flexShrink: 1 }}>
-          <Text style={{ fontSize: 13, color: '#374151', display: 'block', fontWeight: 500, whiteSpace: 'nowrap' }}>
-            {selectedIds.length === 0 ? 'No units selected' : `${selectedIds.length} unit${selectedIds.length > 1 ? 's' : ''} selected`}
-          </Text>
-          {selectedIds.length > 0 && (() => {
-            const fastestEta = Math.min(...AVAILABLE_UNITS.filter(u => selectedIds.includes(u.id)).map(u => u.eta));
-            return (
-              <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                Earliest arrival: {fastestEta} mins
-              </Text>
-            );
-          })()}
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-          <Button onClick={handleClose} style={{ borderRadius: 10, height: 42, padding: '0 20px' }}>
-            Cancel
-          </Button>
-          <Button
-            type="primary"
-            loading={submitting}
-            onClick={handleDispatch}
-            style={{
-              background: '#7c3aed',
-              borderColor: '#7c3aed',
-              borderRadius: 10,
-              height: 42,
-              padding: '0 22px',
-              fontWeight: 600,
-              opacity: selectedIds.length === 0 ? 0.45 : 1,
-            }}
-          >
-            Dispatch Units
-          </Button>
-        </div>
+      <div style={{ display: 'flex', gap: 8, padding: '10px 20px 14px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
+        <Button onClick={handleClose}
+          style={{ height: 36, paddingInline: 16, borderRadius: 6, fontWeight: 500, fontSize: 12, border: '1px solid #e5e7eb', color: '#374151' }}>
+          Cancel
+        </Button>
+        <Button type="primary" loading={submitting} onClick={handleDispatch}
+          style={{ height: 36, paddingInline: 20, borderRadius: 6, fontWeight: 600, fontSize: 12, background: '#7c3aed', borderColor: '#7c3aed', flex: 1, opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+          Dispatch Units
+        </Button>
       </div>
     </Modal>
   );

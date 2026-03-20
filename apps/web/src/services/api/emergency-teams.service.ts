@@ -148,8 +148,14 @@ export const decommissionUnit = async (
 
 export const getActiveDisasters = async (): Promise<AdminApiResponse<ActiveDisaster[]>> => {
   try {
-    const response = await apiClient.get(API_ENDPOINTS.TEAMS.ACTIVE_DISASTERS);
-    return { success: true, message: 'Active disasters fetched', data: response.data };
+    const response = await apiClient.get(API_ENDPOINTS.ADMIN.DISASTERS_ALL);
+    const data = response.data;
+    // Filter for ACTIVE disasters from the all-disasters endpoint
+    const allDisasters: ActiveDisaster[] = Array.isArray(data) ? data : (data?.disasters ?? []);
+    const activeDisasters = allDisasters.filter(
+      (d) => d.disaster_status === 'ACTIVE' || d.disaster_status === 'MONITORING'
+    );
+    return { success: true, message: 'Active disasters fetched', data: activeDisasters };
   } catch (error: any) {
     console.error('getActiveDisasters error:', error);
     return {

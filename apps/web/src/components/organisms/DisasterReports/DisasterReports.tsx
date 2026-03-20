@@ -13,11 +13,11 @@ import {
   Select,
   Input,
   Tag,
-  Progress,
   message,
   Spin,
   Empty,
   Space,
+  Popconfirm,
 } from 'antd';
 import {
   FireOutlined,
@@ -377,8 +377,8 @@ const DisasterReports: React.FC = () => {
 
                 {expandedId === report.id && (
                   <div className="report-expanded">
-                    <Row gutter={16}>
-                      <Col xs={24} md={8}>
+                    <Row gutter={[12, 12]}>
+                      <Col xs={24} sm={24} lg={8}>
                         <div className="expanded-section">
                           <h4 className="section-title">Description</h4>
                           <p className="section-content">{report.description}</p>
@@ -402,32 +402,42 @@ const DisasterReports: React.FC = () => {
                         </div>
                       </Col>
 
-                      <Col xs={24} md={8}>
+                      <Col xs={24} sm={24} lg={8}>
                         <Card className="status-card" size="small">
-                          <h4 className="section-title">Response Status</h4>
-                          <Progress
-                            percent={report.responseStatus}
-                            strokeColor="#10b981"
-                            className="status-progress"
-                          />
-                          <div className="status-steps">
-                            <div className="status-step status-completed">
-                              <CheckCircleOutlined style={{ color: '#10b981' }} />
-                              <span>Units dispatched</span>
+                          <h4 className="section-title">Disaster Details</h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#6b7280', flexShrink: 0 }}>Status</span>
+                              <span style={{
+                                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+                                background: report.disasterStatus === 'ACTIVE' ? '#dcfce7' : '#f3f4f6',
+                                color: report.disasterStatus === 'ACTIVE' ? '#16a34a' : '#6b7280',
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {report.disasterStatus}
+                              </span>
                             </div>
-                            <div className="status-step status-completed">
-                              <CheckCircleOutlined style={{ color: '#10b981' }} />
-                              <span>On scene assessment</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#6b7280', flexShrink: 0 }}>People Affected</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{report.peopleAffected ?? 'N/A'}</span>
                             </div>
-                            <div className="status-step status-in-progress">
-                              <ExclamationCircleOutlined style={{ color: '#f97316' }} />
-                              <span>Active response in progress</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#6b7280', flexShrink: 0 }}>Report Count</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{report.reportCount ?? 0}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#6b7280', flexShrink: 0 }}>Coordinates</span>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontFamily: 'monospace', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                {report.locationCoords
+                                  ? `${report.locationCoords.lat}, ${report.locationCoords.lon}`
+                                  : 'N/A'}
+                              </span>
                             </div>
                           </div>
                         </Card>
                       </Col>
 
-                      <Col xs={24} md={8}>
+                      <Col xs={24} sm={24} lg={8}>
                         <div className="expanded-section">
                           <h4 className="section-title">Admin Actions</h4>
                           <div className="admin-actions">
@@ -438,7 +448,7 @@ const DisasterReports: React.FC = () => {
                               style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
                               onClick={(e) => openDispatchModal(report, e)}
                             >
-                              Dispatch Additional Units
+                              Dispatch Units
                             </Button>
                             <Button
                               type="primary"
@@ -449,16 +459,33 @@ const DisasterReports: React.FC = () => {
                             >
                               Escalate Priority
                             </Button>
-                            <Button
-                              icon={<CheckCircleOutlined />}
-                              block
-                              onClick={(e) => {
-                                e.stopPropagation();
+                            <Popconfirm
+                              title="Mark as Resolved"
+                              description={
+                                <>
+                                  Are you sure you want to mark <strong>{report.reportId}</strong> as resolved?
+                                  <br />
+                                  This action cannot be undone.
+                                </>
+                              }
+                              onConfirm={(e) => {
+                                e?.stopPropagation();
                                 handleMarkResolved(report);
                               }}
+                              onCancel={(e) => e?.stopPropagation()}
+                              okText="Resolve"
+                              cancelText="Cancel"
+                              okButtonProps={{ style: { background: '#7c3aed', borderColor: '#7c3aed' } }}
+                              placement="topRight"
                             >
-                              Mark as Resolved
-                            </Button>
+                              <Button
+                                icon={<CheckCircleOutlined />}
+                                block
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Mark as Resolved
+                              </Button>
+                            </Popconfirm>
                           </div>
                         </div>
                       </Col>

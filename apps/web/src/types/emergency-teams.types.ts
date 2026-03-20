@@ -70,18 +70,18 @@ export interface DeployUnitPayload {
 
 export interface ActiveDisaster {
   id: string;
-  reportId: string;
-  type: 'fire' | 'flood' | 'accident' | 'storm';
-  typeIcon: string;
-  location: string;
-  severity: 'critical' | 'high' | 'medium';
-  distance: number;
-  eta: number;
-  currentUnits: number;
-  status: string;
+  tracking_id: string;
+  type: string;
+  severity: string;
+  disaster_status: string;
   description: string;
-  timeReported: string;
-  reporter: string;
+  location: { lat: number; lon: number };
+  location_address: string;
+  people_affected: number;
+  units_assigned: number;
+  report_count: number;
+  created_at: string;
+  time_ago: string;
 }
 
 export interface TeamFilters {
@@ -203,21 +203,7 @@ export interface DeployUnitPayload {
   notes?: string;
 }
 
-export interface ActiveDisaster {
-  id: string;
-  reportId: string;
-  type: 'fire' | 'flood' | 'accident' | 'storm';
-  typeIcon: string;
-  location: string;
-  severity: 'critical' | 'high' | 'medium';
-  distance: number;
-  eta: number;
-  currentUnits: number;
-  status: string;
-  description: string;
-  timeReported: string;
-  reporter: string;
-}
+
 
 export interface TeamFilters {
   type?: string;

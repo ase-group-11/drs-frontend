@@ -283,11 +283,13 @@ export const updateDisasterReportStatus = async (
 
 export const escalateDisasterSeverity = async (
   id: string,
-  newSeverity: string
+  newSeverity: string,
+  reason: string
 ): Promise<AdminApiResponse> => {
   try {
     const response = await apiClient.post(API_ENDPOINTS.ADMIN.DISASTER_ESCALATE(id), {
       new_severity: newSeverity,
+      reason,
     });
     return {
       success: true,
@@ -303,10 +305,17 @@ export const escalateDisasterSeverity = async (
   }
 };
 
-export const dispatchUnits = async (id: string, unitIds: string[]): Promise<AdminApiResponse> => {
+export const dispatchUnits = async (
+  id: string,
+  unitIds: string[],
+  priorityLevel: string = 'STANDARD',
+  specialInstructions: string = ''
+): Promise<AdminApiResponse> => {
   try {
     const response = await apiClient.post(API_ENDPOINTS.ADMIN.DISASTER_DISPATCH(id), {
       unit_ids: unitIds,
+      priority_level: priorityLevel,
+      special_instructions: specialInstructions || undefined,
     });
     return {
       success: true,
