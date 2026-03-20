@@ -1,3 +1,8 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/screens/LoginScreen/LoginScreen.tsx
+// CORRECTED - AuthTemplate uses children, not form prop!
+// ═══════════════════════════════════════════════════════════════════════════
+
 import React, { useState } from 'react';
 import { AuthTemplate } from '@templates/AuthTemplate';
 import { AuthHeader } from '@organisms/AuthHeader';

@@ -1,5 +1,11 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/screens/ReportDisaster/styles.ts
+// UPDATED - Added headerButton style
+// ═══════════════════════════════════════════════════════════════════════════
+
 import { StyleSheet } from "react-native";
-import { colors, spacing, borderRadius, shadows } from '@/theme'; // adjust path as needed
+import { colors, spacing, borderRadius, shadows } from '@/theme';
+
 export const reportStyles = StyleSheet.create({
   container: {
     flex: 1,
@@ -11,8 +17,16 @@ export const reportStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.gray200,
+  },
+  // ✅ NEW: Header button style
+  headerButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerCenter: {
     alignItems: 'center',

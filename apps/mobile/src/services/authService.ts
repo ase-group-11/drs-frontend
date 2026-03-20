@@ -1,3 +1,9 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/services/authService.ts
+// Authentication Service - COMPLETE & READY TO USE
+// ═══════════════════════════════════════════════════════════════════════════
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   RegisterRequest,
   RegisterResponse,
@@ -7,13 +13,25 @@ import type {
   LoginResponse,
   VerifyLoginRequest,
   VerifyLoginResponse,
-  ApiResponse,
+  User,
+  TokenResponse,
 } from '@types/auth';
 import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
 
-/**
- * API Error class
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// Storage Keys
+// ═══════════════════════════════════════════════════════════════════════════
+
+const STORAGE_KEYS = {
+  ACCESS_TOKEN: '@auth/access_token',
+  REFRESH_TOKEN: '@auth/refresh_token',
+  USER_DATA: '@auth/user_data',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API Error Class
+// ═══════════════════════════════════════════════════════════════════════════
+
 export class ApiError extends Error {
   status: number;
   data: any;
@@ -26,9 +44,10 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Make API request with error handling
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// API Request Helper
+// ═══════════════════════════════════════════════════════════════════════════
+
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -70,7 +89,6 @@ async function apiRequest<T>(
       throw error;
     }
 
-    // Network error
     if (error.message === 'Network request failed') {
       throw new ApiError(
         'Unable to connect to server. Please check your internet connection.',
@@ -82,26 +100,24 @@ async function apiRequest<T>(
   }
 }
 
-/**
- * Format phone number for API
- * Combines country code and phone number
- * Example: "+353" + "892039542" = "+353892039542"
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// Format Phone Number
+// ═══════════════════════════════════════════════════════════════════════════
+
 export function formatPhoneForApi(countryCode: string, phoneNumber: string): string {
-  // Ensure country code starts with +
   const formattedCountryCode = countryCode.startsWith('+') 
     ? countryCode 
     : `+${countryCode}`;
   
-  // Remove any spaces or dashes from phone number
   const cleanedPhone = phoneNumber.replace(/[\s-]/g, '');
   
   return `${formattedCountryCode}${cleanedPhone}`;
 }
 
-/**
- * Validate phone number
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// Validation Functions
+// ═══════════════════════════════════════════════════════════════════════════
+
 export function validatePhoneNumber(phoneNumber: string): { valid: boolean; error?: string } {
   const cleaned = phoneNumber.replace(/\D/g, '');
   
@@ -120,12 +136,9 @@ export function validatePhoneNumber(phoneNumber: string): { valid: boolean; erro
   return { valid: true };
 }
 
-/**
- * Validate email
- */
 export function validateEmail(email: string): { valid: boolean; error?: string } {
   if (!email) {
-    return { valid: true }; // Email is optional
+    return { valid: true };
   }
   
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -137,9 +150,6 @@ export function validateEmail(email: string): { valid: boolean; error?: string }
   return { valid: true };
 }
 
-/**
- * Validate full name
- */
 export function validateFullName(name: string): { valid: boolean; error?: string } {
   const trimmed = name.trim();
   
@@ -155,7 +165,6 @@ export function validateFullName(name: string): { valid: boolean; error?: string
     return { valid: false, error: 'Name is too long' };
   }
   
-  // Check for valid characters (letters, spaces, hyphens, apostrophes)
   const nameRegex = /^[a-zA-Z\s'-]+$/;
   if (!nameRegex.test(trimmed)) {
     return { valid: false, error: 'Name contains invalid characters' };
@@ -164,9 +173,6 @@ export function validateFullName(name: string): { valid: boolean; error?: string
   return { valid: true };
 }
 
-/**
- * Validate OTP
- */
 export function validateOTP(otp: string, length: number = 6): { valid: boolean; error?: string } {
   if (!otp) {
     return { valid: false, error: 'Please enter the OTP' };
@@ -183,13 +189,76 @@ export function validateOTP(otp: string, length: number = 6): { valid: boolean; 
   return { valid: true };
 }
 
-/**
- * Authentication Service
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// Authentication Service Class
+// ═══════════════════════════════════════════════════════════════════════════
+
 class AuthService {
-  /**
-   * Register new user (sends OTP)
-   */
+  private accessToken: string | null = null;
+
+  constructor() {
+    this.loadToken();
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Token Management
+  // ───────────────────────────────────────────────────────────────────────────
+
+  private async loadToken() {
+    try {
+      this.accessToken = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    } catch (error) {
+      console.error('Failed to load token:', error);
+    }
+  }
+
+  private async saveTokens(tokens: TokenResponse, user: User) {
+    try {
+      this.accessToken = tokens.access_token;
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokens.access_token);
+      await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh_token);
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(user));
+    } catch (error) {
+      console.error('Failed to save tokens:', error);
+      throw new ApiError('Failed to save authentication data', 500);
+    }
+  }
+
+  async clearTokens() {
+    try {
+      this.accessToken = null;
+      await AsyncStorage.multiRemove([
+        STORAGE_KEYS.ACCESS_TOKEN,
+        STORAGE_KEYS.REFRESH_TOKEN,
+        STORAGE_KEYS.USER_DATA,
+      ]);
+    } catch (error) {
+      console.error('Failed to clear tokens:', error);
+    }
+  }
+
+  async getStoredUser(): Promise<User | null> {
+    try {
+      const userData = await AsyncStorage.getItem(STORAGE_KEYS.USER_DATA);
+      return userData ? JSON.parse(userData) : null;
+    } catch (error) {
+      console.error('Failed to get stored user:', error);
+      return null;
+    }
+  }
+
+  getAuthHeader(): Record<string, string> {
+    return this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {};
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.accessToken;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // API Methods
+  // ───────────────────────────────────────────────────────────────────────────
+
   async register(request: RegisterRequest): Promise<RegisterResponse> {
     return apiRequest<RegisterResponse>('/auth/register', {
       method: 'POST',
@@ -197,19 +266,18 @@ class AuthService {
     });
   }
 
-  /**
-   * Verify registration OTP
-   */
   async verifyRegistration(request: VerifyRegisterRequest): Promise<VerifyRegisterResponse> {
-    return apiRequest<VerifyRegisterResponse>('/auth/register/verify', {
+    const response = await apiRequest<VerifyRegisterResponse>('/auth/register/verify', {
       method: 'POST',
       body: JSON.stringify(request),
     });
+    
+    // Save tokens automatically
+    await this.saveTokens(response.tokens, response.user);
+    
+    return response;
   }
 
-  /**
-   * Login user (sends OTP)
-   */
   async login(request: LoginRequest): Promise<LoginResponse> {
     return apiRequest<LoginResponse>('/auth/login', {
       method: 'POST',
@@ -217,29 +285,34 @@ class AuthService {
     });
   }
 
-  /**
-   * Verify login OTP
-   */
   async verifyLogin(request: VerifyLoginRequest): Promise<VerifyLoginResponse> {
-    return apiRequest<VerifyLoginResponse>('/auth/login/verify', {
+    const response = await apiRequest<VerifyLoginResponse>('/auth/login/verify', {
       method: 'POST',
       body: JSON.stringify(request),
     });
+    
+    // Save tokens automatically
+    await this.saveTokens(response.tokens, response.user);
+    
+    return response;
   }
 
-  /**
-   * Health check
-   */
+  async logout(): Promise<void> {
+    await this.clearTokens();
+  }
+
   async healthCheck(): Promise<{ status: string }> {
     return apiRequest<{ status: string }>('/auth/health', {
       method: 'GET',
     });
   }
 
-  /**
-   * Resend OTP (calls login or register again)
-   */
-  async resendOTP(phoneNumber: string, isSignup: boolean, fullName?: string, email?: string): Promise<void> {
+  async resendOTP(
+    phoneNumber: string,
+    isSignup: boolean,
+    fullName?: string,
+    email?: string
+  ): Promise<void> {
     if (isSignup && fullName) {
       await this.register({
         phone_number: phoneNumber,
@@ -253,6 +326,10 @@ class AuthService {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Export Singleton Instance
+// ═══════════════════════════════════════════════════════════════════════════
 
 export const authService = new AuthService();
 export default authService;

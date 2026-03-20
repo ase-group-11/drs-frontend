@@ -1,54 +1,316 @@
-import type { Disaster, Alert, Report, SavedLocation } from '../types/disaster';
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/services/disasterService.ts
+// Disaster Service - COMPLETE & READY TO USE
+// ═══════════════════════════════════════════════════════════════════════════
+
 import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
 import { ApiError } from './authService';
+import { authService } from './authService';
 
-async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+// ═══════════════════════════════════════════════════════════════════════════
+// API Request Helper (with auth support)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  requiresAuth: boolean = true
+): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    // Add Bearer token for authenticated requests
+    if (requiresAuth) {
+      const authHeader = authService.getAuthHeader();
+      Object.assign(headers, authHeader);
+    }
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...options.headers },
+      headers,
     });
+
     clearTimeout(timeoutId);
     const data = await response.json();
+
     if (!response.ok) {
-      throw new ApiError(data.message ?? 'Something went wrong', response.status, data);
+      throw new ApiError(
+        data.message || data.detail || 'Something went wrong',
+        response.status,
+        data
+      );
     }
+
     return data;
   } catch (error: any) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError') throw new ApiError('Request timed out', 408);
+    if (error.name === 'AbortError') {
+      throw new ApiError('Request timed out', 408);
+    }
     if (error instanceof ApiError) throw error;
-    throw new ApiError(error.message ?? 'Network error', 0);
+    throw new ApiError(error.message || 'Network error', 500);
   }
 }
 
-export const disasterService = {
-  getActiveDisasters: (): Promise<Disaster[]> =>
-    apiRequest<Disaster[]>('/disasters/active'),
+// ═══════════════════════════════════════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════════════════════════════════════
 
-  getAlerts: (): Promise<Alert[]> =>
-    apiRequest<Alert[]>('/alerts'),
+export type DisasterType =
+  | 'ACCIDENT'
+  | 'BUILDING_COLLAPSE'
+  | 'CRIME'
+  | 'EARTHQUAKE'
+  | 'EXPLOSION'
+  | 'FIRE'
+  | 'FLOOD'
+  | 'GAS_LEAK'
+  | 'HAZMAT'
+  | 'LANDSLIDE'
+  | 'MEDICAL_EMERGENCY'
+  | 'OTHER'
+  | 'POWER_OUTAGE'
+  | 'RIOT'
+  | 'STORM'
+  | 'TERRORIST_ATTACK'
+  | 'WATER_CONTAMINATION';
 
-  getMyReports: (): Promise<Report[]> =>
-    apiRequest<Report[]>('/reports/my'),
+export type SeverityLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
-  getSavedLocations: (): Promise<SavedLocation[]> =>
-    apiRequest<SavedLocation[]>('/locations/saved'),
+export interface PhotoInput {
+  image_url: string;
+  caption?: string;
+  file_size?: number;
+  mime_type?: string;
+}
 
-  submitReport: (data: Partial<Disaster>): Promise<Report> =>
-    apiRequest<Report>('/reports', { method: 'POST', body: JSON.stringify(data) }),
+export interface DisasterReportRequest {
+  user_id: string;
+  location_address: string;
+  disaster_type: DisasterType;
+  severity: SeverityLevel;
+  description: string;
+  latitude: number;
+  longitude: number;
+  people_affected?: number;
+  multiple_casualties?: boolean;
+  structural_damage?: boolean;
+  road_blocked?: boolean;
+  photos?: PhotoInput[];
+  reference_id?: string;
+}
 
-  deleteReport: (id: string): Promise<void> =>
-    apiRequest<void>(`/reports/${id}`, { method: 'DELETE' }),
+export interface DisasterReportResponse {
+  id: string;
+  user_id: string;
+  disaster_type: string;
+  severity: string;
+  description?: string;
+  location_address?: string;
+  latitude: number;
+  longitude: number;
+  people_affected?: number;
+  multiple_casualties?: boolean;
+  structural_damage?: boolean;
+  road_blocked?: boolean;
+  status: string;
+  created_at: string;
+  photos?: PhotoInput[];
+}
 
-  saveLocation: (location: Omit<SavedLocation, 'id' | 'alertCount'>): Promise<SavedLocation> =>
-    apiRequest<SavedLocation>('/locations/saved', { method: 'POST', body: JSON.stringify(location) }),
+export interface BlobUploadFileResponse {
+  image_url: string;
+  file_size: number;
+  mime_type: string;
+  original_filename: string;
+}
 
-  deleteLocation: (id: string): Promise<void> =>
-    apiRequest<void>(`/locations/saved/${id}`, { method: 'DELETE' }),
-};
+export interface BlobUploadBatchResponse {
+  uploaded_files: BlobUploadFileResponse[];
+  reference_id: string;
+}
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Disaster Service Class
+// ═══════════════════════════════════════════════════════════════════════════
+
+class DisasterService {
+  /**
+   * Upload media files (requires auth)
+   */
+  async uploadMedia(files: any[]): Promise<BlobUploadBatchResponse> {
+    const formData = new FormData();
+    
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+
+    const authHeader = authService.getAuthHeader();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/disaster-reports/upload-media`, {
+        method: 'POST',
+        headers: authHeader,
+        body: formData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new ApiError(
+          data.message || data.detail || 'Upload failed',
+          response.status,
+          data
+        );
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new ApiError('Upload timed out', 408);
+      }
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(error.message || 'Upload failed', 500);
+    }
+  }
+
+  /**
+   * Create disaster report (requires auth)
+   */
+  async createReport(data: DisasterReportRequest): Promise<DisasterReportResponse> {
+    return apiRequest<DisasterReportResponse>(
+      '/disaster-reports/',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      true
+    );
+  }
+
+  /**
+   * Submit disaster report (all-in-one with file upload)
+   */
+  async submitReport(data: {
+    user_id: string;
+    location_address: string;
+    disaster_type: string;
+    severity: string;
+    description: string;
+    latitude: number;
+    longitude: number;
+    people_affected?: number;
+    multiple_casualties?: boolean;
+    structural_damage?: boolean;
+    road_blocked?: boolean;
+    files?: any[];
+  }): Promise<DisasterReportResponse> {
+    const formData = new FormData();
+
+    // Add all fields
+    Object.entries(data).forEach(([key, value]) => {
+      if (key === 'files') {
+        if (value && Array.isArray(value)) {
+          value.forEach((file) => formData.append('files', file));
+        }
+      } else {
+        formData.append(key, String(value));
+      }
+    });
+
+    const authHeader = authService.getAuthHeader();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/disaster-reports/submit`, {
+        method: 'POST',
+        headers: authHeader,
+        body: formData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new ApiError(
+          data.message || data.detail || 'Submit failed',
+          response.status,
+          data
+        );
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new ApiError('Submit timed out', 408);
+      }
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(error.message || 'Submit failed', 500);
+    }
+  }
+
+  /**
+   * Get disaster report by ID (requires auth)
+   */
+  async getReport(reportId: string): Promise<DisasterReportResponse> {
+    return apiRequest<DisasterReportResponse>(
+      `/disaster-reports/${reportId}`,
+      { method: 'GET' },
+      true
+    );
+  }
+
+  /**
+   * Get user's disaster reports (requires auth)
+   */
+  async getUserReports(
+    userId: string,
+    limit: number = 20
+  ): Promise<{
+    reports: DisasterReportResponse[];
+    count: number;
+    user_id: string;
+  }> {
+    return apiRequest<{
+      reports: DisasterReportResponse[];
+      count: number;
+      user_id: string;
+    }>(
+      `/disaster-reports/user/${userId}?limit=${limit}`,
+      { method: 'GET' },
+      true
+    );
+  }
+
+  /**
+   * Get user's reports (alias for getUserReports)
+   */
+  async getMyReports(userId: string, limit: number = 20): Promise<DisasterReportResponse[]> {
+    const response = await this.getUserReports(userId, limit);
+    return response.reports;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Export Singleton Instance
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const disasterService = new DisasterService();
 export default disasterService;

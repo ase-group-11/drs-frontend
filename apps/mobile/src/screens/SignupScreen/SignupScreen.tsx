@@ -1,3 +1,8 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/screens/SignupScreen/SignupScreen.tsx
+// CORRECTED - AuthTemplate uses children, not form prop!
+// ═══════════════════════════════════════════════════════════════════════════
+
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { AuthTemplate } from '@templates/AuthTemplate';
