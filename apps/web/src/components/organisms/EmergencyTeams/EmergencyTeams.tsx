@@ -7,6 +7,8 @@ import {
   Typography,
   Spin,
   message,
+  Row,
+  Col,
 } from 'antd';
 import {
   TruckOutlined,
@@ -154,19 +156,6 @@ const EmergencyTeams: React.FC = () => {
       <div className={styles.header}>
         <div>
           <Text className={styles.pageTitle}>Emergency Teams</Text>
-          <div className={styles.headerMeta}>
-            <span className={styles.metaTotal}>{meta?.total_count ?? teams.length} Total Teams</span>
-            <span className={styles.metaDivider} />
-            <span className={styles.metaActive}>
-              <span className={styles.dotGreen} />
-              {meta?.active_count ?? teams.filter(t => t.statusType === 'available').length} Active
-            </span>
-            <span className={styles.metaDivider} />
-            <span className={styles.metaDeployed}>
-              <span className={styles.dotBlue} />
-              {meta?.deployed_count ?? teams.filter(t => t.statusType === 'deployed').length} Deployed
-            </span>
-          </div>
         </div>
         <Button
           type="primary"
@@ -178,6 +167,82 @@ const EmergencyTeams: React.FC = () => {
           Add New Unit
         </Button>
       </div>
+
+      {/* Summary Cards */}
+      {(() => {
+        const available   = teams.filter(t => t.statusType === 'available').length;
+        const deployed    = teams.filter(t => t.statusType === 'deployed').length;
+        const onScene     = teams.filter(t => t.statusType === 'onscene').length;
+        const returning   = teams.filter(t => t.statusType === 'returning').length;
+        const enroute     = teams.filter(t => t.statusType === 'enroute').length;
+        const maintenance = teams.filter(t => t.statusType === 'maintenance').length;
+        const offline     = teams.filter(t => t.statusType === 'offline').length;
+        const totalCrew   = teams.reduce((sum, t) => sum + (t.crewCount ?? 0), 0);
+
+        const cards = [
+          {
+            title: 'Fleet', color: '#7c3aed', main: meta?.total_count ?? teams.length, mainLabel: 'Total Units',
+            rows: [
+              { label: 'Fire',    value: meta?.by_department?.['FIRE']    ?? teams.filter(t => t.department === 'FIRE').length,    color: '#dc2626' },
+              { label: 'Medical', value: meta?.by_department?.['MEDICAL'] ?? teams.filter(t => t.department === 'MEDICAL').length, color: '#2563eb' },
+              { label: 'Police',  value: meta?.by_department?.['POLICE']  ?? teams.filter(t => t.department === 'POLICE').length,  color: '#7c3aed' },
+              { label: 'Rescue',  value: meta?.by_department?.['IT']      ?? teams.filter(t => t.department === 'IT').length,      color: '#d97706' },
+            ],
+          },
+          {
+            title: 'Operational', color: '#059669', main: available, mainLabel: 'Available',
+            rows: [
+              { label: 'Deployed',  value: deployed,  color: '#2563eb' },
+              { label: 'On Scene',  value: onScene,   color: '#dc2626' },
+              { label: 'En Route',  value: enroute,   color: '#ea580c' },
+              { label: 'Returning', value: returning, color: '#7c3aed' },
+            ],
+          },
+          {
+            title: 'Stand-by', color: '#6b7280', main: maintenance, mainLabel: 'Maintenance',
+            rows: [
+              { label: 'Offline', value: offline, color: '#374151' },
+            ],
+          },
+          {
+            title: 'Crew', color: '#0891b2', main: totalCrew, mainLabel: 'Total Personnel',
+            rows: [
+              { label: 'Active Deployments', value: deployed + onScene + enroute + returning, color: '#2563eb' },
+            ],
+          },
+        ];
+
+        return (
+          <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+            {cards.map((card) => (
+              <Col xs={24} sm={12} lg={6} key={card.title}>
+                <div style={{
+                  background: '#fff', borderRadius: 10, padding: '14px 16px',
+                  borderLeft: `4px solid ${card.color}`,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
+                  height: '100%',
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    {card.title}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: 28, fontWeight: 700, color: card.color, lineHeight: 1 }}>{card.main}</span>
+                    <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500 }}>{card.mainLabel}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {card.rows.map(({ label, value, color }) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, color: '#9ca3af' }}>{label}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Col>
+            ))}
+          </Row>
+        );
+      })()}
 
       {/* Filter Bar */}
       <div className={styles.filterBar}>

@@ -191,9 +191,51 @@ const DisasterReports: React.FC = () => {
     low: 'LOW',
   };
 
-  const criticalCount = summary?.critical ?? reports.filter((r) => r.severity === 'critical').length;
-  const activeCount = summary ? (summary.active + summary.monitoring) : reports.filter((r) => r.disasterStatus === 'ACTIVE' || r.disasterStatus === 'MONITORING').length;
-  const resolvedCount = summary?.resolved ?? reports.filter((r) => r.disasterStatus === 'RESOLVED').length;
+  const bySeverity = {
+    critical: reports.filter((r) => r.severity === 'critical').length,
+    high:     reports.filter((r) => r.severity === 'high').length,
+    medium:   reports.filter((r) => r.severity === 'medium').length,
+    low:      reports.filter((r) => r.severity === 'low').length,
+  };
+  const byStatus = {
+    active:     summary?.active     ?? reports.filter((r) => r.disasterStatus === 'ACTIVE').length,
+    monitoring: summary?.monitoring ?? reports.filter((r) => r.disasterStatus === 'MONITORING').length,
+    resolved:   summary?.resolved   ?? reports.filter((r) => r.disasterStatus === 'RESOLVED').length,
+    archived:   summary?.archived   ?? reports.filter((r) => r.disasterStatus === 'ARCHIVED').length,
+  };
+  const totalUnitsAssigned  = reports.reduce((sum, r) => sum + (r.units ?? 0), 0);
+  const totalPeopleAffected = reports.reduce((sum, r) => sum + (r.peopleAffected ?? 0), 0);
+  const totalReportsCount   = reports.length;
+
+  const summaryCards = [
+    {
+      title: 'By Severity', color: '#dc2626', bg: '#fef2f2', border: '#fecaca',
+      main: bySeverity.critical, mainLabel: 'Critical',
+      rows: [
+        { label: 'High',   value: bySeverity.high,   color: '#ea580c' },
+        { label: 'Medium', value: bySeverity.medium, color: '#d97706' },
+        { label: 'Low',    value: bySeverity.low,    color: '#2563eb' },
+      ],
+    },
+    {
+      title: 'Active Now', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa',
+      main: byStatus.active, mainLabel: 'Active',
+      rows: [{ label: 'Monitoring', value: byStatus.monitoring, color: '#2563eb' }],
+    },
+    {
+      title: 'Closed', color: '#059669', bg: '#f0fdf4', border: '#bbf7d0',
+      main: byStatus.resolved, mainLabel: 'Resolved',
+      rows: [{ label: 'Archived', value: byStatus.archived, color: '#6b7280' }],
+    },
+    {
+      title: 'Response', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe',
+      main: totalUnitsAssigned, mainLabel: 'Units Deployed',
+      rows: [
+        { label: 'People Affected', value: totalPeopleAffected, color: '#374151' },
+        { label: 'Total Reports',   value: totalReportsCount,   color: '#374151' },
+      ],
+    },
+  ];
 
   // ─── Sub-page renders ────────────────────────────────────────────────────────
 
@@ -221,20 +263,6 @@ const DisasterReports: React.FC = () => {
       <div className="disaster-reports-header">
         <div className="header-title-section">
           <h1 className="page-title">Disaster Reports</h1>
-          <div className="status-summary">
-            <span className="status-item status-critical">
-              <span className="status-dot" />
-              {criticalCount} Critical
-            </span>
-            <span className="status-item status-active">
-              <span className="status-dot" />
-              {activeCount} Active
-            </span>
-            <span className="status-item status-resolved">
-              <span className="status-dot" />
-              {resolvedCount} Resolved
-            </span>
-          </div>
         </div>
 
         <div className="view-switcher">
@@ -258,6 +286,36 @@ const DisasterReports: React.FC = () => {
           </Button.Group>
         </div>
       </div>
+
+      {/* Summary Cards */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        {summaryCards.map((card) => (
+          <Col xs={24} sm={12} lg={6} key={card.title}>
+            <div style={{
+              background: '#fff', borderRadius: 10, padding: '14px 16px',
+              borderLeft: `4px solid ${card.color}`,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
+              height: '100%',
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                {card.title}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 28, fontWeight: 700, color: card.color, lineHeight: 1 }}>{card.main}</span>
+                <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500 }}>{card.mainLabel}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {card.rows.map(({ label, value, color }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: '#9ca3af' }}>{label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Col>
+        ))}
+      </Row>
 
       {/* Filter Bar */}
       <Card className="filter-card">
