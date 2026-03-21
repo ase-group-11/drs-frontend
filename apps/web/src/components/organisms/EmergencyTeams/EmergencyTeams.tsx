@@ -45,11 +45,13 @@ const STATUS_CONFIG: Record<
   string,
   { bg: string; text: string; border: string }
 > = {
-  deployed: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
-  available: { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
-  onscene: { bg: '#fef2f2', text: '#dc2626', border: '#fecaca' },
+  deployed:    { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
+  available:   { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
+  onscene:     { bg: '#fef2f2', text: '#dc2626', border: '#fecaca' },
   maintenance: { bg: '#f9fafb', text: '#6b7280', border: '#e5e7eb' },
-  enroute: { bg: '#fff7ed', text: '#c2410c', border: '#fed7aa' },
+  enroute:     { bg: '#fff7ed', text: '#c2410c', border: '#fed7aa' },
+  returning:   { bg: '#f5f3ff', text: '#7c3aed', border: '#ddd6fe' },
+  offline:     { bg: '#f1f5f9', text: '#374151', border: '#cbd5e1' },
 };
 
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -140,7 +142,7 @@ const EmergencyTeams: React.FC = () => {
     return (
       <TeamDetailsPage
         team={detailTeam}
-        onBack={() => setDetailTeam(null)}
+        onBack={() => { setDetailTeam(null); loadTeams(); }}
         onRefresh={loadTeams}
       />
     );

@@ -19,18 +19,19 @@ const SEVERITY_COLORS: Record<string, { bg: string; text: string }> = {
 
 interface DeployUnitModalProps {
   open: boolean;
-  unitId: string;
+  unitId: string;     // display code e.g. "F-05"
+  unitUuid: string;   // real UUID for API
   unitType: string;
   station: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-const DeployUnitModal: React.FC<DeployUnitModalProps> = ({ open, unitId, unitType, station, onClose, onSuccess }) => {
+const DeployUnitModal: React.FC<DeployUnitModalProps> = ({ open, unitId, unitUuid, unitType, station, onClose, onSuccess }) => {
   const [disasters, setDisasters] = useState<ActiveDisaster[]>([]);
   const [loadingDisasters, setLoadingDisasters] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [priority, setPriority] = useState<'standard' | 'emergency' | 'code-red'>('standard');
+  const [priority, setPriority] = useState<'STANDARD' | 'HIGH_PRIORITY' | 'CRITICAL'>('STANDARD');
   const [notes, setNotes] = useState('');
   const [deploying, setDeploying] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -50,7 +51,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({ open, unitId, unitTyp
   const selectedDisaster = disasters.find((d) => d.id === selectedId);
 
   const handleReset = () => {
-    setSelectedId(null); setPriority('standard'); setNotes('');
+    setSelectedId(null); setPriority('STANDARD'); setNotes('');
     setDeploying(false); setSuccess(false);
   };
   const handleClose = () => { handleReset(); onClose(); };
@@ -58,7 +59,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({ open, unitId, unitTyp
   const handleDeploy = async () => {
     if (!selectedId) return;
     setDeploying(true);
-    const result = await deployUnit({ unitId, disasterId: selectedId, priority, notes });
+    const result = await deployUnit({ unitId: unitUuid, disasterId: selectedId, priority, notes });
     setDeploying(false);
     if (result.success) {
       setSuccess(true);
@@ -174,7 +175,7 @@ const DeployUnitModal: React.FC<DeployUnitModalProps> = ({ open, unitId, unitTyp
           <div className="dum-radio">
             <Radio.Group value={priority} onChange={(e) => setPriority(e.target.value)}>
               <Space size={16}>
-                {([['standard', '#3b82f6', 'Standard'], ['emergency', '#f97316', 'Emergency'], ['code-red', '#ef4444', 'Code Red']] as const).map(([val, color, label]) => (
+                {([['STANDARD', '#3b82f6', 'Standard'], ['HIGH_PRIORITY', '#f97316', 'High Priority'], ['CRITICAL', '#ef4444', 'Critical']] as const).map(([val, color, label]) => (
                   <Radio key={val} value={val}>
                     <Space size={4}>
                       <div style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />

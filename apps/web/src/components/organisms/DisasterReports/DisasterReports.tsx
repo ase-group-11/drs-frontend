@@ -410,8 +410,16 @@ const DisasterReports: React.FC = () => {
                               <span style={{ fontSize: 12, color: '#6b7280', flexShrink: 0 }}>Status</span>
                               <span style={{
                                 fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-                                background: report.disasterStatus === 'ACTIVE' ? '#dcfce7' : '#f3f4f6',
-                                color: report.disasterStatus === 'ACTIVE' ? '#16a34a' : '#6b7280',
+                                background:
+                                  report.disasterStatus === 'ACTIVE'     ? '#dcfce7' :
+                                  report.disasterStatus === 'MONITORING' ? '#eff6ff' :
+                                  report.disasterStatus === 'RESOLVED'   ? '#f3f4f6' :
+                                  '#fef3c7', // ARCHIVED
+                                color:
+                                  report.disasterStatus === 'ACTIVE'     ? '#16a34a' :
+                                  report.disasterStatus === 'MONITORING' ? '#2563eb' :
+                                  report.disasterStatus === 'RESOLVED'   ? '#6b7280' :
+                                  '#d97706', // ARCHIVED
                                 whiteSpace: 'nowrap',
                               }}>
                                 {report.disasterStatus}
@@ -441,51 +449,62 @@ const DisasterReports: React.FC = () => {
                         <div className="expanded-section">
                           <h4 className="section-title">Admin Actions</h4>
                           <div className="admin-actions">
-                            <Button
-                              type="primary"
-                              icon={<RocketOutlined />}
-                              block
-                              style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
-                              onClick={(e) => openDispatchModal(report, e)}
-                            >
-                              Dispatch Units
-                            </Button>
-                            <Button
-                              type="primary"
-                              icon={<ExclamationCircleOutlined />}
-                              block
-                              style={{ background: '#e11d48', borderColor: '#e11d48' }}
-                              onClick={(e) => openEscalateModal(report, e)}
-                            >
-                              Escalate Priority
-                            </Button>
-                            <Popconfirm
-                              title="Mark as Resolved"
-                              description={
+                            {(() => {
+                              const isActionable = report.disasterStatus === 'ACTIVE' || report.disasterStatus === 'MONITORING';
+                              return (
                                 <>
-                                  Are you sure you want to mark <strong>{report.reportId}</strong> as resolved?
-                                  <br />
-                                  This action cannot be undone.
+                                  <Button
+                                    type="primary"
+                                    icon={<RocketOutlined />}
+                                    block
+                                    disabled={!isActionable}
+                                    style={{ background: isActionable ? '#7c3aed' : undefined, borderColor: isActionable ? '#7c3aed' : undefined }}
+                                    onClick={(e) => openDispatchModal(report, e)}
+                                  >
+                                    Dispatch Units
+                                  </Button>
+                                  <Button
+                                    type="primary"
+                                    icon={<ExclamationCircleOutlined />}
+                                    block
+                                    disabled={!isActionable}
+                                    style={{ background: isActionable ? '#e11d48' : undefined, borderColor: isActionable ? '#e11d48' : undefined }}
+                                    onClick={(e) => openEscalateModal(report, e)}
+                                  >
+                                    Escalate Priority
+                                  </Button>
+                                  <Popconfirm
+                                    title="Mark as Resolved"
+                                    description={
+                                      <>
+                                        Are you sure you want to mark <strong>{report.reportId}</strong> as resolved?
+                                        <br />
+                                        This action cannot be undone.
+                                      </>
+                                    }
+                                    onConfirm={(e) => {
+                                      e?.stopPropagation();
+                                      handleMarkResolved(report);
+                                    }}
+                                    onCancel={(e) => e?.stopPropagation()}
+                                    okText="Resolve"
+                                    cancelText="Cancel"
+                                    okButtonProps={{ style: { background: '#7c3aed', borderColor: '#7c3aed' } }}
+                                    placement="topRight"
+                                    disabled={!isActionable}
+                                  >
+                                    <Button
+                                      icon={<CheckCircleOutlined />}
+                                      block
+                                      disabled={!isActionable}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      Mark as Resolved
+                                    </Button>
+                                  </Popconfirm>
                                 </>
-                              }
-                              onConfirm={(e) => {
-                                e?.stopPropagation();
-                                handleMarkResolved(report);
-                              }}
-                              onCancel={(e) => e?.stopPropagation()}
-                              okText="Resolve"
-                              cancelText="Cancel"
-                              okButtonProps={{ style: { background: '#7c3aed', borderColor: '#7c3aed' } }}
-                              placement="topRight"
-                            >
-                              <Button
-                                icon={<CheckCircleOutlined />}
-                                block
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                Mark as Resolved
-                              </Button>
-                            </Popconfirm>
+                              );
+                            })()}
                           </div>
                         </div>
                       </Col>

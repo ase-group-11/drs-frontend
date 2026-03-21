@@ -27,7 +27,9 @@ const STATUS_TO_UI: Record<string, { status: EmergencyTeam['status']; statusType
   DEPLOYED:    { status: 'Deployed',    statusType: 'deployed' },
   ON_SCENE:    { status: 'On Scene',    statusType: 'onscene' },
   EN_ROUTE:    { status: 'En Route',    statusType: 'enroute' },
+  RETURNING:   { status: 'Returning',   statusType: 'returning' },
   MAINTENANCE: { status: 'Maintenance', statusType: 'maintenance' },
+  OFFLINE:     { status: 'Offline',     statusType: 'offline' },
 };
 
 const mapUnit = (raw: EmergencyUnitRaw): EmergencyTeam => {
@@ -117,8 +119,8 @@ export const deployUnit = async (
   try {
     await apiClient.post(API_ENDPOINTS.TEAMS.DEPLOY(payload.disasterId), {
       unit_ids:             [payload.unitId],
-      priority_level:       payload.priority.toUpperCase(),
-      special_instructions: payload.notes,
+      priority_level:       payload.priority,
+      special_instructions: payload.notes || undefined,
     });
     return { success: true, message: 'Unit dispatched successfully' };
   } catch (error: any) {
@@ -132,10 +134,12 @@ export const deployUnit = async (
 
 export const decommissionUnit = async (
   id: string,
-  _reason: string
+  reason: string
 ): Promise<AdminApiResponse> => {
   try {
-    await apiClient.delete(API_ENDPOINTS.TEAMS.DECOMMISSION(id));
+    await apiClient.delete(API_ENDPOINTS.TEAMS.DECOMMISSION(id), {
+      data: { reason },
+    });
     return { success: true, message: 'Unit decommissioned successfully' };
   } catch (error: any) {
     console.error('decommissionUnit error:', error);

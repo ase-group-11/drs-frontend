@@ -35,6 +35,8 @@ const STATUS_COLORS: Record<string, string> = {
   onscene:     '#dc2626',
   available:   '#059669',
   maintenance: '#6b7280',
+  returning:   '#7c3aed',
+  offline:     '#374151',
 };
 
 interface TeamDetailsPageProps {
@@ -257,27 +259,39 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
           <Card title="Quick Actions" style={{ borderRadius: 12, border: '1px solid #e5e7eb', marginBottom: 16 }}
             styles={{ header: { fontWeight: 700, borderBottom: '1px solid #f3f4f6' } }}>
             <Space direction="vertical" style={{ width: '100%' }} size={10}>
-              <Button block type="primary" icon={<SendOutlined />} size="large"
-                style={{
-                  background: detail?.current_assignment ? '#9ca3af' : '#7c3aed',
-                  borderColor: detail?.current_assignment ? '#9ca3af' : '#7c3aed',
-                }}
-                disabled={!!detail?.current_assignment}
-                onClick={() => setDeployOpen(true)}
-              >
-                {detail?.current_assignment ? 'Currently Deployed' : 'Deploy Unit'}
-              </Button>
-              <Button block icon={<SettingOutlined />} size="large"
-                disabled={!!detail?.current_assignment}
-                onClick={() => setEditOpen(true)}>
-                Edit Configuration
-              </Button>
-              <Button block icon={<CloseCircleOutlined />} size="large"
-                disabled={!!detail?.current_assignment}
-                onClick={() => setDecommissionOpen(true)}
-                style={detail?.current_assignment ? {} : { color: '#ef4444', borderColor: '#fecaca', background: '#fff', fontWeight: 500 }}>
-                Decommission Unit
-              </Button>
+              {(() => {
+                const status = detail?.unit_status ?? '';
+                const activeStatuses = ['DEPLOYED', 'ON_SCENE', 'RETURNING'];
+                const canDeploy   = status === 'AVAILABLE';
+                const canEditDecommission = !activeStatuses.includes(status) && !!status;
+                return (
+                  <>
+                    <Button block type="primary" icon={<SendOutlined />} size="large"
+                      style={{
+                        background: canDeploy ? '#7c3aed' : '#9ca3af',
+                        borderColor: canDeploy ? '#7c3aed' : '#9ca3af',
+                      }}
+                      disabled={!canDeploy}
+                      onClick={() => setDeployOpen(true)}
+                    >
+                      {status === 'DEPLOYED' || status === 'ON_SCENE' || status === 'RETURNING'
+                        ? 'Currently Active'
+                        : 'Deploy Unit'}
+                    </Button>
+                    <Button block icon={<SettingOutlined />} size="large"
+                      disabled={!canEditDecommission}
+                      onClick={() => setEditOpen(true)}>
+                      Edit Configuration
+                    </Button>
+                    <Button block icon={<CloseCircleOutlined />} size="large"
+                      disabled={!canEditDecommission}
+                      onClick={() => setDecommissionOpen(true)}
+                      style={canEditDecommission ? { color: '#ef4444', borderColor: '#fecaca', background: '#fff', fontWeight: 500 } : {}}>
+                      Decommission Unit
+                    </Button>
+                  </>
+                );
+              })()}
             </Space>
           </Card>
 
@@ -354,9 +368,9 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
 
       {/* Modals */}
       <DeployUnitModal
-        open={deployOpen} unitId={team.unitId} unitType={team.type} station={team.station}
+        open={deployOpen} unitId={team.unitId} unitUuid={team.id} unitType={team.type} station={team.station}
         onClose={() => setDeployOpen(false)}
-        onSuccess={() => { setDeployOpen(false); onRefresh(); }}
+        onSuccess={() => { setDeployOpen(false); fetchDetail(); }}
       />
       <EditConfigModal
         open={editOpen} unitId={team.unitId} unitType={team.type}
@@ -364,12 +378,11 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
         onSuccess={() => { setEditOpen(false); onRefresh(); }}
       />
       <DecommissionModal
-        open={decommissionOpen} unitId={team.unitId} unitType={team.type} station={team.station}
-        yearsInService={8}
+        open={decommissionOpen} unitId={team.unitId} unitUuid={team.id} unitType={team.type} station={team.station}
         totalDeployments={detail?.stats.total_deployments ?? 0}
         lastDeployment={formatLastDeployed(detail?.stats.last_deployed_at ?? null)}
         onClose={() => setDecommissionOpen(false)}
-        onSuccess={() => { setDecommissionOpen(false); onBack(); onRefresh(); }}
+        onSuccess={() => { setDecommissionOpen(false); onBack(); }}
       />
     </div>
   );

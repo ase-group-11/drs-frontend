@@ -7,14 +7,18 @@ export type TeamStatusType =
   | 'available'
   | 'onscene'
   | 'maintenance'
-  | 'enroute';
+  | 'enroute'
+  | 'returning'
+  | 'offline';
 
 export type TeamStatus =
   | 'Deployed'
   | 'Available'
   | 'On Scene'
   | 'Maintenance'
-  | 'En Route';
+  | 'En Route'
+  | 'Returning'
+  | 'Offline';
 
 // Matches the real API response shape from GET /api/v1/emergency-units/
 export interface EmergencyTeam {
@@ -64,7 +68,7 @@ export interface CreateTeamPayload {
 export interface DeployUnitPayload {
   unitId: string;
   disasterId: string;
-  priority: 'standard' | 'emergency' | 'code-red';
+  priority: 'STANDARD' | 'HIGH_PRIORITY' | 'CRITICAL';
   notes?: string;
 }
 
@@ -199,7 +203,7 @@ export interface CreateTeamPayload {
 export interface DeployUnitPayload {
   unitId: string;
   disasterId: string;
-  priority: 'standard' | 'emergency' | 'code-red';
+  priority: 'STANDARD' | 'HIGH_PRIORITY' | 'CRITICAL';
   notes?: string;
 }
 
