@@ -170,7 +170,7 @@ const DecommissionModal: React.FC<DecommissionModalProps> = ({
           style={{ height: 36, paddingInline: 16, borderRadius: 6, fontWeight: 500, fontSize: 12, border: '1px solid #e5e7eb', color: '#374151' }}>
           Cancel
         </Button>
-        <Button disabled={!canDecommission} onClick={handleDecommission}
+        <Button disabled={!canDecommission} loading={isProcessing} onClick={handleDecommission}
           style={{
             height: 36, paddingInline: 16, borderRadius: 6, fontWeight: 600, fontSize: 12, flex: 1,
             background: canDecommission ? '#dc2626' : undefined,

@@ -112,6 +112,60 @@
   flex-shrink: 0;
 }
 
+.filterRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Status select — match disaster page gray pill style ── */
+.filterRight :global(.ant-select .ant-select-selector) {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: #374151 !important;
+  font-size: 13px !important;
+}
+
+.filterRight :global(.ant-select .ant-select-selection-item) {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: #374151 !important;
+}
+
+.filterRight :global(.ant-select-focused .ant-select-selector),
+.filterRight :global(.ant-select:hover .ant-select-selector),
+.filterRight :global(.ant-select-open .ant-select-selector) {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.filterRight :global(.ant-select-arrow) {
+  color: #6b7280 !important;
+}
+
+/* ── Search input — match disaster page gray pill style ── */
+.filterRight :global(.ant-input-affix-wrapper) {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.filterRight :global(.ant-input-affix-wrapper:hover),
+.filterRight :global(.ant-input-affix-wrapper-focused) {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.filterRight :global(.ant-input) {
+  background-color: transparent !important;
+}
+
 .searchWrap :global(.ant-input-affix-wrapper) {
   height: 32px !important;
 }
@@ -349,6 +403,17 @@
     width: 100%;
   }
 
+  .filterRight {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filterRight :global(.ant-select),
+  .filterRight :global(.ant-input-affix-wrapper) {
+    width: 100% !important;
+  }
+
   .header {
     flex-direction: column;
     align-items: stretch;
@@ -372,4 +437,27 @@
   .unitId {
     font-size: 16px !important;
   }
+}
+
+/* ── Status dropdown popup — match disaster page style ── */
+:global(.et-status-dropdown) .ant-select-item {
+  color: #374151 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+:global(.et-status-dropdown) .ant-select-item:hover,
+:global(.et-status-dropdown) .ant-select-item-option-active {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+:global(.et-status-dropdown) .ant-select-item-option-selected {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+:global(.et-status-dropdown) .ant-select-item-option-selected .ant-select-item-option-state {
+  color: #374151 !important;
 }

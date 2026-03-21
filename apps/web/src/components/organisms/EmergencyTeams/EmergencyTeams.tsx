@@ -9,6 +9,7 @@ import {
   message,
   Row,
   Col,
+  Select,
 } from 'antd';
 import {
   TruckOutlined,
@@ -67,6 +68,7 @@ const EmergencyTeams: React.FC = () => {
   const [teams, setTeams] = useState<EmergencyTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [meta, setMeta] = useState<{ total_count: number; active_count: number; deployed_count: number; by_department: Record<string, number> } | null>(null);
 
@@ -105,12 +107,15 @@ const EmergencyTeams: React.FC = () => {
     const matchDept =
       selectedFilter === 'all' ||
       t.department.toUpperCase() === selectedFilter.toUpperCase();
+    const matchStatus =
+      selectedStatus === 'all' ||
+      t.statusType === selectedStatus;
     const matchSearch =
       !searchQuery ||
       t.unitId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.station.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.unitName?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchDept && matchSearch;
+    return matchDept && matchStatus && matchSearch;
   });
 
   // Build dynamic counts from API meta or fall back to counting teams array
@@ -257,14 +262,30 @@ const EmergencyTeams: React.FC = () => {
             </button>
           ))}
         </div>
-        <div className={styles.searchWrap}>
+        <div className={styles.filterRight}>
+          <Select
+            value={selectedStatus}
+            onChange={setSelectedStatus}
+            style={{ width: 160 }}
+            size="middle"
+            popupClassName="et-status-dropdown"
+          >
+            <Select.Option value="all">All Status</Select.Option>
+            <Select.Option value="available">Available</Select.Option>
+            <Select.Option value="deployed">Deployed</Select.Option>
+            <Select.Option value="onscene">On Scene</Select.Option>
+            <Select.Option value="enroute">En Route</Select.Option>
+            <Select.Option value="returning">Returning</Select.Option>
+            <Select.Option value="maintenance">Maintenance</Select.Option>
+            <Select.Option value="offline">Offline</Select.Option>
+          </Select>
           <Input
             prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
             placeholder="Search unit ID or station..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className={styles.searchInput}
             allowClear
+            style={{ width: 220 }}
           />
         </div>
       </div>

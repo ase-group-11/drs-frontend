@@ -59,6 +59,7 @@ const DisasterReports: React.FC = () => {
   const [selectedTimeFilter, setSelectedTimeFilter] = useState('active');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [searchText, setSearchText] = useState('');
   const [summary, setSummary] = useState<{ critical: number; active: number; resolved: number; monitoring: number; archived: number } | null>(null);
 
@@ -87,6 +88,11 @@ const DisasterReports: React.FC = () => {
     }
     // 'all' — no status filter, show everything
 
+    // Status dropdown filter (only applies when 'all' tab or overrides)
+    if (selectedStatus !== 'all') {
+      filtered = filtered.filter((r) => r.disasterStatus === selectedStatus);
+    }
+
     if (selectedSeverity !== 'all') {
       filtered = filtered.filter((r) => r.severity === selectedSeverity);
     }
@@ -104,7 +110,7 @@ const DisasterReports: React.FC = () => {
     }
 
     setFilteredReports(filtered);
-  }, [reports, selectedSeverity, selectedType, searchText, selectedTimeFilter]);
+  }, [reports, selectedSeverity, selectedType, searchText, selectedTimeFilter, selectedStatus]);
 
   useEffect(() => {
     filterReports();
@@ -324,7 +330,7 @@ const DisasterReports: React.FC = () => {
             <Space size={8}>
               <Button
                 type={selectedTimeFilter === 'active' ? 'primary' : 'default'}
-                onClick={() => setSelectedTimeFilter('active')}
+                onClick={() => { setSelectedTimeFilter('active'); setSelectedStatus('all'); }}
                 style={
                   selectedTimeFilter === 'active'
                     ? { background: '#7c3aed', borderColor: '#7c3aed', borderRadius: 8 }
@@ -347,7 +353,22 @@ const DisasterReports: React.FC = () => {
             </Space>
           </Col>
 
-          <Col flex="160px">
+          <Col flex="148px">
+            <Select
+              value={selectedStatus}
+              onChange={(val) => { setSelectedStatus(val); if (val !== 'all') setSelectedTimeFilter('all'); }}
+              style={{ width: '100%' }}
+              popupClassName="dr-filter-dropdown"
+            >
+              <Select.Option value="all">All Status</Select.Option>
+              <Select.Option value="ACTIVE">Active</Select.Option>
+              <Select.Option value="MONITORING">Monitoring</Select.Option>
+              <Select.Option value="RESOLVED">Resolved</Select.Option>
+              <Select.Option value="ARCHIVED">Archived</Select.Option>
+            </Select>
+          </Col>
+
+          <Col flex="148px">
             <Select value={selectedSeverity} onChange={setSelectedSeverity} style={{ width: '100%' }} popupClassName="dr-filter-dropdown">
               <Select.Option value="all">All Severity</Select.Option>
               <Select.Option value="critical">Critical</Select.Option>
@@ -357,7 +378,7 @@ const DisasterReports: React.FC = () => {
             </Select>
           </Col>
 
-          <Col flex="160px">
+          <Col flex="148px">
             <Select value={selectedType} onChange={setSelectedType} style={{ width: '100%' }} popupClassName="dr-filter-dropdown">
               <Select.Option value="all">All Types</Select.Option>
               <Select.Option value="FIRE">Fire</Select.Option>
@@ -367,7 +388,7 @@ const DisasterReports: React.FC = () => {
             </Select>
           </Col>
 
-          <Col flex="auto" style={{ minWidth: 120 }}>
+          <Col flex="auto" style={{ minWidth: 100 }}>
             <Search
               placeholder="Search reports..."
               value={searchText}

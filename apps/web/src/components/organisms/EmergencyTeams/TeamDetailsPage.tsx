@@ -54,6 +54,7 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
 
   useEffect(() => {
     fetchDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team.id]);
 
   const fetchDetail = async () => {
@@ -80,15 +81,7 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
     return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   };
 
-  const formatResponseTime = (val: string | null, secs: number | null) => {
-    if (val) return val;
-    if (secs) {
-      const m = Math.floor(secs / 60);
-      const s = secs % 60;
-      return `${m}m ${s}s`;
-    }
-    return 'N/A';
-  };
+
 
   const formatLastDeployed = (iso: string | null) => {
     if (!iso) return 'Never';

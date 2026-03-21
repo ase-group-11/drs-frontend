@@ -8,9 +8,9 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-import { getDashboardStats, getActivityLogs, getSystemAlerts } from '../../../services';
+import { getDashboardStats, getActivityLogs } from '../../../services';
 import apiClient from '../../../lib/axios';
-import type { DashboardStats, ActivityLog, SystemAlert, DisasterRaw, DisastersApiResponse } from '../../../types';
+import type { DashboardStats, ActivityLog, DisasterRaw, DisastersApiResponse } from '../../../types';
 import './Dashboard.css';
 
 const TYPE_COLORS: Record<string, string> = {
@@ -56,7 +56,6 @@ const Dashboard: React.FC = () => {
 
   // Activity / alerts
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
-  const [systemAlerts, setSystemAlerts] = useState<SystemAlert[]>([]);
 
   const [allDisasters, setAllDisasters] = useState<DisasterRaw[]>([]);
 
@@ -83,10 +82,9 @@ const Dashboard: React.FC = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [statsRes, activityRes, alertsRes, disastersRes, unitsRes] = await Promise.all([
+      const [statsRes, activityRes, disastersRes, unitsRes] = await Promise.all([
         getDashboardStats(),
         getActivityLogs(),
-        getSystemAlerts(),
         apiClient.get<DisastersApiResponse>('/disasters/all'),
         apiClient.get<{ units: { unit_status: string }[]; total_count: number; active_count: number }>('/emergency-units/'),
       ]);
@@ -94,7 +92,6 @@ const Dashboard: React.FC = () => {
       // ── KPI: existing stats (total users, system status) ──────────────────
       if (statsRes.data) setStats(statsRes.data);
       if (activityRes.data) setActivityLogs(activityRes.data);
-      if (alertsRes.data) setSystemAlerts(alertsRes.data);
 
       // ── KPI: Active Disasters from /disasters/all ─────────────────────────
       const disasters: DisasterRaw[] = disastersRes.data?.disasters ?? [];
