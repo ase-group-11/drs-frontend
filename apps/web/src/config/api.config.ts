@@ -42,11 +42,12 @@ export const API_ENDPOINTS = {
   },
   // User Management
   USER_MANAGEMENT: {
-    LIST: '/api/admin/users',
-    CREATE: '/api/admin/users',
-    UPDATE: (id: string) => `/api/admin/users/${id}`,
-    DELETE: (id: string) => `/api/admin/users/${id}`,
-    EXPORT: '/api/admin/users/export',
+    LIST: '/users/',
+    CREATE: '/users/',
+    GET: (id: string) => `/users/${id}`,
+    DELETE: (id: string) => `/users/${id}`,
+    UPDATE_STATUS: (id: string) => `/users/${id}/status`,
+    DEPARTMENT_MAP: '/users/department-map',
   },
   // Emergency Teams
   TEAMS: {

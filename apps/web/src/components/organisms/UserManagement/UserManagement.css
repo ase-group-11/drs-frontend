@@ -312,6 +312,11 @@
   padding: 16px 24px !important;
 }
 
+.um-table-card .ant-table-pagination {
+  padding: 12px 24px !important;
+  margin: 0 !important;
+}
+
 /* Modal */
 .ant-modal-title {
   font-weight: 700 !important;
