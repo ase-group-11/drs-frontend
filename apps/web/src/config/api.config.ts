@@ -39,6 +39,7 @@ export const API_ENDPOINTS = {
     DISASTER_RESOLVE: (id: string) => `/disasters/${id}/resolve`,
     DISASTER_ESCALATE: (id: string) => `/disasters/${id}/escalate`,
     DISASTER_DISPATCH: (id: string) => `/disasters/${id}/dispatch`,
+    DISASTER_PHOTOS: (id: string) => `/disasters/${id}/photos`,
   },
   // User Management
   USER_MANAGEMENT: {

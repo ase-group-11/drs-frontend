@@ -10,7 +10,7 @@ interface SignupData {
   email: string;
   role: string;
   department: string;
-  salutation: string;
+  salutation?: string;
   firstName: string;
   lastName: string;
 }

@@ -1,23 +1,28 @@
-import React, { useState } from 'react';
-import {
-  Button,
-  Typography,
-  Empty,
-  message,
-  Dropdown,
-} from 'antd';
-import {
-  ArrowLeftOutlined,
-  EyeOutlined,
-  MoreOutlined,
-  DeleteOutlined,
-} from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Button, Typography, Empty, message, Spin } from 'antd';
+import { ArrowLeftOutlined, EyeOutlined, PictureOutlined } from '@ant-design/icons';
 import type { DisasterReport } from '../../../types';
+import apiClient from '../../../lib/axios';
+import { API_ENDPOINTS } from '../../../config';
 import FullscreenPhotoViewer from './FullscreenPhotoViewer';
 import './PhotoGallery.css';
 
 const { Text } = Typography;
 
+// Raw API response shape
+interface ApiPhoto {
+  id: string;
+  image_url: string;
+  caption: string | null;
+  file_size: number;
+  mime_type: string;
+  report_id: string;
+  uploaded_by: string;
+  report_address: string | null;
+  created_at: string;
+}
+
+// Internal shape expected by FullscreenPhotoViewer (kept compatible)
 interface Photo {
   id: number;
   url: string;
@@ -35,84 +40,41 @@ interface Photo {
   tags: { label: string; color: string; textColor: string }[];
 }
 
-const DUMMY_PHOTOS: Photo[] = [
-  {
-    id: 1,
-    url: 'https://images.unsplash.com/photo-1563482054276-6c7db99c0e32?w=800&h=600&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1563482054276-6c7db99c0e32?w=300&h=200&fit=crop',
-    filename: 'evidence_001.jpg',
-    uploader: 'Officer Sarah Connor',
-    uploaderUnit: 'Fire Unit F-12',
-    uploadTime: '14:35',
-    timeAgo: '10 mins ago',
-    fileSize: '2.4 MB',
-    dimensions: '1920×1080',
-    format: 'JPEG',
-    location: 'Grafton Street, Dublin 2',
-    coordinates: '53.3456, −6.2608',
-    tags: [
-      { label: 'Evidence', color: '#ede9fe', textColor: '#7c3aed' },
-      { label: 'Structural Damage', color: '#fff7ed', textColor: '#c2410c' },
-      { label: 'Fire', color: '#fef2f2', textColor: '#dc2626' },
-    ],
-  },
-  {
-    id: 2,
-    url: 'https://images.unsplash.com/photo-1509130298739-651801c76e96?w=800&h=600&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1509130298739-651801c76e96?w=300&h=200&fit=crop',
-    filename: 'evidence_002.jpg',
-    uploader: 'Officer John Smith',
-    uploaderUnit: 'Response Unit R-4',
-    uploadTime: '14:28',
-    timeAgo: '17 mins ago',
-    fileSize: '3.1 MB',
-    dimensions: '1920×1080',
-    format: 'JPEG',
-    location: 'Grafton Street, Dublin 2',
-    coordinates: '53.3456, −6.2608',
-    tags: [
-      { label: 'Evidence', color: '#ede9fe', textColor: '#7c3aed' },
-      { label: 'Fire', color: '#fef2f2', textColor: '#dc2626' },
-    ],
-  },
-  {
-    id: 3,
-    url: 'https://images.unsplash.com/photo-1494386346843-e12284507169?w=800&h=600&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1494386346843-e12284507169?w=300&h=200&fit=crop',
-    filename: 'evidence_003.jpg',
-    uploader: 'Officer Sarah Connor',
-    uploaderUnit: 'Fire Unit F-12',
-    uploadTime: '14:22',
-    timeAgo: '23 mins ago',
-    fileSize: '1.8 MB',
-    dimensions: '1920×1080',
-    format: 'JPEG',
-    location: 'Grafton Street, Dublin 2',
-    coordinates: '53.3456, −6.2608',
-    tags: [
-      { label: 'Evidence', color: '#ede9fe', textColor: '#7c3aed' },
-    ],
-  },
-  {
-    id: 4,
-    url: 'https://images.unsplash.com/photo-1577962917302-cd874c4e31d2?w=800&h=600&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1577962917302-cd874c4e31d2?w=300&h=200&fit=crop',
-    filename: 'evidence_004.jpg',
-    uploader: 'Officer Mike Ryan',
-    uploaderUnit: 'Fire Unit F-12',
-    uploadTime: '14:15',
-    timeAgo: '30 mins ago',
-    fileSize: '2.9 MB',
-    dimensions: '1920×1080',
-    format: 'JPEG',
-    location: 'Grafton Street, Dublin 2',
-    coordinates: '53.3456, −6.2608',
-    tags: [
-      { label: 'Structural Damage', color: '#fff7ed', textColor: '#c2410c' },
-      { label: 'Fire', color: '#fef2f2', textColor: '#dc2626' },
-    ],
-  },
-];
+const formatTimeAgo = (dateStr: string): string => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins  = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days  = Math.floor(diff / 86400000);
+  if (mins < 60)   return `${mins} min${mins !== 1 ? 's' : ''} ago`;
+  if (hours < 24)  return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  return `${days} day${days !== 1 ? 's' : ''} ago`;
+};
+
+const formatUploadTime = (dateStr: string): string =>
+  new Date(dateStr).toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' });
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024)       return `${bytes} B`;
+  if (bytes < 1048576)    return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+};
+
+const mapApiPhoto = (p: ApiPhoto, index: number, userNames: Record<string, string>): Photo => ({
+  id:           index,
+  url:          p.image_url,
+  thumbnail:    p.image_url,
+  filename:     p.caption || p.id,
+  uploader:     userNames[p.uploaded_by] ?? p.uploaded_by,
+  uploaderUnit: '',
+  uploadTime:   formatUploadTime(p.created_at),
+  timeAgo:      formatTimeAgo(p.created_at),
+  fileSize:     formatFileSize(p.file_size),
+  dimensions:   '—',
+  format:       p.mime_type.split('/')[1]?.toUpperCase() ?? 'JPEG',
+  location:     p.report_address ?? '—',
+  coordinates:  '—',
+  tags:         [],
+});
 
 interface PhotoGalleryProps {
   report: DisasterReport;
@@ -120,13 +82,60 @@ interface PhotoGalleryProps {
 }
 
 const PhotoGallery: React.FC<PhotoGalleryProps> = ({ report, onBack }) => {
-  const [photos, setPhotos] = useState<Photo[]>(DUMMY_PHOTOS);
+  const [photos, setPhotos]               = useState<Photo[]>([]);
+  const [loading, setLoading]             = useState(true);
   const [fullscreenPhoto, setFullscreenPhoto] = useState<Photo | null>(null);
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [hoveredId, setHoveredId]         = useState<number | null>(null);
 
-  const handleDelete = (e: React.MouseEvent, photoId: number) => {
-    e.stopPropagation();
-    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+  const fetchPhotos = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get<{ photos: ApiPhoto[]; count: number }>(
+        API_ENDPOINTS.ADMIN.DISASTER_PHOTOS(report.id)
+      );
+      const apiPhotos = res.data?.photos ?? [];
+
+      // Fetch names for all unique uploader UUIDs in parallel
+      const uniqueUploaders = Array.from(new Set(apiPhotos.map((p) => p.uploaded_by)));
+      const userNames: Record<string, string> = {};
+      await Promise.allSettled(
+        uniqueUploaders.map(async (uid) => {
+          try {
+            const userRes = await apiClient.get<{ full_name: string }>(`/users/${uid}`);
+            if (userRes.data?.full_name) userNames[uid] = userRes.data.full_name;
+          } catch {
+            // leave UUID as fallback
+          }
+        })
+      );
+
+      setPhotos(apiPhotos.map((p, i) => mapApiPhoto(p, i, userNames)));
+    } catch {
+      message.error('Failed to load photos');
+    } finally {
+      setLoading(false);
+    }
+  }, [report.id]);
+
+  useEffect(() => { fetchPhotos(); }, [fetchPhotos]);
+
+  const handleDownload = async (p: Photo) => {
+    try {
+      const res = await fetch(p.url);
+      if (!res.ok) throw new Error('Failed to fetch');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = p.filename || 'photo.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback: open in new tab if blob download fails (e.g. CORS)
+      window.open(p.url, '_blank');
+    }
   };
 
   return (
@@ -148,14 +157,30 @@ const PhotoGallery: React.FC<PhotoGalleryProps> = ({ report, onBack }) => {
               </Text>
             </div>
           </div>
+          <Text type="secondary" style={{ fontSize: 13, marginLeft: 'auto' }}>
+            {!loading && `${photos.length} photo${photos.length !== 1 ? 's' : ''}`}
+          </Text>
         </div>
       </div>
 
-      {/* Gallery Grid */}
-      {photos.length === 0 ? (
-        <Empty description="No photos uploaded yet" style={{ padding: '60px 0' }} />
+      {/* Content */}
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
+          <Spin size="large" />
+        </div>
+      ) : photos.length === 0 ? (
+        <Empty
+          image={<PictureOutlined style={{ fontSize: 48, color: '#d1d5db' }} />}
+          description={
+            <span style={{ color: '#6b7280', fontSize: 14 }}>
+              No photos uploaded for this incident yet
+            </span>
+          }
+          style={{ padding: '60px 0' }}
+        />
       ) : (
-        <div className="gallery-grid">
+        <>
+          <div className="gallery-grid">
           {photos.map((photo) => (
             <div
               key={photo.id}
@@ -164,12 +189,35 @@ const PhotoGallery: React.FC<PhotoGalleryProps> = ({ report, onBack }) => {
               onMouseLeave={() => setHoveredId(null)}
               onClick={() => setFullscreenPhoto(photo)}
             >
-              <img src={photo.thumbnail} alt={photo.filename} className="gallery-photo-img" />
+              <img
+                src={photo.url}
+                alt={photo.filename}
+                className="gallery-photo-img"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  target.style.display = 'none';
+                  const placeholder = target.nextElementSibling as HTMLElement;
+                  if (placeholder) placeholder.style.display = 'flex';
+                }}
+              />
+              {/* Shown when image fails to load (e.g. expired SAS URL) */}
+              <div style={{
+                display: 'none', position: 'absolute', inset: 0,
+                background: '#f3f4f6', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+                <span style={{ fontSize: 32 }}>🖼️</span>
+                <span style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', padding: '0 12px' }}>
+                  {photo.filename}
+                  <br />
+                  <span style={{ fontSize: 10, color: '#d1d5db' }}>Preview unavailable</span>
+                </span>
+              </div>
 
               <div className="gallery-photo-gradient" />
               <div className="gallery-photo-info">
                 <Text className="gallery-photo-caption">
-                  Uploaded by {photo.uploader} · {photo.timeAgo} · {photo.uploadTime}
+                  {photo.filename} · {photo.timeAgo} · {photo.uploadTime}
                 </Text>
               </div>
 
@@ -182,29 +230,12 @@ const PhotoGallery: React.FC<PhotoGalleryProps> = ({ report, onBack }) => {
                     <EyeOutlined style={{ marginRight: 6 }} />
                     View Fullscreen
                   </button>
-                  <Dropdown
-                    trigger={['click']}
-                    menu={{
-                      items: [
-                        {
-                          key: 'delete',
-                          label: 'Delete Photo',
-                          icon: <DeleteOutlined />,
-                          danger: true,
-                          onClick: ({ domEvent }) => handleDelete(domEvent as React.MouseEvent, photo.id),
-                        },
-                      ],
-                    }}
-                  >
-                    <button className="gallery-more-btn" onClick={(e) => e.stopPropagation()}>
-                      <MoreOutlined />
-                    </button>
-                  </Dropdown>
                 </div>
               )}
             </div>
           ))}
         </div>
+        </>
       )}
 
       {fullscreenPhoto && (
@@ -212,7 +243,7 @@ const PhotoGallery: React.FC<PhotoGalleryProps> = ({ report, onBack }) => {
           photo={fullscreenPhoto}
           photos={photos}
           onClose={() => setFullscreenPhoto(null)}
-          onDownload={(p) => message.info(`Downloading ${p.filename}...`)}
+          onDownload={handleDownload}
         />
       )}
     </div>

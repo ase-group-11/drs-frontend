@@ -1,7 +1,8 @@
 // MODIFIED FILE — changes: Handle ACCESS_DENIED error from auth to show "Admin only" message
 import React, { useState } from 'react';
-import { Form, Input, Button, Checkbox, Alert } from 'antd';
+import { Form, Input, Button, Alert } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks';
 import type { LoginFormData } from '../../../types';
 import './LoginForm.css';
@@ -81,12 +82,14 @@ const LoginForm: React.FC = () => {
 
         <Form.Item>
           <div className="login-options">
-            <Form.Item name="rememberMe" valuePropName="checked" noStyle>
-              <Checkbox>Remember me</Checkbox>
-            </Form.Item>
-            <a href="#" className="forgot-password-link">
+            <button
+              type="button"
+              className="forgot-password-link"
+              onClick={() => {}}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
               Forgot password?
-            </a>
+            </button>
           </div>
         </Form.Item>
 
@@ -102,6 +105,13 @@ const LoginForm: React.FC = () => {
             Sign In
           </Button>
         </Form.Item>
+
+        <div style={{ textAlign: 'center', marginTop: 12, fontSize: 14, color: '#6b7280' }}>
+          Don't have an account?{' '}
+          <Link to="/signup" style={{ color: '#7c3aed', fontWeight: 500 }}>
+            Sign up
+          </Link>
+        </div>
       </Form>
     </div>
   );

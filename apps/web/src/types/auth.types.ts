@@ -15,7 +15,7 @@ export interface User {
 }
 
 export interface SignupFormData {
-  salutation: Salutation;
+  salutation?: Salutation;
   firstName: string;
   lastName: string;
   role: UserRole;

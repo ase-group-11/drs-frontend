@@ -17,7 +17,6 @@ import {
   Spin,
   Empty,
   Space,
-  Popconfirm,
 } from 'antd';
 import {
   FireOutlined,
@@ -37,11 +36,12 @@ import {
   EnvironmentFilled,
   SearchOutlined,
 } from '@ant-design/icons';
-import { getDisasterReports, updateDisasterReportStatus } from '../../../services';
+import { getDisasterReports } from '../../../services';
 import type { DisasterReport } from '../../../types';
 import MapView from './MapView';
 import DispatchUnitsModal from './DispatchUnitsModal';
 import EscalateSeverityModal from './EscalateSeverityModal';
+import ResolveDisasterModal from './ResolveDisasterModal';
 import PhotoGallery from './PhotoGallery';
 import LogUpdates from './LogUpdates';
 import './DisasterReports.css';
@@ -70,6 +70,7 @@ const DisasterReports: React.FC = () => {
   // Modal state
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
   const [escalateModalOpen, setEscalateModalOpen] = useState(false);
+  const [resolveModalOpen, setResolveModalOpen] = useState(false);
   const [activeModalReport, setActiveModalReport] = useState<DisasterReport | null>(null);
 
   useEffect(() => {
@@ -130,20 +131,6 @@ const DisasterReports: React.FC = () => {
       message.error('Failed to load disaster reports');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleMarkResolved = async (report: DisasterReport) => {
-    try {
-      const response = await updateDisasterReportStatus(report.id, 'resolved');
-      if (response.success) {
-        message.success('Report marked as resolved');
-        fetchReports();
-      } else {
-        message.error(response.message);
-      }
-    } catch {
-      message.error('Failed to update report status');
     }
   };
 
@@ -552,35 +539,18 @@ const DisasterReports: React.FC = () => {
                                   >
                                     Escalate Priority
                                   </Button>
-                                  <Popconfirm
-                                    title="Mark as Resolved"
-                                    description={
-                                      <>
-                                        Are you sure you want to mark <strong>{report.reportId}</strong> as resolved?
-                                        <br />
-                                        This action cannot be undone.
-                                      </>
-                                    }
-                                    onConfirm={(e) => {
-                                      e?.stopPropagation();
-                                      handleMarkResolved(report);
-                                    }}
-                                    onCancel={(e) => e?.stopPropagation()}
-                                    okText="Resolve"
-                                    cancelText="Cancel"
-                                    okButtonProps={{ style: { background: '#7c3aed', borderColor: '#7c3aed' } }}
-                                    placement="topRight"
+                                  <Button
+                                    icon={<CheckCircleOutlined />}
+                                    block
                                     disabled={!isActionable}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveModalReport(report);
+                                      setResolveModalOpen(true);
+                                    }}
                                   >
-                                    <Button
-                                      icon={<CheckCircleOutlined />}
-                                      block
-                                      disabled={!isActionable}
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      Mark as Resolved
-                                    </Button>
-                                  </Popconfirm>
+                                    Mark as Resolved
+                                  </Button>
                                 </>
                               );
                             })()}
@@ -615,6 +585,16 @@ const DisasterReports: React.FC = () => {
         report={activeModalReport}
         onClose={() => {
           setEscalateModalOpen(false);
+          setActiveModalReport(null);
+        }}
+        onSuccess={fetchReports}
+      />
+
+      <ResolveDisasterModal
+        open={resolveModalOpen}
+        report={activeModalReport}
+        onClose={() => {
+          setResolveModalOpen(false);
           setActiveModalReport(null);
         }}
         onSuccess={fetchReports}

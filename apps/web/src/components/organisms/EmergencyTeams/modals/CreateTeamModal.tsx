@@ -1,16 +1,37 @@
-// UPDATED FILE
-import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Button, Typography, message } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Modal, Input, Select, Button, Typography, message, Spin } from 'antd';
 import {
-  UsergroupAddOutlined, UserOutlined, MailOutlined, PhoneOutlined,
-  EnvironmentOutlined, PlusOutlined, DeleteOutlined,
+  UsergroupAddOutlined, EnvironmentOutlined, DeleteOutlined,
+  CarOutlined, CrownOutlined,
 } from '@ant-design/icons';
-import { createTeam } from '../../../../services';
-import type { CreateTeamPayload } from '../../../../types';
+import apiClient from '../../../../lib/axios';
+import { API_ENDPOINTS } from '../../../../config';
 
 const { Text } = Typography;
 
-interface CrewRow { id: string; name: string; email: string; }
+// Unit type → department mapping (values must match backend unit_type enum exactly)
+// Confirmed: FIRE_ENGINE, AMBULANCE. Police value — check backend enums.py if it fails.
+const UNIT_TYPE_OPTIONS = [
+  { value: 'FIRE_ENGINE',    label: 'Fire Engine', dept: 'FIRE' },
+  { value: 'AMBULANCE',      label: 'Ambulance',   dept: 'MEDICAL' },
+  { value: 'PATROL_CAR', label: 'Patrol Car', dept: 'POLICE' },
+];
+
+// dept label shown to user
+const DEPT_LABEL: Record<string, string> = {
+  FIRE: 'Fire', MEDICAL: 'Medical', POLICE: 'Police', IT: 'Rescue / IT',
+};
+
+interface TeamMember {
+  id: string;
+  full_name: string;
+  department: string;
+  employee_id: string | null;
+  role: string;
+  is_assigned: boolean;
+  commanding_units_count: number;
+  assigned_units_count: number;
+}
 
 interface CreateTeamModalProps {
   open: boolean;
@@ -27,181 +48,331 @@ const labelStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 3,
 };
 
+const EMPTY_FORM = {
+  unitCode: '', unitName: '', unitType: '', capacity: 4,
+  stationName: '', stationAddress: '', stationLat: '', stationLon: '',
+  vehicleModel: '', vehicleYear: '', licensePlate: '',
+  commanderId: '',
+  crewIds: [] as string[],
+};
+
 const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSuccess }) => {
-  const [form] = Form.useForm();
+  const [form, setForm]         = useState({ ...EMPTY_FORM });
+  const [errors, setErrors]     = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [crewMembers, setCrewMembers] = useState<CrewRow[]>([{ id: '1', name: '', email: '' }]);
 
-  const handleAddCrew = () =>
-    setCrewMembers((prev) => [...prev, { id: String(Date.now()), name: '', email: '' }]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
-  const handleRemoveCrew = (id: string) => {
-    if (crewMembers.length > 1) setCrewMembers((prev) => prev.filter((c) => c.id !== id));
+  // Derive department from selected unit type
+  const selectedUnitType = UNIT_TYPE_OPTIONS.find((u) => u.value === form.unitType);
+  const requiredDept     = selectedUnitType?.dept ?? null;
+
+  // Filter members by department + availability rules
+  const eligibleMembers = teamMembers.filter((m) => {
+    if (requiredDept && m.department !== requiredDept) return false;
+    return true;
+  });
+
+  // Commander: must not be commanding any unit yet
+  const commanderOptions = eligibleMembers.filter((m) =>
+    m.commanding_units_count === 0 || m.id === form.commanderId
+  );
+
+  // Crew: not currently assigned to any unit, OR is the selected commander
+  const crewOptions = eligibleMembers.filter((m) =>
+    m.assigned_units_count === 0 || m.id === form.commanderId
+  );
+
+  const set = (field: string, value: any) => {
+    setForm((f) => ({ ...f, [field]: value }));
+    setErrors((e) => { const n = { ...e }; delete n[field]; return n; });
   };
 
-  const updateCrew = (id: string, field: 'name' | 'email', value: string) =>
-    setCrewMembers((prev) => prev.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
-
-  const resetAll = () => { form.resetFields(); setCrewMembers([{ id: '1', name: '', email: '' }]); };
+  const resetAll = () => { setForm({ ...EMPTY_FORM }); setErrors({}); };
   const handleClose = () => { resetAll(); onClose(); };
 
+  useEffect(() => {
+    if (open) {
+      setLoadingMembers(true);
+      apiClient.get<{ users: TeamMember[] }>('/users/?user_type=team&limit=200')
+        .then((res) => setTeamMembers(res.data?.users ?? []))
+        .catch(() => message.error('Failed to load team members'))
+        .finally(() => setLoadingMembers(false));
+    }
+  }, [open]);
+
+  // When unit type changes, reset commander + crew
+  useEffect(() => {
+    setForm((f) => ({ ...f, unitType: f.unitType, commanderId: '', crewIds: [] }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.unitType]);
+
+  // When capacity decreases, trim crew to fit — commander always stays (first entry)
+  useEffect(() => {
+    const cap = Number(form.capacity) || 0;
+    if (form.crewIds.length > cap) {
+      setForm((f) => ({ ...f, crewIds: f.crewIds.slice(0, cap) }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.capacity]);
+
+  const handleCommanderChange = (value: string | undefined) => {
+    const newCommander = value ?? '';
+    setForm((f) => {
+      const prevCommander = f.commanderId;
+      // Remove previous commander from crew, add new one at front
+      let newCrew = f.crewIds.filter((id) => id !== prevCommander);
+      if (newCommander) newCrew = [newCommander, ...newCrew];
+      return { ...f, commanderId: newCommander, crewIds: newCrew };
+    });
+    setErrors((e) => { const n = { ...e }; delete n.commanderId; return n; });
+  };
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!form.unitCode.trim())   e.unitCode   = 'Unit code is required';
+    if (!form.unitName.trim())   e.unitName   = 'Unit name is required';
+    if (!form.unitType)          e.unitType   = 'Unit type is required';
+    if (!form.capacity || form.capacity < 1) e.capacity = 'Capacity must be at least 1';
+    if (!form.stationName.trim()) e.stationName = 'Station name is required';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
   const handleSubmit = async () => {
+    if (!validate()) return;
+    setSubmitting(true);
     try {
-      const values = await form.validateFields();
-      setSubmitting(true);
-      const payload: CreateTeamPayload = {
-        teamName: values.teamName, teamType: values.teamType,
-        leaderName: values.leaderName, leaderEmail: values.leaderEmail,
-        leaderPhone: values.leaderPhone,
-        numberOfMembers: values.numberOfMembers ? parseInt(values.numberOfMembers, 10) : undefined,
-        location: values.location, contactNumber: values.contactNumber,
-        crewMembers: crewMembers.filter((c) => c.name || c.email),
+      const payload: Record<string, any> = {
+        unit_code:         form.unitCode.trim(),
+        unit_name:         form.unitName.trim(),
+        unit_type:         form.unitType,
+        capacity:          Number(form.capacity),
+        station_name:      form.stationName.trim(),
       };
-      const result = await createTeam(payload);
-      if (result.success) {
-        message.success(`Team ${values.teamName} created successfully`);
-        onSuccess(); handleClose();
-      } else {
-        message.error(result.message || 'Failed to create team');
-      }
+      if (form.stationAddress.trim()) payload.station_address  = form.stationAddress.trim();
+      if (form.stationLat)            payload.station_latitude  = parseFloat(form.stationLat);
+      if (form.stationLon)            payload.station_longitude = parseFloat(form.stationLon);
+      if (form.commanderId)           payload.commander_id      = form.commanderId;
+      if (form.crewIds.length)        payload.crew_member_ids   = form.crewIds;
+      if (form.vehicleModel.trim())   payload.vehicle_model        = form.vehicleModel.trim();
+      if (form.licensePlate.trim())   payload.vehicle_license_plate = form.licensePlate.trim();
+      if (form.vehicleYear)           payload.vehicle_year          = parseInt(form.vehicleYear, 10);
+
+      await apiClient.post(API_ENDPOINTS.TEAMS.CREATE, payload);
+      message.success(`Unit ${form.unitCode} created successfully`);
+      onSuccess();
+      handleClose();
     } catch (err: any) {
-      if (err?.errorFields) return;
-      message.error('An error occurred');
+      message.error(err?.response?.data?.detail || 'Failed to create unit');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const SectionTitle = ({ icon, title, action }: { icon: React.ReactNode; title: string; action?: React.ReactNode }) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, marginTop: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ color: '#7c3aed', fontSize: 14 }}>{icon}</span>
-        <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{title}</Text>
-      </div>
-      {action}
+  const SectionTitle = ({ icon, title }: { icon: React.ReactNode; title: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, marginTop: 14 }}>
+      <span style={{ color: '#7c3aed', fontSize: 13 }}>{icon}</span>
+      <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{title}</Text>
     </div>
   );
 
+  const totalSlots   = Number(form.capacity) || 0;
+  const crewFull     = form.crewIds.length >= totalSlots;
+
+  // Member label helper
+  const memberLabel = (m: TeamMember) =>
+    `${m.full_name}${m.employee_id ? ` (${m.employee_id})` : ''}`;
+
   return (
     <Modal
-      open={open} onCancel={handleClose} footer={null} width={480} destroyOnClose
+      open={open} onCancel={handleClose} footer={null} width={500} destroyOnClose
       closeIcon={<span style={{ fontSize: 16, color: '#9ca3af' }}>✕</span>}
       styles={{ body: { padding: 0 }, content: { borderRadius: 12, overflow: 'hidden', padding: 0 } }}
     >
-      {/* Scrollable body */}
       <div style={{ maxHeight: '78vh', overflowY: 'auto', padding: '16px 20px 0' }}>
 
         <Text style={{ fontSize: 16, fontWeight: 700, color: '#111827', display: 'block', marginBottom: 2 }}>
-          Create Emergency Team
+          Add New Unit
         </Text>
         <Text style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 12 }}>
-          Add a new emergency response team to the system
+          Create a new emergency response unit
         </Text>
 
-        <Form form={form} layout="vertical" requiredMark={false}>
+        {/* ── Unit Info ── */}
+        <SectionTitle icon={<UsergroupAddOutlined />} title="Unit Information" />
+        <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
 
-          {/* Team Information */}
-          <SectionTitle icon={<UsergroupAddOutlined />} title="Team Information" />
-          <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
-
-          <Form.Item name="teamName" style={{ marginBottom: 10 }} rules={[{ required: true, message: 'Required' }]}>
-            <Text style={labelStyle}>Team Name <span style={{ color: '#ef4444' }}>*</span></Text>
-            <Input placeholder="e.g., Fire Unit F-12" style={inputStyle} />
-          </Form.Item>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-            <Form.Item name="teamType" style={{ marginBottom: 0 }} rules={[{ required: true, message: 'Required' }]}>
-              <Text style={labelStyle}>Team Type <span style={{ color: '#ef4444' }}>*</span></Text>
-              <div className="ct-select-wrap">
-                <Select placeholder="Select type" style={{ height: 34, width: '100%' }}>
-                  <Select.Option value="fire">Fire</Select.Option>
-                  <Select.Option value="ambulance">Ambulance</Select.Option>
-                  <Select.Option value="police">Police</Select.Option>
-                  <Select.Option value="rescue">Rescue</Select.Option>
-                </Select>
-              </div>
-            </Form.Item>
-            <Form.Item name="numberOfMembers" style={{ marginBottom: 0 }}>
-              <Text style={labelStyle}>No. of Members</Text>
-              <Input type="number" min={1} placeholder="e.g., 4" style={inputStyle} />
-            </Form.Item>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <Text style={labelStyle}>Unit Code <span style={{ color: '#ef4444' }}>*</span></Text>
+            <Input placeholder="e.g., F-30" value={form.unitCode} onChange={(e) => set('unitCode', e.target.value)}
+              style={{ ...inputStyle, borderColor: errors.unitCode ? '#ef4444' : undefined }} />
+            {errors.unitCode && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.unitCode}</Text>}
           </div>
-
-          {/* Team Leader */}
-          <SectionTitle icon={<UserOutlined />} title="Team Leader" />
-          <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-            <Form.Item name="leaderName" style={{ marginBottom: 0 }} rules={[{ required: true, message: 'Required' }]}>
-              <Text style={labelStyle}>Leader Name <span style={{ color: '#ef4444' }}>*</span></Text>
-              <Input placeholder="e.g., John Smith" style={inputStyle} />
-            </Form.Item>
-            <Form.Item name="leaderPhone" style={{ marginBottom: 0 }}>
-              <Text style={labelStyle}>Phone Number</Text>
-              <Input prefix={<PhoneOutlined style={{ color: '#9ca3af', fontSize: 11 }} />} placeholder="+353 1 234 5678" style={inputStyle} />
-            </Form.Item>
+          <div>
+            <Text style={labelStyle}>Unit Name <span style={{ color: '#ef4444' }}>*</span></Text>
+            <Input placeholder="e.g., Fire Response Alpha" value={form.unitName} onChange={(e) => set('unitName', e.target.value)}
+              style={{ ...inputStyle, borderColor: errors.unitName ? '#ef4444' : undefined }} />
+            {errors.unitName && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.unitName}</Text>}
           </div>
+        </div>
 
-          <Form.Item name="leaderEmail" style={{ marginBottom: 10 }}
-            rules={[{ required: true, message: 'Required' }, { type: 'email', message: 'Invalid email' }]}>
-            <Text style={labelStyle}>Email Address <span style={{ color: '#ef4444' }}>*</span></Text>
-            <Input prefix={<MailOutlined style={{ color: '#9ca3af', fontSize: 11 }} />} placeholder="e.g., john.smith@emergency.ie" style={inputStyle} />
-          </Form.Item>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <Text style={labelStyle}>Unit Type <span style={{ color: '#ef4444' }}>*</span></Text>
+            <Select placeholder="Select type" value={form.unitType || undefined} onChange={(v) => set('unitType', v)}
+              style={{ width: '100%', height: 34 }} status={errors.unitType ? 'error' : undefined}
+              popupClassName="ct-dropdown">
+              {UNIT_TYPE_OPTIONS.map((o) => (
+                <Select.Option key={o.value} value={o.value}>
+                  {o.label} <span style={{ fontSize: 10, color: '#9ca3af' }}>({DEPT_LABEL[o.dept]})</span>
+                </Select.Option>
+              ))}
+            </Select>
+            {errors.unitType && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.unitType}</Text>}
+          </div>
+          <div>
+            <Text style={labelStyle}>Capacity <span style={{ color: '#ef4444' }}>*</span></Text>
+            <Input type="number" min={1} max={20} placeholder="e.g., 4" value={form.capacity}
+              onChange={(e) => set('capacity', parseInt(e.target.value) || 1)}
+              style={{ ...inputStyle, borderColor: errors.capacity ? '#ef4444' : undefined }} />
+            {errors.capacity && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.capacity}</Text>}
+          </div>
+        </div>
 
-          {/* Crew Members */}
-          <SectionTitle
-            icon={<UsergroupAddOutlined />}
-            title="Crew Members"
-            action={
-              <Button onClick={handleAddCrew} icon={<PlusOutlined />}
-                style={{ borderColor: '#7c3aed', color: '#7c3aed', borderRadius: 6, fontWeight: 500, height: 28, fontSize: 11, padding: '0 10px' }}>
-                Add
-              </Button>
-            }
-          />
-          <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
+        {/* ── Commander ── */}
+        <SectionTitle icon={<CrownOutlined />} title="Commander" />
+        <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-            {crewMembers.map((member, idx) => (
-              <div key={member.id} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
-                  <div>
-                    <Text style={{ ...labelStyle, marginBottom: 3 }}>Member {idx + 1} Name</Text>
-                    <Input placeholder="Jane Doe" value={member.name}
-                      onChange={(e) => updateCrew(member.id, 'name', e.target.value)}
-                      style={{ ...inputStyle, height: 32 }} />
-                  </div>
-                  <div>
-                    <Text style={{ ...labelStyle, marginBottom: 3 }}>Email</Text>
-                    <Input placeholder="jane@emergency.ie" value={member.email}
-                      onChange={(e) => updateCrew(member.id, 'email', e.target.value)}
-                      style={{ ...inputStyle, height: 32 }} />
-                  </div>
-                  <button onClick={() => handleRemoveCrew(member.id)} disabled={crewMembers.length === 1}
-                    style={{ width: 30, height: 32, border: 'none', background: 'transparent', cursor: crewMembers.length === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: crewMembers.length === 1 ? '#d1d5db' : '#ef4444', fontSize: 14, borderRadius: 4, flexShrink: 0 }}>
-                    <DeleteOutlined />
-                  </button>
+        <div style={{ marginBottom: 10 }}>
+          <Text style={labelStyle}>Select Commander</Text>
+          {loadingMembers ? <Spin size="small" /> : (
+            <Select
+              key={`commander-select-${form.crewIds.join(',')}`}
+              placeholder={!form.unitType ? 'Select unit type first' : 'Search commander...'}
+              value={form.commanderId || undefined}
+              onChange={handleCommanderChange}
+              disabled={!form.unitType}
+              showSearch
+              filterOption={(input, opt) => (opt?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+              style={{ width: '100%', height: 34 }}
+              popupClassName="ct-dropdown"
+              allowClear
+              options={commanderOptions.map((m) => ({ value: m.id, label: memberLabel(m) }))}
+            />
+          )}
+        </div>
+
+        {/* ── Crew ── */}
+        <SectionTitle icon={<UsergroupAddOutlined />} title={`Crew Members (${form.crewIds.length}/${totalSlots})`} />
+        <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
+
+        <div style={{ marginBottom: 10 }}>
+          {form.crewIds.map((id, idx) => {
+            const member = teamMembers.find((m) => m.id === id);
+            const isCommander = id === form.commanderId;
+            return (
+              <div key={id} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: isCommander ? '#f5f3ff' : '#f9fafb',
+                border: `1px solid ${isCommander ? '#ddd6fe' : '#e5e7eb'}`,
+                borderRadius: 6, padding: '6px 10px', marginBottom: 6, fontSize: 12,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 12, color: isCommander ? '#7c3aed' : '#374151', fontWeight: isCommander ? 600 : 400 }}>
+                    {idx + 1}. {member ? memberLabel(member) : id}
+                  </Text>
                 </div>
+                <button
+                  onClick={() => {
+                    if (!isCommander) set('crewIds', form.crewIds.filter((c) => c !== id));
+                  }}
+                  disabled={isCommander}
+                  title={isCommander ? 'Change commander above to remove' : 'Remove'}
+                  style={{ border: 'none', background: 'none', cursor: isCommander ? 'not-allowed' : 'pointer', color: isCommander ? '#d1d5db' : '#ef4444', fontSize: 13, padding: 0 }}>
+                  <DeleteOutlined />
+                </button>
               </div>
-            ))}
+            );
+          })}
+
+          {!crewFull && (
+            <Select
+              key={`crew-select-${form.commanderId}`}
+              placeholder={!form.unitType ? 'Select unit type first' : 'Add crew member...'}
+              value={undefined}
+              onChange={(v: string) => {
+                if (!form.crewIds.includes(v)) set('crewIds', [...form.crewIds, v]);
+              }}
+              disabled={!form.unitType || crewFull}
+              showSearch
+              filterOption={(input, opt) => (opt?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
+              style={{ width: '100%', height: 34 }}
+              popupClassName="ct-dropdown"
+              options={crewOptions
+                .filter((m) => m.id !== form.commanderId && !form.crewIds.includes(m.id))
+                .map((m) => ({ value: m.id, label: memberLabel(m) }))}
+            />
+          )}
+          {crewFull && null}
+        </div>
+
+        {/* ── Station ── */}
+        <SectionTitle icon={<EnvironmentOutlined />} title="Station" />
+        <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
+
+        <div style={{ marginBottom: 10 }}>
+          <Text style={labelStyle}>Station Name <span style={{ color: '#ef4444' }}>*</span></Text>
+          <Input placeholder="e.g., Tara Street Station" value={form.stationName}
+            onChange={(e) => set('stationName', e.target.value)}
+            style={{ ...inputStyle, borderColor: errors.stationName ? '#ef4444' : undefined }} />
+          {errors.stationName && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.stationName}</Text>}
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <Text style={labelStyle}>Station Address</Text>
+          <Input placeholder="e.g., Tara Street, Dublin 2" value={form.stationAddress}
+            onChange={(e) => set('stationAddress', e.target.value)} style={inputStyle} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <Text style={labelStyle}>Latitude</Text>
+            <Input placeholder="e.g., 53.3474" value={form.stationLat}
+              onChange={(e) => set('stationLat', e.target.value)} style={inputStyle} />
           </div>
-
-          {/* Location */}
-          <SectionTitle icon={<EnvironmentOutlined />} title="Location & Contact" />
-          <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-            <Form.Item name="location" style={{ marginBottom: 0 }} rules={[{ required: true, message: 'Required' }]}>
-              <Text style={labelStyle}>Base Location <span style={{ color: '#ef4444' }}>*</span></Text>
-              <Input prefix={<EnvironmentOutlined style={{ color: '#9ca3af', fontSize: 11 }} />} placeholder="Dublin Central Station" style={inputStyle} />
-            </Form.Item>
-            <Form.Item name="contactNumber" style={{ marginBottom: 0 }}>
-              <Text style={labelStyle}>Contact Number</Text>
-              <Input prefix={<PhoneOutlined style={{ color: '#9ca3af', fontSize: 11 }} />} placeholder="+353 1 987 6543" style={inputStyle} />
-            </Form.Item>
+          <div>
+            <Text style={labelStyle}>Longitude</Text>
+            <Input placeholder="e.g., -6.2530" value={form.stationLon}
+              onChange={(e) => set('stationLon', e.target.value)} style={inputStyle} />
           </div>
+        </div>
 
-        </Form>
+        {/* ── Vehicle ── */}
+        <SectionTitle icon={<CarOutlined />} title="Vehicle (optional)" />
+        <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <Text style={labelStyle}>Vehicle Model</Text>
+            <Input placeholder="e.g., Scania P280" value={form.vehicleModel}
+              onChange={(e) => set('vehicleModel', e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <Text style={labelStyle}>License Plate</Text>
+            <Input placeholder="e.g., 222-D-11111" value={form.licensePlate}
+              onChange={(e) => set('licensePlate', e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <Text style={labelStyle}>Vehicle Year</Text>
+          <Input type="number" placeholder="e.g., 2023" value={form.vehicleYear}
+            onChange={(e) => set('vehicleYear', e.target.value)} style={{ ...inputStyle, width: '48%' }} />
+        </div>
+
       </div>
 
       {/* Footer */}
@@ -212,19 +383,14 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
         </Button>
         <Button type="primary" loading={submitting} onClick={handleSubmit}
           style={{ height: 36, paddingInline: 20, borderRadius: 6, fontWeight: 600, fontSize: 12, background: '#7c3aed', borderColor: '#7c3aed' }}>
-          Create Team
+          Create Unit
         </Button>
       </div>
 
       <style>{`
-        .ct-select-wrap .ant-select-selector {
-          background: #f3f4f6 !important; border: 1px solid #e5e7eb !important;
-          border-radius: 6px !important; height: 34px !important; align-items: center !important;
-        }
-        .ct-select-wrap .ant-select-selection-placeholder,
-        .ct-select-wrap .ant-select-selection-item {
-          font-size: 12px !important; color: #374151 !important;
-        }
+        .ct-dropdown .ant-select-item { font-size: 12px !important; color: #374151 !important; }
+        .ct-dropdown .ant-select-item-option-active { background: #f3f4f6 !important; }
+        .ct-dropdown .ant-select-item-option-selected { background: #f3f4f6 !important; font-weight: 500 !important; }
       `}</style>
     </Modal>
   );

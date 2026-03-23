@@ -9,7 +9,6 @@ import './SignupForm.css';
 const { Option } = Select;
 
 interface SignupFormValues {
-    salutation: string;
     firstName: string;
     lastName: string;
     role: string;
@@ -28,17 +27,6 @@ const SignupForm: React.FC = () => {
 
     const handleFormChange = () => {
         const values = form.getFieldsValue();
-
-        const allFieldsFilled =
-            values.salutation &&
-            values.firstName &&
-            values.lastName &&
-            values.role &&
-            values.department &&
-            values.mobileNumber &&
-            values.email &&
-            values.password &&
-            values.confirmPassword;
 
         form.validateFields({ validateOnly: true })
             .then(() => {})
@@ -69,12 +57,11 @@ const SignupForm: React.FC = () => {
             const formattedMobile = `${countryCode}${values.mobileNumber}`;
 
             const result = await requestSignupOTP({
-                salutation: values.salutation,
                 firstName: values.firstName,
                 lastName: values.lastName,
                 role: values.role,
                 department: values.department,
-                phoneNumber: formattedMobile,  // Changed from mobileNumber to phoneNumber
+                phoneNumber: formattedMobile,
                 email: values.email,
                 password: values.password,
             });
@@ -123,23 +110,7 @@ const SignupForm: React.FC = () => {
             className="signup-form"
         >
             <Row gutter={16}>
-                <Col xs={24} sm={8}>
-                    <Form.Item
-                        name="salutation"
-                        label="Salutation"
-                        rules={[{ required: true, message: 'Please select salutation' }]}
-                    >
-                        <Select placeholder="Select" size="large" suffixIcon={null}>
-                            <Option value="Mr.">Mr.</Option>
-                            <Option value="Ms.">Ms.</Option>
-                            <Option value="Mrs.">Mrs.</Option>
-                            <Option value="Dr.">Dr.</Option>
-                            <Option value="Prof.">Prof.</Option>
-                        </Select>
-                    </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={16}>
+                <Col xs={24}>
                     <Form.Item
                         name="firstName"
                         label="First Name"

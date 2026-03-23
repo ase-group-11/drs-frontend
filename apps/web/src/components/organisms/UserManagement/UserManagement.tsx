@@ -36,6 +36,7 @@ import type {
 } from '../../../types';
 import EditUserStatusModal from './EditUserStatusModal';
 import DeleteUserModal from './DeleteUserModal';
+import AddUserModal from './AddUserModal';
 import './UserManagement.css';
 
 const { Search } = Input;
@@ -85,6 +86,7 @@ const UserManagement: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
   const [bulkDeleteUsers, setBulkDeleteUsers] = useState<AdminUser[]>([]);
@@ -327,7 +329,7 @@ const UserManagement: React.FC = () => {
           icon={<PlusOutlined />}
           className="um-add-btn"
           size="large"
-          onClick={() => message.info('Add User coming soon')}
+          onClick={() => setAddModalOpen(true)}
         >
           Add User
         </Button>
@@ -390,7 +392,6 @@ const UserManagement: React.FC = () => {
               <Select.Option value="MEDICAL">Medical</Select.Option>
               <Select.Option value="POLICE">Police</Select.Option>
               <Select.Option value="IT">IT</Select.Option>
-              <Select.Option value="RESCUE">Rescue</Select.Option>
             </Select>
           </Col>
           <Col flex="auto">
@@ -448,6 +449,13 @@ const UserManagement: React.FC = () => {
           />
         )}
       </Card>
+
+      {/* Add User Modal */}
+      <AddUserModal
+        open={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onSuccess={fetchUsers}
+      />
 
       {/* Edit Status Modal */}
       <EditUserStatusModal

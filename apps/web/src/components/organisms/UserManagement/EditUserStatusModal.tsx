@@ -15,6 +15,8 @@ const STATUS_OPTIONS: {
   { value: 'ACTIVE',    label: 'Active',    color: '#008236' },
   { value: 'INACTIVE',  label: 'Inactive',  color: '#6b7280' },
   { value: 'SUSPENDED', label: 'Suspended', color: '#d4183d' },
+  { value: 'PENDING',   label: 'Pending',   color: '#d97706' },
+  { value: 'DELETED',   label: 'Deleted',   color: '#374151' },
 ];
 
 interface EditUserStatusModalProps {

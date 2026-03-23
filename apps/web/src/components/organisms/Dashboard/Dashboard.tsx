@@ -82,16 +82,31 @@ const Dashboard: React.FC = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [statsRes, activityRes, disastersRes, unitsRes] = await Promise.all([
+      const [statsRes, activityRes, disastersRes, unitsRes, usersRes] = await Promise.all([
         getDashboardStats(),
         getActivityLogs(),
         apiClient.get<DisastersApiResponse>('/disasters/all'),
         apiClient.get<{ units: { unit_status: string }[]; total_count: number; active_count: number }>('/emergency-units/'),
+        apiClient.get<{ total_count: number; users: { created_at: string }[]; summary: { active: number } }>('/users/?limit=200'),
       ]);
 
-      // ── KPI: existing stats (total users, system status) ──────────────────
+      // ── KPI: existing stats (system status) ───────────────────────────────
       if (statsRes.data) setStats(statsRes.data);
       if (activityRes.data) setActivityLogs(activityRes.data);
+
+      // ── KPI: Total Users from /users/ ─────────────────────────────────────
+      const totalUsersCount = usersRes.data?.total_count ?? statsRes.data?.totalUsers ?? 0;
+
+      // Count users created this calendar month
+      const now = new Date();
+      const usersThisMonth = (usersRes.data?.users ?? []).filter((u) => {
+        const d = new Date(u.created_at);
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      }).length;
+
+      setStats((prev) => prev
+        ? { ...prev, totalUsers: totalUsersCount, totalUsersChange: usersThisMonth }
+        : { totalUsers: totalUsersCount, totalUsersChange: usersThisMonth, systemStatus: 'Operational', systemUptime: '99.8%' } as any);
 
       // ── KPI: Active Disasters from /disasters/all ─────────────────────────
       const disasters: DisasterRaw[] = disastersRes.data?.disasters ?? [];

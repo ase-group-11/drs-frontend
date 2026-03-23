@@ -10,9 +10,8 @@ import {
   RightOutlined,
   EnvironmentOutlined,
   UserOutlined,
-  PlusOutlined,
 } from '@ant-design/icons';
-import { Typography, Button, Tag, Avatar } from 'antd';
+import { Typography, Avatar } from 'antd';
 
 const { Text } = Typography;
 
@@ -193,7 +192,6 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
               {[
                 { label: 'Filename:', value: current.filename, mono: true },
                 { label: 'Size:', value: current.fileSize },
-                { label: 'Dimensions:', value: current.dimensions },
                 { label: 'Format:', value: current.format },
                 { label: 'Upload time:', value: current.uploadTime },
               ].map(({ label, value, mono }) => (
@@ -213,62 +211,29 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
               <Text style={{ fontWeight: 700, fontSize: 15, color: '#111827', display: 'block', marginBottom: 12 }}>
                 Uploaded By
               </Text>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Avatar size={38} style={{ background: '#ede9fe', color: '#7c3aed', flexShrink: 0 }} icon={<UserOutlined />} />
                 <div>
                   <Text style={{ fontWeight: 600, fontSize: 13, color: '#111827', display: 'block' }}>{current.uploader}</Text>
                   <Text style={{ fontSize: 12, color: '#6b7280' }}>{current.uploaderUnit}</Text>
                 </div>
               </div>
-              <Text style={{ color: '#7c3aed', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Contact</Text>
             </div>
 
             <div style={{ height: 1, background: '#f3f4f6', margin: '4px 0' }} />
 
-            {/* Context */}
+            {/* Address */}
             <div style={{ padding: '12px 20px' }}>
               <Text style={{ fontWeight: 700, fontSize: 15, color: '#111827', display: 'block', marginBottom: 12 }}>
-                Context
+                Address
               </Text>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 <EnvironmentOutlined style={{ color: '#6b7280', marginTop: 2 }} />
-                <div>
-                  <Text style={{ fontSize: 13, color: '#111827', display: 'block' }}>{current.location}</Text>
-                  <Text style={{ fontSize: 12, color: '#9ca3af' }}>{current.coordinates}</Text>
-                </div>
+                <Text style={{ fontSize: 13, color: '#111827' }}>{current.location}</Text>
               </div>
             </div>
 
             <div style={{ height: 1, background: '#f3f4f6', margin: '4px 0' }} />
-
-            {/* Tags */}
-            <div style={{ padding: '12px 20px' }}>
-              <Text style={{ fontWeight: 700, fontSize: 15, color: '#111827', display: 'block', marginBottom: 12 }}>
-                Tags
-              </Text>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                {current.tags.map((tag) => (
-                  <span
-                    key={tag.label}
-                    style={{
-                      background: tag.color,
-                      color: tag.textColor,
-                      borderRadius: 999,
-                      padding: '3px 12px',
-                      fontSize: 12,
-                      fontWeight: 500,
-                    }}
-                  >
-                    {tag.label}
-                  </span>
-                ))}
-              </div>
-              <button
-                style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #e5e7eb', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 13, color: '#374151' }}
-              >
-                <PlusOutlined style={{ fontSize: 11 }} /> Add Tag
-              </button>
-            </div>
 
             {/* Spacer */}
             <div style={{ flex: 1 }} />
@@ -280,11 +245,6 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                 onClick={() => onDownload(current)}
               >
                 <DownloadOutlined /> Download Original
-              </button>
-              <button
-                style={{ width: '100%', padding: '11px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-              >
-                Add to Report
               </button>
             </div>
           </div>
