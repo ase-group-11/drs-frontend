@@ -146,6 +146,12 @@ const DisasterReports: React.FC = () => {
     setEscalateModalOpen(true);
   };
 
+  useEffect(() => {
+    if (currentView === 'photos' || currentView === 'logs') {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, [currentView]);
+
   const openPhotoGallery = (report: DisasterReport, e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedReport(report);
@@ -567,7 +573,16 @@ const DisasterReports: React.FC = () => {
       )}
 
       {/* Map View */}
-      {view === 'map' && <MapView reports={filteredReports} />}
+      {view === 'map' && (
+        <MapView
+          reports={filteredReports}
+          onDispatch={(report) => { setActiveModalReport(report); setDispatchModalOpen(true); }}
+          onEscalate={(report) => { setActiveModalReport(report); setEscalateModalOpen(true); }}
+          onResolve={(report)  => { setActiveModalReport(report); setResolveModalOpen(true); }}
+          onViewPhotos={(report) => { setSelectedReport(report); setCurrentView('photos'); }}
+          onViewLogs={(report)   => { setSelectedReport(report); setCurrentView('logs'); }}
+        />
+      )}
 
       {/* Modals */}
       <DispatchUnitsModal
