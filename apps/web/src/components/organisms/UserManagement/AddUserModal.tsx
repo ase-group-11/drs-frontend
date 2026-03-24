@@ -131,6 +131,8 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
     fontSize: 11, color: '#e11d48', marginTop: 3, display: 'block',
   };
 
+  const req = <span style={{ color: '#e11d48', marginLeft: 2 }}>*</span>;
+
   return (
     <Modal
       title={
@@ -181,7 +183,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
         {/* Shared fields */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <Text style={labelStyle}>Full Name</Text>
+            <Text style={labelStyle}>Full Name{req}</Text>
             <Input
               placeholder="e.g. John Murphy"
               value={form.fullName}
@@ -193,7 +195,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
 
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}>
-              <Text style={labelStyle}>Email</Text>
+              <Text style={labelStyle}>Email{req}</Text>
               <Input
                 placeholder="user@example.com"
                 value={form.email}
@@ -203,7 +205,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
               {errors.email && <Text style={errorStyle}>{errors.email}</Text>}
             </div>
             <div style={{ flex: 1 }}>
-              <Text style={labelStyle}>Phone Number</Text>
+              <Text style={labelStyle}>Phone Number{req}</Text>
               <Input
                 placeholder="+353 87 123 4567"
                 value={form.phone}
@@ -224,7 +226,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
 
             <div style={{ display: 'flex', gap: 10 }}>
               <div style={{ flex: 1 }}>
-                <Text style={labelStyle}>Role</Text>
+                <Text style={labelStyle}>Role{req}</Text>
                 <Select
                   placeholder="Select role"
                   value={form.role || undefined}
@@ -242,7 +244,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
                 {errors.role && <Text style={errorStyle}>{errors.role}</Text>}
               </div>
               <div style={{ flex: 1 }}>
-                <Text style={labelStyle}>Department</Text>
+                <Text style={labelStyle}>Department{req}</Text>
                 <Select
                   placeholder="Select department"
                   value={form.department || undefined}
@@ -263,7 +265,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
 
             <div style={{ display: 'flex', gap: 10 }}>
               <div style={{ flex: 1 }}>
-                <Text style={labelStyle}>Password</Text>
+                <Text style={labelStyle}>Password{req}</Text>
                 <Input.Password
                   placeholder="Min. 8 characters"
                   value={form.password}

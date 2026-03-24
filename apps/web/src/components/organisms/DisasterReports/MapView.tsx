@@ -115,7 +115,7 @@ const MapView: React.FC<MapViewProps> = ({
       const labelLayerId = layers.find(l => l.type === 'symbol' && (l.layout as any)?.['text-field'])?.id;
       const buildingColors = initStyle === 'dark'
         ? ['interpolate', ['linear'], ['get', 'height'], 0, '#1e293b', 50, '#334155', 120, '#475569'] as any
-        : ['interpolate', ['linear'], ['get', 'height'], 0, '#e2e8f0', 30, '#cbd5e1', 80, '#94a3b8', 150, '#64748b'] as any;
+        : ['interpolate', ['linear'], ['get', 'height'], 0, '#e2e8f0', 30, '#cbd5e1', 80, '#cbd5e1', 150, '#64748b'] as any;
       m.addLayer({ id: 'drs-3d-buildings', source: 'composite', 'source-layer': 'building', filter: ['==', 'extrude', 'true'], type: 'fill-extrusion', minzoom: 14,
         paint: { 'fill-extrusion-color': buildingColors, 'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'height']], 'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'min_height']], 'fill-extrusion-opacity': initStyle === 'dark' ? 0.9 : 0.75 },
       }, labelLayerId);
@@ -158,7 +158,7 @@ const MapView: React.FC<MapViewProps> = ({
         const labelLayerId = layers.find(l => l.type === 'symbol' && (l.layout as any)?.['text-field'])?.id;
         if (!m.getLayer('drs-3d-buildings')) m.addLayer({
           id: 'drs-3d-buildings', source: 'composite', 'source-layer': 'building', filter: ['==', 'extrude', 'true'], type: 'fill-extrusion', minzoom: 14,
-          paint: { 'fill-extrusion-color': styleMode === 'dark' ? ['interpolate', ['linear'], ['get', 'height'], 0, '#1e293b', 50, '#334155', 120, '#475569'] : ['interpolate', ['linear'], ['get', 'height'], 0, '#e2e8f0', 30, '#cbd5e1', 80, '#94a3b8', 150, '#64748b'], 'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'height']], 'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'min_height']], 'fill-extrusion-opacity': styleMode === 'dark' ? 0.9 : 0.75 },
+          paint: { 'fill-extrusion-color': styleMode === 'dark' ? ['interpolate', ['linear'], ['get', 'height'], 0, '#1e293b', 50, '#334155', 120, '#475569'] : ['interpolate', ['linear'], ['get', 'height'], 0, '#e2e8f0', 30, '#cbd5e1', 80, '#cbd5e1', 150, '#64748b'], 'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'height']], 'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 15, 0, 15.05, ['get', 'min_height']], 'fill-extrusion-opacity': styleMode === 'dark' ? 0.9 : 0.75 },
         }, labelLayerId);
       }
     });
@@ -309,7 +309,7 @@ const MapView: React.FC<MapViewProps> = ({
       {!mapReady && (
         <div style={{ position:'absolute', inset:0, background: isDark ? 'rgba(8,14,28,0.85)' : 'rgba(255,255,255,0.8)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', zIndex:10 }}>
           <Spin size="large" />
-          <div style={{ marginTop:12, color: isDark ? '#94a3b8' : '#374151', fontWeight:500, fontSize:13, fontFamily:'monospace' }}>
+          <div style={{ marginTop:12, color: isDark ? '#cbd5e1' : '#374151', fontWeight:500, fontSize:13, fontFamily:'monospace' }}>
             {isDark ? 'INITIALIZING EOC MAP...' : 'Loading map...'}
           </div>
         </div>
@@ -330,7 +330,7 @@ const MapView: React.FC<MapViewProps> = ({
           { key:'ACTIVE',     label:'Active',     color:'#ef4444' },
           { key:'MONITORING', label:'Monitoring', color:'#f59e0b' },
           { key:'RESOLVED',   label:'Resolved',   color:'#22c55e' },
-          { key:'ARCHIVED',   label:'Archived',   color:'#94a3b8' },
+          { key:'ARCHIVED',   label:'Archived',   color:'#cbd5e1' },
           { key:'ALL',        label:'All',         color:'#22d3ee' },
         ] as {key:StatusFilter;label:string;color:string}[]).map(({ key, label, color }) => {
           const active = statusFilter === key;
@@ -340,7 +340,7 @@ const MapView: React.FC<MapViewProps> = ({
               height:26, padding:'0 10px', borderRadius:7, border:'none', cursor:'pointer',
               fontSize:11, fontWeight: active ? 700 : 500,
               background: active ? color : 'transparent',
-              color: active ? 'white' : '#94a3b8',
+              color: active ? 'white' : '#cbd5e1',
               boxShadow: active ? `0 1px 8px ${color}70` : 'none',
               transition:'all 0.15s', whiteSpace:'nowrap',
               fontFamily:"'Courier New', monospace",
@@ -373,7 +373,7 @@ const MapView: React.FC<MapViewProps> = ({
               backdropFilter:'blur(10px)',
               color: active
                 ? (mode === 'streets' ? '#111827' : '#22d3ee')
-                : '#94a3b8',
+                : '#cbd5e1',
               boxShadow: active ? '0 0 14px rgba(34,211,238,0.25), 0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.25)',
               display:'flex', alignItems:'center', gap:4, transition:'all 0.15s',
               fontFamily:"'Courier New',monospace", letterSpacing:'0.04em',
@@ -388,7 +388,7 @@ const MapView: React.FC<MapViewProps> = ({
           cursor:'pointer', fontSize:11, fontWeight: is3D ? 700 : 500,
           background: is3D ? 'rgba(34,211,238,0.15)' : 'rgba(10,15,30,0.82)',
           backdropFilter:'blur(10px)',
-          color: is3D ? '#22d3ee' : '#94a3b8',
+          color: is3D ? '#22d3ee' : '#cbd5e1',
           boxShadow: is3D ? '0 0 14px rgba(34,211,238,0.25), 0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.25)',
           display:'flex', alignItems:'center', gap:4, transition:'all 0.15s',
           fontFamily:"'Courier New',monospace", letterSpacing:'0.04em',
@@ -400,7 +400,7 @@ const MapView: React.FC<MapViewProps> = ({
           border:'1px solid rgba(34,211,238,0.12)',
           cursor:'pointer', fontSize:11, fontWeight:500, marginLeft:2,
           background:'rgba(10,15,30,0.82)', backdropFilter:'blur(10px)',
-          color:'#94a3b8',
+          color:'#cbd5e1',
           boxShadow:'0 2px 8px rgba(0,0,0,0.25)',
           display:'flex', alignItems:'center', gap:4,
           fontFamily:"'Courier New',monospace", letterSpacing:'0.04em',
@@ -438,7 +438,7 @@ const MapView: React.FC<MapViewProps> = ({
           <div style={{ background:'rgba(10,15,30,0.88)', backdropFilter:'blur(10px)', borderRadius:14, padding:'22px 32px', textAlign:'center', border:'1px solid rgba(34,211,238,0.18)', boxShadow:'0 8px 32px rgba(0,0,0,0.4)' }}>
             <div style={{ fontSize:28, marginBottom:8 }}>🗺️</div>
             <div style={{ fontWeight:700, color:'#f1f5f9', fontSize:14, fontFamily:"'Courier New',monospace", letterSpacing:'0.04em' }}>NO INCIDENTS TO DISPLAY</div>
-            <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>Adjust filter above</div>
+            <div style={{ fontSize:12, color:'#94a3b8', marginTop:4 }}>Adjust filter above</div>
           </div>
         </div>
       )}
@@ -466,7 +466,7 @@ const MapView: React.FC<MapViewProps> = ({
             {/* Handle + close */}
             <div style={{ display:'flex', justifyContent:'center', paddingTop:10, paddingBottom:8, position:'relative' }}>
               <div style={{ width:36, height:3, borderRadius:3, background:'rgba(34,211,238,0.25)' }} />
-              <button onClick={() => setDrawerReport(null)} style={{ position:'absolute', right:0, top:8, background:'rgba(255,255,255,0.07)', border:'1px solid rgba(34,211,238,0.15)', borderRadius:'50%', width:26, height:26, cursor:'pointer', fontSize:11, color:'#94a3b8', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+              <button onClick={() => setDrawerReport(null)} style={{ position:'absolute', right:0, top:8, background:'rgba(255,255,255,0.07)', border:'1px solid rgba(34,211,238,0.15)', borderRadius:'50%', width:26, height:26, cursor:'pointer', fontSize:11, color:'#cbd5e1', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             </div>
 
             {/* Info row */}
@@ -478,7 +478,7 @@ const MapView: React.FC<MapViewProps> = ({
                 <div style={{ fontWeight:700, fontSize:14, color:'#f1f5f9', letterSpacing:'0.05em', fontFamily:"'Courier New',monospace" }}>
                   {r.type.toUpperCase()}
                 </div>
-                <div style={{ fontSize:11, color:'#94a3b8', marginTop:1, display:'flex', alignItems:'center', gap:6, fontFamily:"'Courier New',monospace" }}>
+                <div style={{ fontSize:11, color:'#cbd5e1', marginTop:1, display:'flex', alignItems:'center', gap:6, fontFamily:"'Courier New',monospace" }}>
                   <span>{r.reportId}</span>
                   <span style={{ display:'inline-block', width:3, height:3, borderRadius:'50%', background:'#475569' }} />
                   <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
@@ -488,7 +488,7 @@ const MapView: React.FC<MapViewProps> = ({
                   <span style={{ display:'inline-block', width:3, height:3, borderRadius:'50%', background:'#475569' }} />
                   <span>👥 {r.units}</span>
                 </div>
-                <div style={{ fontSize:11, color:'#64748b', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontFamily:"'Courier New',monospace" }}>📍 {r.location || 'Unknown'}</div>
+                <div style={{ fontSize:11, color:'#94a3b8', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontFamily:"'Courier New',monospace" }}>📍 {r.location || 'Unknown'}</div>
               </div>
               <span style={{ padding:'3px 9px', borderRadius:20, fontSize:10, fontWeight:800, letterSpacing:'0.4px', background:`${sevColor}22`, color:sevColor, border:`1.5px solid ${sevColor}50`, flexShrink:0, boxShadow:`0 0 8px ${sevColor}40` }}>
                 {r.severity.toUpperCase()}
