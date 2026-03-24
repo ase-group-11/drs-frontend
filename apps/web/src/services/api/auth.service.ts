@@ -20,7 +20,7 @@ export const requestSignupOTP = async (data: SignupData): Promise<ApiResponse> =
     const response = await apiClient.post(API_ENDPOINTS.EMERGENCY_TEAM.REGISTER, {
       phone_number: data.phoneNumber,
       password: data.password,
-      full_name: `${data.salutation} ${data.firstName} ${data.lastName}`,
+      full_name: `${data.firstName} ${data.lastName}`,
       email: data.email,
       role: data.role,
       department: data.department,

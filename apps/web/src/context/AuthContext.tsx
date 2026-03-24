@@ -87,10 +87,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     navigate('/login');
   };
 
+  const loginWithToken = (newToken: string, newUser: User) => {
+    localStorage.setItem('token', newToken);
+    localStorage.setItem('user', JSON.stringify(newUser));
+    setToken(newToken);
+    setUser(newUser);
+    navigate('/admin/dashboard');
+  };
+
   const value: AuthContextType = {
     user,
     token,
     login,
+    loginWithToken,
     logout,
     isAuthenticated: !!user && !!token,
     isLoading,

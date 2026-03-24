@@ -3,6 +3,7 @@ import { Button, message } from 'antd';
 import { PhoneOutlined, CloseOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { verifySignupOTP, requestSignupOTP } from '../../../services';
+import { useAuth } from '../../../hooks';
 import './OtpVerificationForm.css';
 
 interface LocationState {
@@ -19,6 +20,7 @@ const OtpVerificationForm: React.FC = () => {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
+  const { loginWithToken } = useAuth();
   
   const state = location.state as LocationState;
   const mobileNumber = state?.mobileNumber;
@@ -91,11 +93,7 @@ const OtpVerificationForm: React.FC = () => {
 
       if (result.success && result.data) {
         message.success('Account verified successfully!');
-        
-        localStorage.setItem('token', result.data.token);
-        localStorage.setItem('user', JSON.stringify(result.data.user));
-        
-        navigate('/home');
+        loginWithToken(result.data.token, result.data.user);
       } else {
         message.error(result.message || 'Invalid OTP');
         setOtp(['', '', '', '', '', '']);
