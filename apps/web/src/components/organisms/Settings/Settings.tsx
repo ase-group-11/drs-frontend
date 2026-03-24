@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Button,
   Input,
-  Select,
   Switch,
   Form,
   Typography,
@@ -16,19 +15,14 @@ import {
   BellOutlined,
   LockOutlined,
   DatabaseOutlined,
-  CheckCircleOutlined,
   WifiOutlined,
 } from '@ant-design/icons';
 import {
-  getGeneralSettings,
-  saveGeneralSettings,
   getNotificationSettings,
-  saveNotificationSettings,
   changePassword,
   getSystemStatus,
 } from '../../../services';
 import type {
-  GeneralSettings,
   NotificationSettings,
   SystemStatus,
 } from '../../../types';
@@ -38,85 +32,35 @@ const { Text } = Typography;
 
 // ─── General Tab ────────────────────────────────────────────────────────────
 const GeneralTab: React.FC = () => {
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    loadSettings();
+  const user = React.useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
   }, []);
 
-  const loadSettings = async () => {
-    const res = await getGeneralSettings();
-    if (res.data) {
-      form.setFieldsValue(res.data);
-    }
-    setLoading(false);
-  };
-
-  const handleSave = async () => {
-    try {
-      const values = await form.validateFields();
-      setSaving(true);
-      const res = await saveGeneralSettings(values as GeneralSettings);
-      if (res.success) message.success('Settings saved successfully');
-      else message.error(res.message || 'Failed to save');
-    } catch {
-      // validation error
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) return <div className={styles.tabLoading}><Spin /></div>;
+  const fields = [
+    { label: 'Full Name',     value: user.fullName      || '—' },
+    { label: 'Email',         value: user.email         || '—' },
+    { label: 'Phone Number',  value: user.phoneNumber   || '—' },
+    { label: 'Role',          value: user.role          || '—' },
+    { label: 'Department',    value: user.department    || '—' },
+    { label: 'Employee ID',   value: user.employeeId    || '—' },
+  ];
 
   return (
     <Card className={styles.settingsCard}>
-      <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 20 }}>System Information</Text>
-      <Form form={form} layout="vertical" requiredMark={false}>
-        <div className={styles.fieldGrid2}>
-          <Form.Item name="systemName" label="System Name" rules={[{ required: true }]}>
-            <Input variant="filled" />
-          </Form.Item>
-          <Form.Item name="adminEmail" label="Admin Email" rules={[{ required: true }, { type: 'email' }]}>
-            <Input variant="filled" />
-          </Form.Item>
-        </div>
-        <div className={styles.fieldGrid3}>
-          <Form.Item name="timezone" label="Timezone">
-            <Select variant="filled">
-              <Select.Option value="europe-dublin">Europe/Dublin (GMT+0)</Select.Option>
-              <Select.Option value="europe-london">Europe/London (GMT+0)</Select.Option>
-              <Select.Option value="america-ny">America/New York (GMT-5)</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="language" label="Language">
-            <Select variant="filled">
-              <Select.Option value="en">English</Select.Option>
-              <Select.Option value="ga">Irish</Select.Option>
-              <Select.Option value="fr">French</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="dateFormat" label="Date Format">
-            <Select variant="filled">
-              <Select.Option value="dd-mm-yyyy">DD/MM/YYYY</Select.Option>
-              <Select.Option value="mm-dd-yyyy">MM/DD/YYYY</Select.Option>
-              <Select.Option value="yyyy-mm-dd">YYYY-MM-DD</Select.Option>
-            </Select>
-          </Form.Item>
-        </div>
-        <div className={styles.formFooter}>
-          <Button onClick={() => form.resetFields()}>Cancel</Button>
-          <Button
-            type="primary"
-            loading={saving}
-            onClick={handleSave}
-            style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
-          >
-            Save Changes
-          </Button>
-        </div>
-      </Form>
+      <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 20 }}>User Information</Text>
+      <div className={styles.fieldGrid2}>
+        {fields.map(({ label, value }) => (
+          <div key={label} style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 4 }}>{label}</Text>
+            <Input value={value} readOnly variant="filled"
+              style={{ background: '#f3f4f6', cursor: 'default', color: '#111827' }} />
+          </div>
+        ))}
+      </div>
     </Card>
   );
 };

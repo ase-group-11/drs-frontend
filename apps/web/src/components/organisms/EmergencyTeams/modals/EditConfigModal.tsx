@@ -1,382 +1,413 @@
-// NEW FILE
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Modal,
-  Tabs,
-  Form,
-  Input,
-  Select,
-  Switch,
-  Checkbox,
-  Slider,
-  Button,
-  Typography,
-  Space,
-  message,
+  Modal, Tabs, Input, Button, Typography, message, Select, Spin,
 } from 'antd';
 import {
-  SettingOutlined,
-  TeamOutlined,
-  CarOutlined,
-  ThunderboltOutlined,
-  BellOutlined,
-  ToolOutlined,
-  PlusOutlined,
-  CloseOutlined,
-  LoadingOutlined,
+  SettingOutlined, TeamOutlined, CrownOutlined,
+  UsergroupAddOutlined, DeleteOutlined,
 } from '@ant-design/icons';
+import apiClient from '../../../../lib/axios';
+import type { EmergencyUnitDetail } from '../../../../types';
 
 const { Text } = Typography;
-const { TextArea } = Input;
 
-interface EditCrewMember {
-  id: string;
-  name: string;
-  role: string;
-  contact: string;
-}
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface EditConfigModalProps {
   open: boolean;
-  unitId: string;
+  unitId: string;       // unit_code e.g. "F-1"
+  unitUuid: string;     // real UUID for API calls
   unitType: string;
+  detail: EmergencyUnitDetail | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-const EQUIPMENT_FIELDS = [
-  { key: 'ladder', label: 'Ladder' },
-  { key: 'hose', label: 'Hose' },
-  { key: 'firstAid', label: 'First Aid' },
-  { key: 'extinguisher', label: 'Extinguisher' },
-  { key: 'radio', label: 'Radio' },
-  { key: 'gps', label: 'GPS' },
-];
+interface UnitFormState {
+  unit_name: string;
+  station_name: string;
+  station_address: string;
+  station_latitude: string;
+  station_longitude: string;
+  vehicle_model: string;
+  vehicle_license_plate: string;
+  vehicle_year: string;
+}
+
+interface TeamMember {
+  id: string;
+  full_name: string;
+  department: string;
+  employee_id: string | null;
+  role: string;
+  status: string;
+  commanding_units_count: number;
+  assigned_units_count: number;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const buildInitialUnit = (detail: EmergencyUnitDetail | null): UnitFormState => ({
+  unit_name:             detail?.unit_name              ?? '',
+  station_name:          detail?.station?.name           ?? '',
+  station_address:       detail?.station?.address        ?? '',
+  station_latitude:      detail?.station?.lat != null    ? String(detail.station.lat)  : '',
+  station_longitude:     detail?.station?.lon != null    ? String(detail.station.lon)  : '',
+  vehicle_model:         detail?.vehicle?.model          ?? '',
+  vehicle_license_plate: detail?.vehicle?.license_plate  ?? '',
+  vehicle_year:          detail?.vehicle?.year != null   ? String(detail.vehicle.year) : '',
+});
+
+const memberLabel = (m: TeamMember) =>
+  `${m.full_name}${m.employee_id ? ` · ${m.employee_id}` : ''} (${m.role})`;
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const inputStyle: React.CSSProperties = {
+  background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, height: 42,
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: '#374151',
+};
+
+const sectionLabelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, color: '#9ca3af',
+  textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: -6,
+};
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 const EditConfigModal: React.FC<EditConfigModalProps> = ({
-  open,
-  unitId,
-  unitType,
-  onClose,
-  onSuccess,
+  open, unitId, unitUuid, unitType, detail, onClose, onSuccess,
 }) => {
+  const [activeTab, setActiveTab] = useState('unit');
   const [saving, setSaving] = useState(false);
 
-  // Basic tab state
-  const [unitTypeSelected, setUnitTypeSelected] = useState(unitType);
-  const [station, setStation] = useState('Dublin Central Station');
-  const [isActive, setIsActive] = useState(true);
+  // ── Unit tab state ──
+  const [unitForm, setUnitForm] = useState<UnitFormState>(buildInitialUnit(detail));
+  const [originalUnit, setOriginalUnit] = useState<UnitFormState>(buildInitialUnit(detail));
 
-  // Crew tab state
-  const [crewSize, setCrewSize] = useState(4);
-  const [crewMembers, setCrewMembers] = useState<EditCrewMember[]>([
-    { id: '1', name: 'John Murphy', role: 'Team Leader', contact: '+353 87 123 4567' },
-    { id: '2', name: "Sean O'Brien", role: 'Driver', contact: '+353 87 234 5678' },
-    { id: '3', name: 'Mike Walsh', role: 'Responder', contact: '+353 87 345 6789' },
-    { id: '4', name: 'Tom Kelly', role: 'Responder', contact: '+353 87 456 7890' },
-  ]);
+  // ── Crew tab state ──
+  const [allMembers, setAllMembers] = useState<TeamMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [capacity, setCapacity] = useState<number>(4);
+  const [commanderId, setCommanderId] = useState<string>('');
+  const [crewIds, setCrewIds] = useState<string[]>([]);           // includes commander at [0]
+  const [origCommanderId, setOrigCommanderId] = useState<string>('');
+  const [origCrewIds, setOrigCrewIds] = useState<string[]>([]);
 
-  // Vehicle tab state
-  const [vehicleModel, setVehicleModel] = useState('Scania P-Series');
-  const [licensePlate, setLicensePlate] = useState('211-D-12345');
-  const [equipment, setEquipment] = useState({
-    ladder: true, hose: true, firstAid: true, extinguisher: true, radio: true, gps: true,
-  });
+  // Seed state on open
+  useEffect(() => {
+    if (!open) return;
 
-  // Operations tab state
-  const [responseRadius, setResponseRadius] = useState(25);
-  const [autoAccept, setAutoAccept] = useState(false);
+    // Unit tab
+    const initial = buildInitialUnit(detail);
+    setUnitForm(initial);
+    setOriginalUnit(initial);
+    setActiveTab('unit');
 
-  // Alerts tab state
-  const [notifications, setNotifications] = useState({
-    sms: true, push: true, email: false, radio: true,
-  });
+    // Crew tab
+    const cap = detail?.stats?.capacity ?? 4;
+    const cmdId = detail?.commander?.id ?? '';
+    const roster = detail?.crew_roster?.map((m) => m.id) ?? [];
+    // Ensure commander is at front
+    const orderedCrew = cmdId
+      ? [cmdId, ...roster.filter((id) => id !== cmdId)]
+      : roster;
 
-  // Maintenance notes
-  const [maintenanceNotes, setMaintenanceNotes] = useState('');
+    setCapacity(cap);
+    setCommanderId(cmdId);
+    setCrewIds(orderedCrew);
+    setOrigCommanderId(cmdId);
+    setOrigCrewIds(orderedCrew);
+  }, [open, detail]);
 
-  const addCrewMember = () =>
-    setCrewMembers((prev) => [...prev, { id: String(Date.now()), name: '', role: 'Responder', contact: '' }]);
+  // Fetch team members when crew tab opens
+  const fetchMembers = useCallback(async () => {
+    setLoadingMembers(true);
+    try {
+      const res = await apiClient.get('/users/', {
+        params: { user_type: 'team', limit: 200 },
+      });
+      setAllMembers(res.data?.users ?? []);
+    } catch {
+      message.error('Failed to load team members');
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, []);
 
-  const removeCrewMember = (id: string) =>
-    setCrewMembers((prev) => prev.filter((m) => m.id !== id));
+  useEffect(() => {
+    if (open && activeTab === 'crew') fetchMembers();
+  }, [open, activeTab, fetchMembers]);
 
-  const updateCrewMember = (id: string, field: keyof EditCrewMember, value: string) =>
-    setCrewMembers((prev) => prev.map((m) => (m.id === id ? { ...m, [field]: value } : m)));
+  // Trim crew when capacity decreases (preserve commander at [0])
+  useEffect(() => {
+    if (crewIds.length > capacity) {
+      setCrewIds((prev) => prev.slice(0, capacity));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capacity]);
 
-  const handleSave = async () => {
-    setSaving(true);
-    // Wire to PUT /api/admin/teams/:id when ready
-    await new Promise((r) => setTimeout(r, 1500));
-    setSaving(false);
-    message.success(`Unit ${unitId} configuration saved`);
-    onSuccess();
+  // ── Derived values ──
+  const unitDirty = JSON.stringify(unitForm) !== JSON.stringify(originalUnit);
+  const crewDirty = JSON.stringify(crewIds) !== JSON.stringify(origCrewIds);
+
+  const totalSlots = capacity;
+  const crewFull = crewIds.length >= totalSlots;
+
+  // Members from same dept as unit
+  const dept = detail?.department ?? '';
+  const eligibleMembers = allMembers.filter((m) => m.department === dept);
+
+  // Existing crew UUIDs (for eligibility bypass)
+  const existingCrewSet = new Set(origCrewIds);
+
+  // Crew add-options: ACTIVE, assigned_units_count === 0 OR already in this unit's roster, exclude already-added
+  const crewAddOptions = eligibleMembers.filter(
+    (m) =>
+      m.status === 'ACTIVE' &&
+      (m.assigned_units_count === 0 || existingCrewSet.has(m.id)) &&
+      !crewIds.includes(m.id)
+  );
+
+  // ── Handlers ──
+  const setField = (field: keyof UnitFormState, value: string) =>
+    setUnitForm((prev) => ({ ...prev, [field]: value }));
+
+  const handleAddCrewMember = (memberId: string) => {
+    if (!crewIds.includes(memberId)) {
+      setCrewIds((prev) => [...prev, memberId]);
+    }
+  };
+
+  const handleRemoveCrewMember = (memberId: string) => {
+    if (memberId === commanderId) return; // commander locked
+    setCrewIds((prev) => prev.filter((id) => id !== memberId));
+  };
+
+  const handleCancel = () => {
+    // Reset everything
+    setUnitForm(originalUnit);
+    setCommanderId(origCommanderId);
+    setCrewIds(origCrewIds);
+    setCapacity(detail?.stats?.capacity ?? 4);
     onClose();
   };
 
+  // ── Save Unit ──
+  const handleSaveUnit = async () => {
+    setSaving(true);
+    try {
+      const payload: Record<string, any> = {};
+      if (unitForm.unit_name !== originalUnit.unit_name)
+        payload.unit_name = unitForm.unit_name;
+      if (unitForm.station_name !== originalUnit.station_name)
+        payload.station_name = unitForm.station_name;
+      if (unitForm.station_address !== originalUnit.station_address)
+        payload.station_address = unitForm.station_address;
+      if (unitForm.station_latitude !== originalUnit.station_latitude)
+        payload.station_latitude = parseFloat(unitForm.station_latitude);
+      if (unitForm.station_longitude !== originalUnit.station_longitude)
+        payload.station_longitude = parseFloat(unitForm.station_longitude);
+      if (unitForm.vehicle_model !== originalUnit.vehicle_model)
+        payload.vehicle_model = unitForm.vehicle_model;
+      if (unitForm.vehicle_license_plate !== originalUnit.vehicle_license_plate)
+        payload.vehicle_license_plate = unitForm.vehicle_license_plate;
+      if (unitForm.vehicle_year !== originalUnit.vehicle_year)
+        payload.vehicle_year = parseInt(unitForm.vehicle_year, 10);
+
+      await apiClient.put(`/emergency-units/${unitUuid}`, payload);
+      message.success('Unit details updated successfully');
+      onSuccess();
+    } catch (err: any) {
+      const errDetail = err?.response?.data?.detail;
+      message.error(typeof errDetail === 'string' ? errDetail : 'Failed to update unit details');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Save Crew — single PUT /crew call replaces entire roster ──
+  const handleSaveCrew = async () => {
+    setSaving(true);
+    try {
+      const payload: Record<string, any> = { crew_member_ids: crewIds };
+      if (commanderId) payload.commander_id = commanderId;
+
+      await apiClient.put(`/emergency-units/${unitUuid}/crew`, payload);
+      message.success('Crew updated successfully');
+      onSuccess();
+    } catch (err: any) {
+      const errDetail = err?.response?.data?.detail;
+      message.error(typeof errDetail === 'string' ? errDetail : 'Failed to update crew');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Tab content ──
   const tabItems = [
     {
-      key: 'basic',
-      label: <span><SettingOutlined /> <span className="et-tab-label">Basic</span></span>,
+      key: 'unit',
+      label: <span><SettingOutlined /> Unit</span>,
       children: (
-        <div className='ecm-basic-tab' style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', maxHeight: '52vh', paddingRight: 4 }}>
           <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Unit ID</Text>
-            <Input value={unitId} disabled style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8 }} />
+            <Text style={labelStyle}>Unit Name</Text>
+            <Input value={unitForm.unit_name} onChange={(e) => setField('unit_name', e.target.value)} style={inputStyle} placeholder="e.g. Fire Unit Alpha 1" />
+          </div>
+          <Text style={sectionLabelStyle}>Station</Text>
+          <div>
+            <Text style={labelStyle}>Station Name</Text>
+            <Input value={unitForm.station_name} onChange={(e) => setField('station_name', e.target.value)} style={inputStyle} placeholder="e.g. Tara Street Fire Station" />
           </div>
           <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Unit Type</Text>
-            <style>{`
-              /* Slider - black track + handle like Figma */
-        .ant-slider-track, .ant-slider-track-1 {
-          background-color: #111827 !important;
-          height: 10px !important;
-          border-radius: 5px !important;
-        }
-        .ant-slider-rail {
-          height: 10px !important;
-          background-color: #e5e7eb !important;
-          border-radius: 5px !important;
-        }
-        .ant-slider-handle, .ant-slider-handle-1 {
-          border: 2px solid #111827 !important;
-          background-color: #fff !important;
-          box-shadow: none !important;
-          border-radius: 50% !important;
-          width: 18px !important;
-          height: 18px !important;
-          margin-top: -4px !important;
-        }
-        .ant-slider-handle::after {
-          display: none !important;
-        }
-        .ant-slider-handle:focus::after,
-        .ant-slider-handle:hover::after {
-          display: none !important;
-        }
-        .ant-slider:hover .ant-slider-track {
-          background-color: #374151 !important;
-        }
-        /* Checkboxes - black like Figma */
-        .ant-checkbox-checked .ant-checkbox-inner {
-          background-color: #111827 !important;
-          border-color: #111827 !important;
-          border-radius: 4px !important;
-        }
-        .ant-checkbox-wrapper:hover .ant-checkbox-inner,
-        .ant-checkbox:hover .ant-checkbox-inner,
-        .ant-checkbox-input:focus + .ant-checkbox-inner {
-          border-color: #374151 !important;
-        }
-        .ant-checkbox-checked::after {
-          border-color: #111827 !important;
-        }
-        .ecm-crew-select .ant-select-selector {
-          background: #f3f4f6 !important;
-          border: 1px solid #e5e7eb !important;
-          border-radius: 8px !important;
-          height: 40px !important;
-          align-items: center !important;
-        }
-        .ecm-crew-select .ant-select-selection-item {
-          line-height: 40px !important;
-          color: #374151 !important;
-        }
-        .ecm-basic-tab .ant-select-selector {
-                background: #f3f4f6 !important;
-                border: 1px solid #e5e7eb !important;
-                border-radius: 8px !important;
-              }
-              .ecm-basic-tab .ant-select-focused .ant-select-selector,
-              .ecm-basic-tab .ant-select-selector:focus {
-                box-shadow: none !important;
-                border-color: #d1d5db !important;
-              }
-            `}</style>
-            <Select value={unitTypeSelected} onChange={setUnitTypeSelected} style={{ width: '100%' }}>
-              <Select.Option value="Fire Engine">Fire Engine</Select.Option>
-              <Select.Option value="Fire Ladder">Fire Ladder</Select.Option>
-              <Select.Option value="Ambulance">Ambulance</Select.Option>
-              <Select.Option value="Police Car">Police Car</Select.Option>
-              <Select.Option value="Rescue Helicopter">Rescue Helicopter</Select.Option>
-            </Select>
+            <Text style={labelStyle}>Station Address</Text>
+            <Input value={unitForm.station_address} onChange={(e) => setField('station_address', e.target.value)} style={inputStyle} placeholder="e.g. Tara St, Dublin 1" />
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <Text style={labelStyle}>Latitude</Text>
+              <Input value={unitForm.station_latitude} onChange={(e) => setField('station_latitude', e.target.value)} style={inputStyle} placeholder="53.3457" />
+            </div>
+            <div>
+              <Text style={labelStyle}>Longitude</Text>
+              <Input value={unitForm.station_longitude} onChange={(e) => setField('station_longitude', e.target.value)} style={inputStyle} placeholder="-6.2565" />
+            </div>
+          </div>
+          <Text style={sectionLabelStyle}>Vehicle</Text>
           <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Station Assignment</Text>
-            <Select value={station} onChange={setStation} style={{ width: '100%' }}>
-              <Select.Option value="Dublin Central Station">Dublin Central Station</Select.Option>
-              <Select.Option value="Tara Street Station">Tara Street Station</Select.Option>
-              <Select.Option value="North Strand Station">North Strand Station</Select.Option>
-            </Select>
+            <Text style={labelStyle}>Vehicle Model</Text>
+            <Input value={unitForm.vehicle_model} onChange={(e) => setField('vehicle_model', e.target.value)} style={inputStyle} placeholder="e.g. Scania P-Series" />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', padding: '10px 14px', borderRadius: 8 }}>
-            <Text style={{ fontSize: 13 }}>Unit Active for Deployment</Text>
-            <Switch checked={isActive} onChange={setIsActive} style={isActive ? { background: '#111827' } : {}} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <Text style={labelStyle}>License Plate</Text>
+              <Input value={unitForm.vehicle_license_plate} onChange={(e) => setField('vehicle_license_plate', e.target.value)} style={inputStyle} placeholder="e.g. 211-D-12345" />
+            </div>
+            <div>
+              <Text style={labelStyle}>Year</Text>
+              <Input type="number" value={unitForm.vehicle_year} onChange={(e) => setField('vehicle_year', e.target.value)} style={inputStyle} placeholder="e.g. 2021" />
+            </div>
           </div>
         </div>
       ),
     },
     {
       key: 'crew',
-      label: <span><TeamOutlined /> <span className="et-tab-label">Crew</span></span>,
+      label: <span><TeamOutlined /> Crew</span>,
       children: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Maximum Crew Capacity</Text>
-            <Input type="number" min={1} max={6} value={crewSize} onChange={(e) => setCrewSize(parseInt(e.target.value) || 1)} style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 8, height: 42 }} />
-          </div>
-          <Text strong style={{ fontSize: 13, display: 'block', marginBottom: 8, color: '#111827' }}>Current Crew Members</Text>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
-            {crewMembers.map((member) => (
-              <div key={member.id} style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  <Input
-                    placeholder="Name"
-                    value={member.name}
-                    onChange={(e) => updateCrewMember(member.id, 'name', e.target.value)}
-                    style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, height: 40 }}
-                  />
-                  <Select
-                    value={member.role}
-                    onChange={(v) => updateCrewMember(member.id, 'role', v)}
-                    style={{ height: 40, width: '100%' }}
-                    className="ecm-crew-select"
-                  >
-                    <Select.Option value="Team Leader">Team Leader</Select.Option>
-                    <Select.Option value="Driver">Driver</Select.Option>
-                    <Select.Option value="Responder">Responder</Select.Option>
-                    <Select.Option value="Medic">Medic</Select.Option>
-                  </Select>
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Input
-                    placeholder="Contact number"
-                    value={member.contact}
-                    onChange={(e) => updateCrewMember(member.id, 'contact', e.target.value)}
-                    style={{ flex: 1, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, height: 40 }}
-                  />
-                  <button
-                    onClick={() => removeCrewMember(member.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16, padding: '4px 6px', display: 'flex', alignItems: 'center' }}
-                  >
-                    <CloseOutlined />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Button type="dashed" block icon={<PlusOutlined />} onClick={addCrewMember} style={{ borderStyle: 'dashed', height: 44, fontSize: 14, fontWeight: 500, borderRadius: 8, color: '#374151', borderColor: '#d1d5db', background: '#fff' }}>
-            Add Crew Member
-          </Button>
-        </div>
-      ),
-    },
-    {
-      key: 'vehicle',
-      label: <span><CarOutlined /> <span className="et-tab-label">Vehicle</span></span>,
-      children: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div>
-              <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>Vehicle Model</Text>
-              <Input value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, height: 42 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, maxHeight: '52vh', overflowY: 'auto', paddingRight: 4 }}>
+
+          {/* Crew info header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <UsergroupAddOutlined style={{ color: '#7c3aed', fontSize: 13 }} />
+              <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
+                Crew Members ({crewIds.length}/{totalSlots})
+              </Text>
             </div>
-            <div>
-              <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>License Plate</Text>
-              <Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value)} style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, height: 42 }} />
-            </div>
+            {loadingMembers && <Spin size="small" />}
           </div>
-          <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 10 }}>Equipment Checklist</Text>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {EQUIPMENT_FIELDS.map(({ key, label }) => (
-                <Checkbox
-                  key={key}
-                  checked={equipment[key as keyof typeof equipment]}
-                  onChange={(e) => setEquipment({ ...equipment, [key]: e.target.checked })}
-                >
-                  <Text style={{ fontSize: 13 }}>{label}</Text>
-                </Checkbox>
-              ))}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'operations',
-      label: <span><ThunderboltOutlined /> <span className="et-tab-label">Ops</span></span>,
-      children: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
-              Maximum Response Radius: {responseRadius} km
-            </Text>
-            <Slider min={5} max={50} step={5} value={responseRadius} onChange={(v) => setResponseRadius(v)} trackStyle={{ background: "#111827", height: 10, borderRadius: 5 }} handleStyle={{ borderColor: "#111827", border: "2.5px solid #111827", background: "#fff", width: 18, height: 18, marginTop: -4, boxShadow: "none" }} railStyle={{ background: "#e5e7eb", height: 10, borderRadius: 5 }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-              <Text type="secondary" style={{ fontSize: 11 }}>5 km</Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>50 km</Text>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', background: '#f9fafb', padding: '10px 14px', borderRadius: 8, gap: 12 }}>
-            <div>
-              <Text style={{ fontSize: 13, display: 'block' }}>Auto-accept standard deployments</Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>Unit will be dispatched without manual confirmation</Text>
-            </div>
-            <Switch checked={autoAccept} onChange={setAutoAccept} style={autoAccept ? { background: '#111827' } : {}} />
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'alerts',
-      label: <span><BellOutlined /> <span className="et-tab-label">Alerts</span></span>,
-      children: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Text strong style={{ fontSize: 12 }}>Alert Preferences</Text>
-          {Object.entries(notifications).map(([key, value]) => (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', padding: '10px 14px', borderRadius: 8 }}>
-              <Text style={{ fontSize: 13, textTransform: 'capitalize' }}>{key} Notifications</Text>
-              <Switch
-                checked={value}
-                onChange={(checked) => setNotifications({ ...notifications, [key]: checked })}
-                style={value ? { background: '#111827' } : {}}
+          <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
+
+          <div style={{ marginBottom: 10 }}>
+            {/* Read-only Capacity */}
+            <div style={{ marginBottom: 14 }}>
+              <Text style={labelStyle}>Capacity</Text>
+              <Input
+                value={`${crewIds.length} / ${totalSlots}`}
+                disabled
+                style={{ ...inputStyle, width: 120, color: '#6b7280', cursor: 'default' }}
               />
             </div>
-          ))}
-        </div>
-      ),
-    },
-    {
-      key: 'maintenance',
-      label: <span><ToolOutlined /> <span className="et-tab-label">Maint.</span></span>,
-      children: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ background: '#f9fafb', borderRadius: 8, padding: 16 }}>
-            <Text strong style={{ fontSize: 13, display: 'block', marginBottom: 14 }}>Performance Stats</Text>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              {[['Total Deployments', '1,234'], ['Avg Response Time', '4m 30s'], ['Success Rate', '98%'], ['Last Deployment', '2 days ago']].map(([label, val]) => (
-                <div key={label}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
-                  <Text strong style={{ fontSize: 22, display: 'block', color: label === 'Success Rate' ? '#16a34a' : '#111827' }}>{val}</Text>
-                </div>
-              ))}
+
+            {/* Read-only Commander */}
+            <div style={{ marginBottom: 14 }}>
+              <Text style={labelStyle}><CrownOutlined style={{ color: '#7c3aed', marginRight: 5 }} />Commander</Text>
+              {loadingMembers ? <Spin size="small" /> : (
+                <Input
+                  value={
+                    commanderId
+                      ? (allMembers.find((m) => m.id === commanderId)
+                          ? memberLabel(allMembers.find((m) => m.id === commanderId)!)
+                          : commanderId)
+                      : 'No commander assigned'
+                  }
+                  disabled
+                  style={{ ...inputStyle, color: '#6b7280', cursor: 'default' }}
+                />
+              )}
             </div>
+
+            {crewIds.map((id) => {
+              const member = allMembers.find((m) => m.id === id);
+              const isCommander = id === commanderId;
+              return (
+                <div key={id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: isCommander ? '#f5f3ff' : '#f9fafb',
+                  border: `1px solid ${isCommander ? '#ddd6fe' : '#e5e7eb'}`,
+                  borderRadius: 6, padding: '7px 10px', marginBottom: 6, fontSize: 12,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {isCommander && (
+                      <CrownOutlined style={{ color: '#7c3aed', fontSize: 11 }} />
+                    )}
+                    <Text style={{ fontSize: 12, color: isCommander ? '#7c3aed' : '#374151', fontWeight: isCommander ? 600 : 400 }}>
+                      {member ? memberLabel(member) : id}
+                    </Text>
+                  </div>
+                  {isCommander ? (
+                    <Text style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>Commander</Text>
+                  ) : (
+                    <button
+                      onClick={() => handleRemoveCrewMember(id)}
+                      title="Remove from crew"
+                      style={{
+                        border: 'none', background: 'none', cursor: 'pointer',
+                        color: '#ef4444', fontSize: 13, padding: 0,
+                      }}
+                    >
+                      <DeleteOutlined />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Add crew dropdown — hidden when full */}
+            {!crewFull && (
+              <Select
+                key={`crew-${commanderId}`}
+                placeholder="Add crew member..."
+                value={undefined}
+                onChange={(v: string) => handleAddCrewMember(v)}
+                showSearch
+                filterOption={(input, opt) =>
+                  (opt?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                style={{ width: '100%', height: 40 }}
+                popupClassName="ecm-dropdown"
+                options={crewAddOptions.map((m) => ({ value: m.id, label: memberLabel(m) }))}
+              />
+            )}
+
+            {crewFull && (
+              <div style={{ textAlign: 'center', padding: '8px 0', color: '#9ca3af', fontSize: 12, background: '#f9fafb', borderRadius: 6, border: '1px dashed #e5e7eb' }}>
+                Crew is full ({totalSlots}/{totalSlots}) — increase capacity to add more
+              </div>
+            )}
           </div>
-          <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>Maintenance Notes</Text>
-            <TextArea
-              rows={3}
-              placeholder="Add maintenance notes..."
-              value={maintenanceNotes}
-              onChange={(e) => setMaintenanceNotes(e.target.value)}
-              style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, resize: 'none' }}
-            />
-          </div>
+
         </div>
       ),
     },
   ];
+
+  const saveDisabled = activeTab === 'unit' ? !unitDirty : !crewDirty;
 
   return (
     <Modal
@@ -390,29 +421,20 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
         </div>
       }
       open={open}
-      onCancel={onClose}
+      onCancel={handleCancel}
       footer={null}
-      width={700}
+      width={620}
       destroyOnClose
-      styles={{ body: { maxHeight: '75vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }}
+      styles={{ body: { maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' } }}
     >
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
           items={tabItems}
-          style={{ flex: 1 }}
-          tabBarStyle={{ marginBottom: 16 }}
           tabBarGutter={4}
-          renderTabBar={(props, DefaultTabBar) => (
-            <div style={{
-              display: 'flex',
-              gap: 2,
-              background: '#f3f4f6',
-              borderRadius: 50,
-              padding: 4,
-              marginBottom: 16,
-              overflowX: 'auto',
-              WebkitOverflowScrolling: 'touch' as any,
-            }}>
+          renderTabBar={(props) => (
+            <div style={{ display: 'flex', gap: 2, background: '#f3f4f6', borderRadius: 50, padding: 4, marginBottom: 16 }}>
               {tabItems.map((tab) => {
                 const isActive = props.activeKey === tab.key;
                 return (
@@ -420,30 +442,17 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
                     key={tab.key}
                     onClick={() => props.onTabClick?.(tab.key, {} as any)}
                     style={{
-                      flex: '0 0 auto',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 5,
-                      padding: '8px 10px',
-                      borderRadius: 50,
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      padding: '8px 10px', borderRadius: 50,
                       border: isActive ? '1px solid #e5e7eb' : 'none',
                       background: isActive ? '#fff' : 'transparent',
-                      cursor: 'pointer',
-                      fontWeight: isActive ? 700 : 400,
-                      fontSize: 13,
+                      cursor: 'pointer', fontWeight: isActive ? 700 : 400, fontSize: 13,
                       color: isActive ? '#111827' : '#6b7280',
                       boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
-                      whiteSpace: 'nowrap',
-                      outline: 'none',
-                      transition: 'all 0.15s',
+                      whiteSpace: 'nowrap', outline: 'none', transition: 'all 0.15s',
                     }}
                   >
-                    <span style={{ color: isActive ? '#7c3aed' : '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ color: isActive ? '#111827' : '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        {tab.label}
-                      </span>
-                    </span>
+                    {tab.label}
                   </button>
                 );
               })}
@@ -452,13 +461,9 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
         />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
-        <Button type="text" danger onClick={() => message.info('Reset to default — wire to API when ready')}
-          style={{ color: '#ef4444', fontWeight: 500, padding: '0 8px' }}>
-          Reset to Default
-        </Button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
         <Button
-          onClick={onClose}
+          onClick={handleCancel}
           disabled={saving}
           style={{ height: 44, paddingInline: 24, borderRadius: 8, fontWeight: 600, border: '1.5px solid #e5e7eb', color: '#111827' }}
         >
@@ -467,12 +472,23 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
         <Button
           type="primary"
           loading={saving}
-          onClick={handleSave}
-          style={{ height: 44, paddingInline: 24, borderRadius: 8, fontWeight: 600, background: '#7c3aed', borderColor: '#7c3aed' }}
+          disabled={saveDisabled}
+          onClick={activeTab === 'unit' ? handleSaveUnit : handleSaveCrew}
+          style={{
+            height: 44, paddingInline: 24, borderRadius: 8, fontWeight: 600,
+            background: saveDisabled ? '#d1d5db' : '#7c3aed',
+            borderColor: saveDisabled ? '#d1d5db' : '#7c3aed',
+          }}
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
+
+      <style>{`
+        .ecm-dropdown .ant-select-item { font-size: 12px !important; color: #374151 !important; }
+        .ecm-dropdown .ant-select-item-option-active { background: #f3f4f6 !important; }
+        .ecm-dropdown .ant-select-item-option-selected { background: #f3f4f6 !important; font-weight: 500 !important; }
+      `}</style>
     </Modal>
   );
 };

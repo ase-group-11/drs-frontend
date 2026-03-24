@@ -462,7 +462,7 @@ const DisasterReports: React.FC = () => {
                               size="small"
                               onClick={(e) => openLogUpdates(report, e)}
                             >
-                              Log Update
+                              Disaster Logs
                             </Button>
                           </div>
                         </div>

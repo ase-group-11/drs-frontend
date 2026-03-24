@@ -28,6 +28,7 @@ interface TeamMember {
   department: string;
   employee_id: string | null;
   role: string;
+  status: string;
   is_assigned: boolean;
   commanding_units_count: number;
   assigned_units_count: number;
@@ -74,14 +75,14 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
     return true;
   });
 
-  // Commander: must not be commanding any unit yet
+  // Commander: must be ACTIVE and not belong to any unit at all
   const commanderOptions = eligibleMembers.filter((m) =>
-    m.commanding_units_count === 0 || m.id === form.commanderId
+    (m.status === 'ACTIVE' && m.commanding_units_count === 0 && m.assigned_units_count === 0) || m.id === form.commanderId
   );
 
-  // Crew: not currently assigned to any unit, OR is the selected commander
+  // Crew: must be ACTIVE and not belong to any unit at all, OR is the selected commander
   const crewOptions = eligibleMembers.filter((m) =>
-    m.assigned_units_count === 0 || m.id === form.commanderId
+    (m.status === 'ACTIVE' && m.commanding_units_count === 0 && m.assigned_units_count === 0) || m.id === form.commanderId
   );
 
   const set = (field: string, value: any) => {
@@ -131,11 +132,18 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.unitCode.trim())   e.unitCode   = 'Unit code is required';
-    if (!form.unitName.trim())   e.unitName   = 'Unit name is required';
-    if (!form.unitType)          e.unitType   = 'Unit type is required';
+    if (!form.unitCode.trim())        e.unitCode       = 'Unit code is required';
+    if (!form.unitName.trim())        e.unitName       = 'Unit name is required';
+    if (!form.unitType)               e.unitType       = 'Unit type is required';
     if (!form.capacity || form.capacity < 1) e.capacity = 'Capacity must be at least 1';
-    if (!form.stationName.trim()) e.stationName = 'Station name is required';
+    if (!form.commanderId)            e.commanderId    = 'Commander is required';
+    if (!form.stationName.trim())     e.stationName    = 'Station name is required';
+    if (!form.stationAddress.trim())  e.stationAddress = 'Station address is required';
+    if (!form.stationLat)             e.stationLat     = 'Latitude is required';
+    if (!form.stationLon)             e.stationLon     = 'Longitude is required';
+    if (!form.vehicleModel.trim())    e.vehicleModel   = 'Vehicle model is required';
+    if (!form.licensePlate.trim())    e.licensePlate   = 'License plate is required';
+    if (!form.vehicleYear)            e.vehicleYear    = 'Vehicle year is required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -145,20 +153,20 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
     setSubmitting(true);
     try {
       const payload: Record<string, any> = {
-        unit_code:         form.unitCode.trim(),
-        unit_name:         form.unitName.trim(),
-        unit_type:         form.unitType,
-        capacity:          Number(form.capacity),
-        station_name:      form.stationName.trim(),
+        unit_code:             form.unitCode.trim(),
+        unit_name:             form.unitName.trim(),
+        unit_type:             form.unitType,
+        capacity:              Number(form.capacity),
+        station_name:          form.stationName.trim(),
+        station_address:       form.stationAddress.trim(),
+        station_latitude:      parseFloat(form.stationLat),
+        station_longitude:     parseFloat(form.stationLon),
+        commander_id:          form.commanderId,
+        crew_member_ids:       form.crewIds,
+        vehicle_model:         form.vehicleModel.trim(),
+        vehicle_license_plate: form.licensePlate.trim(),
+        vehicle_year:          parseInt(form.vehicleYear, 10),
       };
-      if (form.stationAddress.trim()) payload.station_address  = form.stationAddress.trim();
-      if (form.stationLat)            payload.station_latitude  = parseFloat(form.stationLat);
-      if (form.stationLon)            payload.station_longitude = parseFloat(form.stationLon);
-      if (form.commanderId)           payload.commander_id      = form.commanderId;
-      if (form.crewIds.length)        payload.crew_member_ids   = form.crewIds;
-      if (form.vehicleModel.trim())   payload.vehicle_model        = form.vehicleModel.trim();
-      if (form.licensePlate.trim())   payload.vehicle_license_plate = form.licensePlate.trim();
-      if (form.vehicleYear)           payload.vehicle_year          = parseInt(form.vehicleYear, 10);
 
       await apiClient.post(API_ENDPOINTS.TEAMS.CREATE, payload);
       message.success(`Unit ${form.unitCode} created successfully`);
@@ -247,7 +255,7 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
         <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
 
         <div style={{ marginBottom: 10 }}>
-          <Text style={labelStyle}>Select Commander</Text>
+          <Text style={labelStyle}>Select Commander <span style={{ color: '#ef4444' }}>*</span></Text>
           {loadingMembers ? <Spin size="small" /> : (
             <Select
               key={`commander-select-${form.crewIds.join(',')}`}
@@ -258,11 +266,13 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
               showSearch
               filterOption={(input, opt) => (opt?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
               style={{ width: '100%', height: 34 }}
+              status={errors.commanderId ? 'error' : undefined}
               popupClassName="ct-dropdown"
               allowClear
               options={commanderOptions.map((m) => ({ value: m.id, label: memberLabel(m) }))}
             />
           )}
+          {errors.commanderId && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.commanderId}</Text>}
         </div>
 
         {/* ── Crew ── */}
@@ -301,12 +311,12 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
           {!crewFull && (
             <Select
               key={`crew-select-${form.commanderId}`}
-              placeholder={!form.unitType ? 'Select unit type first' : 'Add crew member...'}
+              placeholder={!form.unitType ? 'Select unit type first' : !form.commanderId ? 'Select commander first' : 'Add crew member...'}
               value={undefined}
               onChange={(v: string) => {
                 if (!form.crewIds.includes(v)) set('crewIds', [...form.crewIds, v]);
               }}
-              disabled={!form.unitType || crewFull}
+              disabled={!form.unitType || !form.commanderId || crewFull}
               showSearch
               filterOption={(input, opt) => (opt?.label as string ?? '').toLowerCase().includes(input.toLowerCase())}
               style={{ width: '100%', height: 34 }}
@@ -332,45 +342,57 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <Text style={labelStyle}>Station Address</Text>
+          <Text style={labelStyle}>Station Address <span style={{ color: '#ef4444' }}>*</span></Text>
           <Input placeholder="e.g., Tara Street, Dublin 2" value={form.stationAddress}
-            onChange={(e) => set('stationAddress', e.target.value)} style={inputStyle} />
+            onChange={(e) => set('stationAddress', e.target.value)}
+            style={{ ...inputStyle, borderColor: errors.stationAddress ? '#ef4444' : undefined }} />
+          {errors.stationAddress && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.stationAddress}</Text>}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
-            <Text style={labelStyle}>Latitude</Text>
+            <Text style={labelStyle}>Latitude <span style={{ color: '#ef4444' }}>*</span></Text>
             <Input placeholder="e.g., 53.3474" value={form.stationLat}
-              onChange={(e) => set('stationLat', e.target.value)} style={inputStyle} />
+              onChange={(e) => set('stationLat', e.target.value)}
+              style={{ ...inputStyle, borderColor: errors.stationLat ? '#ef4444' : undefined }} />
+            {errors.stationLat && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.stationLat}</Text>}
           </div>
           <div>
-            <Text style={labelStyle}>Longitude</Text>
+            <Text style={labelStyle}>Longitude <span style={{ color: '#ef4444' }}>*</span></Text>
             <Input placeholder="e.g., -6.2530" value={form.stationLon}
-              onChange={(e) => set('stationLon', e.target.value)} style={inputStyle} />
+              onChange={(e) => set('stationLon', e.target.value)}
+              style={{ ...inputStyle, borderColor: errors.stationLon ? '#ef4444' : undefined }} />
+            {errors.stationLon && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.stationLon}</Text>}
           </div>
         </div>
 
         {/* ── Vehicle ── */}
-        <SectionTitle icon={<CarOutlined />} title="Vehicle (optional)" />
+        <SectionTitle icon={<CarOutlined />} title="Vehicle" />
         <div style={{ height: 1, background: '#e5e7eb', marginBottom: 10 }} />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
-            <Text style={labelStyle}>Vehicle Model</Text>
+            <Text style={labelStyle}>Vehicle Model <span style={{ color: '#ef4444' }}>*</span></Text>
             <Input placeholder="e.g., Scania P280" value={form.vehicleModel}
-              onChange={(e) => set('vehicleModel', e.target.value)} style={inputStyle} />
+              onChange={(e) => set('vehicleModel', e.target.value)}
+              style={{ ...inputStyle, borderColor: errors.vehicleModel ? '#ef4444' : undefined }} />
+            {errors.vehicleModel && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.vehicleModel}</Text>}
           </div>
           <div>
-            <Text style={labelStyle}>License Plate</Text>
+            <Text style={labelStyle}>License Plate <span style={{ color: '#ef4444' }}>*</span></Text>
             <Input placeholder="e.g., 222-D-11111" value={form.licensePlate}
-              onChange={(e) => set('licensePlate', e.target.value)} style={inputStyle} />
+              onChange={(e) => set('licensePlate', e.target.value)}
+              style={{ ...inputStyle, borderColor: errors.licensePlate ? '#ef4444' : undefined }} />
+            {errors.licensePlate && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.licensePlate}</Text>}
           </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <Text style={labelStyle}>Vehicle Year</Text>
+          <Text style={labelStyle}>Vehicle Year <span style={{ color: '#ef4444' }}>*</span></Text>
           <Input type="number" placeholder="e.g., 2023" value={form.vehicleYear}
-            onChange={(e) => set('vehicleYear', e.target.value)} style={{ ...inputStyle, width: '48%' }} />
+            onChange={(e) => set('vehicleYear', e.target.value)}
+            style={{ ...inputStyle, width: '48%', borderColor: errors.vehicleYear ? '#ef4444' : undefined }} />
+          {errors.vehicleYear && <Text style={{ fontSize: 10, color: '#ef4444' }}>{errors.vehicleYear}</Text>}
         </div>
 
       </div>

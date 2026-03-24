@@ -366,9 +366,13 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
         onSuccess={() => { setDeployOpen(false); fetchDetail(); }}
       />
       <EditConfigModal
-        open={editOpen} unitId={team.unitId} unitType={team.type}
+        open={editOpen}
+        unitId={team.unitId}
+        unitUuid={team.id}
+        unitType={team.type}
+        detail={detail}
         onClose={() => setEditOpen(false)}
-        onSuccess={() => { setEditOpen(false); onRefresh(); }}
+        onSuccess={() => { setEditOpen(false); fetchDetail(); onRefresh(); }}
       />
       <DecommissionModal
         open={decommissionOpen} unitId={team.unitId} unitUuid={team.id} unitType={team.type} station={team.station}
