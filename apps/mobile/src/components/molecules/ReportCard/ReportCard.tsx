@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Text as RNText } from 'react-native';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { StatusDot } from '@atoms/StatusDot';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';

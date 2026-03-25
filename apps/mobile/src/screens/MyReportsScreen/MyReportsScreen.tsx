@@ -3,7 +3,7 @@ import {
   View, StyleSheet, SafeAreaView, StatusBar, TouchableOpacity,
 } from 'react-native';
 import { ReportsList } from '@organisms/ReportsList';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';

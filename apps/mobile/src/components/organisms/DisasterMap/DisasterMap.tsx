@@ -4,13 +4,13 @@ import React, { useRef, useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { MapControls } from '../../molecules/MapControls/MapControls';
-import { Button } from '@atoms/Button';
-import { Text } from '@atoms/Text';
+import { Button } from '@/components/atoms/Button';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';
 import type { Disaster } from '../../../types/disaster';
 
-Mapbox.setAccessToken(process.env.MAPBOX_TOKEN || '');
+Mapbox.setAccessToken(process.env.MAPBOX_PUBLIC_TOKEN || '');
 
 export interface DisasterMapProps {
     disasters: Disaster[];
@@ -234,9 +234,9 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({ disasters, onReport })
                 {/* ✅ 3D BUILDINGS + LIGHT/DARK - This is the magic! */}
                 <Mapbox.Atmosphere style={{ color: 'rgb(186, 210, 235)' }} />
 
-                <Mapbox.Terrain
+                {/* <Mapbox.Terrain
                     exaggeration={1.5}
-                />
+                /> */}
 
                 {/* ✅ LIGHT PRESET - Changes day/night */}
                 <Mapbox.Light

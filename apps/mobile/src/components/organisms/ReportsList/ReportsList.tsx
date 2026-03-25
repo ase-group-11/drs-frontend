@@ -1,7 +1,7 @@
 import React from 'react';
 import { FlatList, View, StyleSheet } from 'react-native';
 import { ReportCard } from '@molecules/ReportCard';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { spacing } from '@theme/spacing';
 import type { Report } from '../../../types/disaster';
 

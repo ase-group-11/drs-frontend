@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, Animated, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { ArrowLeft, X } from 'lucide-react-native';
 import { reportStyles } from './styles';

@@ -3,7 +3,7 @@ import {
   View, ScrollView, StyleSheet, SafeAreaView, StatusBar, TouchableOpacity,
 } from 'react-native';
 import { SettingItem } from '@molecules/SettingItem';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';

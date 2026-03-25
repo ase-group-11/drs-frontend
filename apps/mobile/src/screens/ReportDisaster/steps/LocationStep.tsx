@@ -2,8 +2,8 @@
 import React, { useState, useRef } from 'react';
 import { View, ScrollView, TouchableOpacity } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { Text } from '@atoms/Text';
-import { Button } from '@atoms/Button';
+import { Text } from '@/components/atoms/Text';
+import { Button } from '@/components/atoms/Button';
 import { colors } from '@theme/colors';
 import { MapPin, Edit } from 'lucide-react-native';
 import { reportStyles } from '../styles';

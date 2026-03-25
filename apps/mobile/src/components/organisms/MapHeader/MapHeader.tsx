@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { IconButton } from '@atoms/IconButton';
 import { Avatar } from '@atoms/Avatar';
 import { Badge } from '@atoms/Badge';

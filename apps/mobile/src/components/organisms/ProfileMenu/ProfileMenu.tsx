@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { Avatar } from '@atoms/Avatar';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { MenuItem } from '@molecules/MenuItem';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';

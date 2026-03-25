@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity } from 'react-native';
-import { Text } from '@atoms/Text';
-import { Button } from '@atoms/Button';
+import { Text } from '@/components/atoms/Text';
+import { Button } from '@/components/atoms/Button';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import { CheckCircle, Copy, Bell, Shield } from 'lucide-react-native';
