@@ -202,7 +202,7 @@ const UserManagement: React.FC = () => {
           </Tag>
           {r.department && (
             <span style={{ fontSize: 11, color: DEPT_CONFIG[r.department]?.color ?? '#6b7280', fontWeight: 500 }}>
-              {DEPT_CONFIG[r.department]?.icon} {r.department.charAt(0) + r.department.slice(1).toLowerCase()}
+              {DEPT_CONFIG[r.department]?.icon} {r.department === 'IT' ? 'IT' : r.department.charAt(0) + r.department.slice(1).toLowerCase()}
             </span>
           )}
         </div>

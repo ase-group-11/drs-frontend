@@ -71,7 +71,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         navigate('/admin/dashboard');
       } else {
-        throw new Error(result.message);
+        throw new Error(result.message || 'Invalid credentials. Please check your email and password.');
       }
     } catch (error) {
       throw error;

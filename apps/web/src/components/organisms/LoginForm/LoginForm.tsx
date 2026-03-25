@@ -1,6 +1,6 @@
 // MODIFIED FILE — changes: Handle ACCESS_DENIED error from auth to show "Admin only" message
 import React, { useState } from 'react';
-import { Form, Input, Button, Alert } from 'antd';
+import { Form, Input, Button, Alert, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks';
@@ -18,13 +18,14 @@ const LoginForm: React.FC = () => {
     setError('');
     try {
       await login(values.email, values.password);
-    } catch (err: any) {
-      if (err.message === 'ACCESS_DENIED') {
-        setError(
-          'Access denied. This administration panel is restricted to admin accounts only. Please contact your system administrator.'
-        );
+      } catch (err: any) {
+      const msg = err?.message || 'Login failed. Please check your credentials.';
+      if (msg === 'ACCESS_DENIED') {
+        setError('Access denied. This administration panel is restricted to admin accounts only. Please contact your system administrator.');
+        message.error('Access denied. Admin accounts only.');
       } else {
-        setError(err.message || 'Login failed. Please check your credentials.');
+        setError(msg);
+        message.error(msg);
       }
     } finally {
       setLoading(false);

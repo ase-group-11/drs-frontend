@@ -14,7 +14,7 @@ const USER_TYPE_OPTIONS = [
   { value: 'team',    label: 'Team Member', icon: <TeamOutlined /> },
 ];
 
-const ROLE_OPTIONS   = ['ADMIN'];
+const ROLE_OPTIONS   = ['ADMIN', 'STAFF'];
 const DEPT_OPTIONS   = ['FIRE', 'MEDICAL', 'POLICE', 'IT'];
 
 interface AddUserModalProps {
@@ -230,7 +230,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
                 <Select
                   placeholder="Select role"
                   value={form.role || undefined}
-                  onChange={(v) => set('role', v)}
+                  onChange={(v) => { set('role', v); set('department', ''); }}
                   style={{ width: '100%', borderRadius: 8 }}
                   status={errors.role ? 'error' : undefined}
                   popupClassName="um-filter-dropdown"
@@ -252,8 +252,9 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ open, onClose, onSuccess })
                   style={{ width: '100%' }}
                   status={errors.department ? 'error' : undefined}
                   popupClassName="um-filter-dropdown"
+                  disabled={!form.role}
                 >
-                  {DEPT_OPTIONS.map((d) => (
+                  {(form.role === 'ADMIN' ? ['IT'] : ['FIRE', 'MEDICAL', 'POLICE']).map((d) => (
                     <Select.Option key={d} value={d}>
                       {d === 'IT' ? 'IT' : d.charAt(0) + d.slice(1).toLowerCase()}
                     </Select.Option>

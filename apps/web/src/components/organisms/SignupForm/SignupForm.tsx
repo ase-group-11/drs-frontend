@@ -171,10 +171,7 @@ const SignupForm: React.FC = () => {
                             size="large"
                             suffixIcon={<BankOutlined style={{ color: 'rgba(0, 0, 0, 0.25)' }} />}
                         >
-                            <Option value="medical">Medical</Option>
-                            <Option value="police">Police</Option>
                             <Option value="it">IT</Option>
-                            <Option value="fire">Fire</Option>
                         </Select>
                     </Form.Item>
                 </Col>
