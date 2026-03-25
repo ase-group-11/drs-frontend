@@ -3,6 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Spin } from 'antd';
 import type { DisasterReport } from '../../../types';
+import apiClient from '../../../lib/axios';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN || '';
 
@@ -23,8 +24,37 @@ const TYPE_EMOJI: Record<string, string> = {
   ACCIDENT: '🚗', STORM: '⛈️', OTHER: '⚠️',
 };
 
+const DEPT_COLOR: Record<string, string> = {
+  FIRE: '#f97316', POLICE: '#3b82f6', MEDICAL: '#ec4899', IT: '#8b5cf6',
+};
+const DEPT_ICON: Record<string, string> = {
+  FIRE: '🚒', POLICE: '🚔', MEDICAL: '🚑', IT: '💻',
+};
+const UNIT_STATUS_COLOR: Record<string, string> = {
+  AVAILABLE: '#22c55e', DEPLOYED: '#f97316', OFFLINE: '#9ca3af', MAINTENANCE: '#eab308',
+};
+
 type StatusFilter = 'ALL' | 'ACTIVE' | 'MONITORING' | 'RESOLVED' | 'ARCHIVED';
 type MapStyle = 'streets' | 'dark' | 'satellite';
+
+interface EmergencyUnit {
+  id: string;
+  unit_code: string;
+  unit_name: string;
+  unit_type: string;
+  department: string;
+  unit_status: string;
+  station_name: string;
+  station_address: string;
+  crew_count: number;
+  capacity: number;
+  commander_name: string;
+  total_deployments: number;
+  station?: { name: string; address: string; lat: number; lon: number };
+  vehicle?: { model: string; license_plate: string; year: number };
+  commander?: { name: string; phone: string; email: string };
+  current_assignment?: { disaster_tracking_id: string; disaster_type: string; location: string; deployment_status: string } | null;
+}
 
 interface MapViewProps {
   reports: DisasterReport[];
@@ -54,6 +84,28 @@ function createMarkerSvg(color: string, emoji: string, pulse: boolean): string {
     </svg>`;
 }
 
+function createStationSvg(color: string, icon: string, status: string): string {
+  const pulse = status === 'DEPLOYED' ? `
+    <circle cx="14" cy="14" r="14" fill="${color}" opacity="0.2">
+      <animate attributeName="r" from="10" to="20" dur="2.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" from="0.3" to="0" dur="2.2s" repeatCount="indefinite"/>
+    </circle>` : '';
+  const statusColor = UNIT_STATUS_COLOR[status] ?? '#9ca3af';
+  return `
+    <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      ${pulse}
+      <filter id="stnShadow${color.replace('#','')}">
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.45)"/>
+      </filter>
+      <rect x="3" y="3" width="26" height="26" rx="7" ry="7"
+        fill="${color}" filter="url(#stnShadow${color.replace('#','')})" opacity="0.92"/>
+      <rect x="3" y="3" width="26" height="26" rx="7" ry="7"
+        fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+      <text x="16" y="21" text-anchor="middle" font-size="12">${icon}</text>
+      <circle cx="25" cy="7" r="5" fill="${statusColor}" stroke="rgba(8,12,24,0.8)" stroke-width="1.5"/>
+    </svg>`;
+}
+
 function createClusterHtml(count: number): string {
   const size = count < 5 ? 36 : count < 20 ? 44 : 52;
   const color = count < 5 ? '#f97316' : count < 20 ? '#ef4444' : '#7c3aed';
@@ -64,25 +116,54 @@ function createClusterHtml(count: number): string {
 const MapView: React.FC<MapViewProps> = ({
   reports, onDispatch, onEscalate, onResolve, onViewPhotos, onViewLogs,
 }) => {
-  const containerRef  = useRef<HTMLDivElement>(null);
-  const mapRef        = useRef<mapboxgl.Map | null>(null);
-  const markersRef    = useRef<mapboxgl.Marker[]>([]);
-  const popupRef      = useRef<mapboxgl.Popup | null>(null);
+  const containerRef    = useRef<HTMLDivElement>(null);
+  const mapRef          = useRef<mapboxgl.Map | null>(null);
+  const markersRef      = useRef<mapboxgl.Marker[]>([]);
+  const stationMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const popupRef        = useRef<mapboxgl.Popup | null>(null);
   const boundsSetRef    = useRef(false);
   const styleMountedRef = useRef(false);
 
-  const [mapReady,     setMapReady]     = useState(false);
-  const [mapError,     setMapError]     = useState('');
-  const [styleMode,    setStyleMode]    = useState<MapStyle>('dark');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE');
-  const [drawerReport, setDrawerReport] = useState<DisasterReport | null>(null);
-  const [is3D,         setIs3D]         = useState(false);
+  const [mapReady,       setMapReady]       = useState(false);
+  const [mapError,       setMapError]       = useState('');
+  const [styleMode,      setStyleMode]      = useState<MapStyle>('dark');
+  const [statusFilter,   setStatusFilter]   = useState<StatusFilter>('ACTIVE');
+  const [drawerReport,   setDrawerReport]   = useState<DisasterReport | null>(null);
+  const [drawerUnit,     setDrawerUnit]     = useState<EmergencyUnit | null>(null);
+  const [is3D,           setIs3D]           = useState(false);
+  const [filterOpen,     setFilterOpen]     = useState(false);
+  const [mapCtrlOpen,    setMapCtrlOpen]    = useState(false);
+  const [showStations,   setShowStations]   = useState(true);
+  const [units,          setUnits]          = useState<EmergencyUnit[]>([]);
 
   const isDark = styleMode === 'dark';
 
   const visibleReports = reports.filter(r =>
     statusFilter === 'ALL' ? true : r.disasterStatus === statusFilter
   );
+
+  // ── Fetch units list then details for each (to get station lat/lon) ──
+  useEffect(() => {
+    const fetchUnits = async () => {
+      try {
+        const res = await apiClient.get('/emergency-units/');
+        const list: EmergencyUnit[] = res.data.units ?? [];
+        // Fetch detail for each to get station lat/lon
+        const detailed = await Promise.all(
+          list.map(async (u) => {
+            try {
+              const d = await apiClient.get(`/emergency-units/${u.id}`);
+              return { ...u, ...d.data } as EmergencyUnit;
+            } catch { return u; }
+          })
+        );
+        setUnits(detailed);
+      } catch (e) {
+        console.error('Failed to fetch emergency units', e);
+      }
+    };
+    fetchUnits();
+  }, []);
 
   // ── Init map ──
   useEffect(() => {
@@ -105,7 +186,12 @@ const MapView: React.FC<MapViewProps> = ({
     mapRef.current.on('load', () => {
       const m = mapRef.current!;
       const initStyle = styleMode; // capture at load time
-      m.addSource('mapbox-dem', { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512, maxzoom: 14 });
+
+      // Close drawer when clicking bare map
+      m.on('click', () => {
+        setDrawerReport(null);
+        setDrawerUnit(null);
+      });
       m.setTerrain({ source: 'mapbox-dem', exaggeration: 1.4 });
       m.addLayer({ id: 'sky', type: 'sky', paint: { 'sky-type': 'atmosphere', 'sky-atmosphere-sun': [0.0, 90.0], 'sky-atmosphere-sun-intensity': initStyle === 'dark' ? 5 : 15 } });
       m.setFog(initStyle === 'dark'
@@ -126,7 +212,9 @@ const MapView: React.FC<MapViewProps> = ({
       (window as any).__drsMap = undefined;
       (window as any).__drsMapClusterPick = undefined;
       markersRef.current.forEach(m => m.remove());
+      stationMarkersRef.current.forEach(m => m.remove());
       markersRef.current = [];
+      stationMarkersRef.current = [];
       popupRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
@@ -137,7 +225,6 @@ const MapView: React.FC<MapViewProps> = ({
   // ── Style toggle ──
   useEffect(() => {
     if (!mapRef.current || !mapReady) return;
-    // Skip on initial mount — map already loaded with correct style
     if (!styleMountedRef.current) { styleMountedRef.current = true; return; }
     const m = mapRef.current;
     const center = m.getCenter(), zoom = m.getZoom(), pitch = m.getPitch(), bearing = m.getBearing();
@@ -164,7 +251,35 @@ const MapView: React.FC<MapViewProps> = ({
     });
   }, [styleMode, mapReady]);
 
-  // ── Render markers ──
+  // ── Render station markers ──
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return;
+    stationMarkersRef.current.forEach(m => m.remove());
+    stationMarkersRef.current = [];
+    if (!showStations) return;
+
+    units.forEach(unit => {
+      const lat = unit.station?.lat;
+      const lon = unit.station?.lon;
+      if (!lat || !lon || !mapRef.current) return;
+      const color = DEPT_COLOR[unit.department] ?? '#6b7280';
+      const icon  = DEPT_ICON[unit.department] ?? '🏢';
+      const el = document.createElement('div');
+      el.style.cssText = 'width:32px;height:32px;cursor:pointer;';
+      el.innerHTML = createStationSvg(color, icon, unit.unit_status);
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setDrawerReport(null);
+        setDrawerUnit(unit);
+      });
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([lon, lat])
+        .addTo(mapRef.current!);
+      stationMarkersRef.current.push(marker);
+    });
+  }, [units, mapReady, showStations]);
+
+  // ── Render disaster markers ──
   const renderMarkers = useCallback(() => {
     if (!mapRef.current || !mapReady) return;
     markersRef.current.forEach(m => m.remove());
@@ -207,7 +322,8 @@ const MapView: React.FC<MapViewProps> = ({
         const el = document.createElement('div');
         el.innerHTML = createClusterHtml(group.length);
         el.style.cursor = 'pointer';
-        el.addEventListener('click', () => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
           if (!mapRef.current) return;
           popupRef.current?.remove();
           const rows = group.map(r => {
@@ -236,7 +352,7 @@ const MapView: React.FC<MapViewProps> = ({
         const el = document.createElement('div');
         el.style.cssText = 'width:36px;height:44px;cursor:pointer;';
         el.innerHTML = createMarkerSvg(color, emoji, doPulse);
-        el.addEventListener('click', () => setDrawerReport(report));
+        el.addEventListener('click', (e) => { e.stopPropagation(); setDrawerUnit(null); setDrawerReport(report); });
         const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([report.locationCoords.lon, report.locationCoords.lat]).addTo(mapRef.current);
         markersRef.current.push(marker);
       }
@@ -257,11 +373,7 @@ const MapView: React.FC<MapViewProps> = ({
     if (!mapRef.current) return;
     const next = !is3D;
     setIs3D(next);
-    mapRef.current.easeTo({
-      pitch: next ? 50 : 0,
-      bearing: next ? -10 : 0,
-      duration: 800,
-    });
+    mapRef.current.easeTo({ pitch: next ? 50 : 0, bearing: next ? -10 : 0, duration: 800 });
   };
 
   if (mapError) {
@@ -274,38 +386,43 @@ const MapView: React.FC<MapViewProps> = ({
     );
   }
 
+  const btnStyle = (base: React.CSSProperties): React.CSSProperties => ({
+    fontFamily:"'Courier New',monospace", ...base,
+  });
+
   return (
-    <div style={{ position:'relative', borderRadius:14, overflow:'hidden', height:600, boxShadow: isDark ? '0 0 0 1px rgba(34,211,238,0.15), 0 8px 32px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0,0,0,0.12)' }}>
+    <div style={{ position:'relative', borderRadius:14, overflow:'hidden', height:580, boxShadow: isDark ? '0 0 0 1px rgba(34,211,238,0.15), 0 8px 32px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0,0,0,0.12)' }}>
 
       <style>{`
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes drawerSlideUp { from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
-        @keyframes scanline {
-          0%{background-position:0 0}
-          100%{background-position:0 100%}
-        }
         .mapboxgl-popup-content { padding:12px 14px!important;border-radius:10px!important;box-shadow:0 4px 20px rgba(0,0,0,0.15)!important; }
         .mapboxgl-popup-close-button { font-size:16px!important;color:#9ca3af!important;padding:4px 8px!important; }
       `}</style>
 
-      {/* Map */}
       <div ref={containerRef} style={{ width:'100%', height:'100%' }} />
 
-      {/* Scanline overlay (dark mode only) */}
-      {isDark && (
-        <div style={{
-          position:'absolute', inset:0, pointerEvents:'none', zIndex:1,
-          background:'repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px)',
-        }} />
+      {/* Dim overlay when drawer is open */}
+      {(drawerReport || drawerUnit) && (
+        <div
+          onClick={() => { setDrawerReport(null); setDrawerUnit(null); }}
+          style={{
+            position:'absolute', inset:0, zIndex:15, pointerEvents:'auto',
+            background:'rgba(0,0,0,0.35)',
+            backdropFilter:'blur(1.5px)',
+            // Leave bottom clear for the drawer itself
+            bottom:0,
+            transition:'opacity 0.2s',
+          }}
+        />
       )}
 
-      {/* Corner accent (dark mode) */}
+      {isDark && <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:1, background:'repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px)' }} />}
       {isDark && <>
         <div style={{ position:'absolute', top:0, left:0, width:60, height:60, borderTop:'2px solid rgba(34,211,238,0.4)', borderLeft:'2px solid rgba(34,211,238,0.4)', borderRadius:'14px 0 0 0', zIndex:3, pointerEvents:'none' }} />
         <div style={{ position:'absolute', top:0, right:0, width:60, height:60, borderTop:'2px solid rgba(34,211,238,0.4)', borderRight:'2px solid rgba(34,211,238,0.4)', borderRadius:'0 14px 0 0', zIndex:3, pointerEvents:'none' }} />
       </>}
 
-      {/* Loading */}
       {!mapReady && (
         <div style={{ position:'absolute', inset:0, background: isDark ? 'rgba(8,14,28,0.85)' : 'rgba(255,255,255,0.8)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', zIndex:10 }}>
           <Spin size="large" />
@@ -315,119 +432,103 @@ const MapView: React.FC<MapViewProps> = ({
         </div>
       )}
 
-      {/* ── STATUS FILTER — top left ── */}
-      <div style={{
-        position:'absolute', top:14, left:14, zIndex:5,
-        display:'flex', gap:2, alignItems:'center',
-        background: 'rgba(10,15,30,0.82)',
-        backdropFilter:'blur(10px)',
-        borderRadius:10, padding:'0 4px',
-        border: '1px solid rgba(34,211,238,0.18)',
-        boxShadow: '0 0 24px rgba(34,211,238,0.06), 0 4px 16px rgba(0,0,0,0.3)',
-        height: 34,
-      }}>
-        {([
-          { key:'ACTIVE',     label:'Active',     color:'#ef4444' },
+      {/* ── FILTER DROPDOWN ── */}
+      {(() => {
+        const activeFilter = [
+          { key:'ACTIVE', label:'Active', color:'#ef4444' },
           { key:'MONITORING', label:'Monitoring', color:'#f59e0b' },
-          { key:'RESOLVED',   label:'Resolved',   color:'#22c55e' },
-          { key:'ARCHIVED',   label:'Archived',   color:'#cbd5e1' },
-          { key:'ALL',        label:'All',         color:'#22d3ee' },
-        ] as {key:StatusFilter;label:string;color:string}[]).map(({ key, label, color }) => {
-          const active = statusFilter === key;
-          const count = key === 'ALL' ? reports.length : reports.filter(r => r.disasterStatus === key).length;
-          return (
-            <button key={key} onClick={() => setStatusFilter(key)} style={{
-              height:26, padding:'0 10px', borderRadius:7, border:'none', cursor:'pointer',
-              fontSize:11, fontWeight: active ? 700 : 500,
-              background: active ? color : 'transparent',
-              color: active ? 'white' : '#cbd5e1',
-              boxShadow: active ? `0 1px 8px ${color}70` : 'none',
-              transition:'all 0.15s', whiteSpace:'nowrap',
-              fontFamily:"'Courier New', monospace",
-              letterSpacing:'0.04em',
-              display:'flex', alignItems:'center', gap:0,
-            }}>
-              {label}
-              {count > 0 && <span style={{ marginLeft:4, fontSize:10, fontWeight:700, background: active ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)', borderRadius:20, padding:'1px 5px' }}>{count}</span>}
+          { key:'RESOLVED', label:'Resolved', color:'#22c55e' },
+          { key:'ARCHIVED', label:'Archived', color:'#cbd5e1' },
+          { key:'ALL', label:'All', color:'#22d3ee' },
+        ].find(f => f.key === statusFilter)!;
+        const count = statusFilter === 'ALL' ? reports.length : reports.filter(r => r.disasterStatus === statusFilter).length;
+        return (
+          <div style={{ position:'absolute', top:12, left:12, zIndex:10 }}>
+            <button onClick={() => { setFilterOpen(o => !o); setMapCtrlOpen(false); }} style={btnStyle({ height:34, padding:'0 12px', borderRadius:10, border:`1px solid ${filterOpen ? 'rgba(34,211,238,0.5)' : 'rgba(34,211,238,0.2)'}`, background:'rgba(10,15,30,0.88)', backdropFilter:'blur(12px)', color:'#f1f5f9', cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:8, letterSpacing:'0.04em', boxShadow: filterOpen ? '0 0 16px rgba(34,211,238,0.2)' : '0 2px 10px rgba(0,0,0,0.4)', transition:'all 0.15s' })}>
+              <span style={{ width:8, height:8, borderRadius:'50%', background:activeFilter.color, display:'inline-block', boxShadow:`0 0 6px ${activeFilter.color}`, flexShrink:0 }} />
+              {activeFilter.label}
+              {count > 0 && <span style={{ background:`${activeFilter.color}30`, color:activeFilter.color, border:`1px solid ${activeFilter.color}50`, borderRadius:20, padding:'1px 7px', fontSize:10, fontWeight:800 }}>{count}</span>}
+              <span style={{ color:'rgba(34,211,238,0.6)', fontSize:10, marginLeft:2 }}>{filterOpen ? '▲' : '▼'}</span>
             </button>
-          );
-        })}
-      </div>
+            {filterOpen && (
+              <div style={{ position:'absolute', top:38, left:0, background:'rgba(8,12,24,0.96)', backdropFilter:'blur(16px)', border:'1px solid rgba(34,211,238,0.2)', borderRadius:10, boxShadow:'0 8px 32px rgba(0,0,0,0.5)', padding:'6px', minWidth:180, zIndex:20 }}>
+                {[{ key:'ACTIVE', label:'Active', color:'#ef4444' }, { key:'MONITORING', label:'Monitoring', color:'#f59e0b' }, { key:'RESOLVED', label:'Resolved', color:'#22c55e' }, { key:'ARCHIVED', label:'Archived', color:'#cbd5e1' }, { key:'ALL', label:'All disasters', color:'#22d3ee' }].map(({ key, label, color }) => {
+                  const cnt = key === 'ALL' ? reports.length : reports.filter(r => r.disasterStatus === key).length;
+                  const active = statusFilter === key;
+                  return (
+                    <button key={key} onClick={() => { setStatusFilter(key as StatusFilter); setFilterOpen(false); }} style={btnStyle({ width:'100%', padding:'8px 10px', borderRadius:7, border:'none', cursor:'pointer', background: active ? `${color}18` : 'transparent', display:'flex', alignItems:'center', gap:10 })} onMouseOver={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'; }} onMouseOut={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}>
+                      <span style={{ width:8, height:8, borderRadius:'50%', background:color, display:'inline-block', flexShrink:0, boxShadow: active ? `0 0 8px ${color}` : 'none' }} />
+                      <span style={{ flex:1, fontSize:12, fontWeight: active ? 700 : 500, color: active ? '#f1f5f9' : '#94a3b8', textAlign:'left', letterSpacing:'0.03em' }}>{label}</span>
+                      <span style={{ fontSize:11, fontWeight:700, color: active ? color : '#475569', background: active ? `${color}20` : 'rgba(255,255,255,0.05)', borderRadius:20, padding:'1px 7px' }}>{cnt}</span>
+                      {active && <span style={{ color, fontSize:10 }}>✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
-      {/* ── STYLE + RESET — top right ── */}
-      <div style={{ position:'absolute', top:14, right:56, zIndex:5, display:'flex', gap:4 }}>
-        {([
-          { mode:'streets',   icon:'☀️', label:'Light'     },
-          { mode:'dark',      icon:'🌙', label:'Dark'      },
-          { mode:'satellite', icon:'🛰️', label:'Satellite' },
-        ] as {mode:MapStyle;icon:string;label:string}[]).map(({ mode, icon, label }) => {
-          const active = styleMode === mode;
-          return (
-            <button key={mode} onClick={() => setStyleMode(mode)} style={{
-              height:34, padding:'0 11px', borderRadius:8,
-              border: active ? '1px solid rgba(34,211,238,0.5)' : '1px solid rgba(34,211,238,0.12)',
-              cursor:'pointer', fontSize:11, fontWeight: active ? 700 : 500,
-              background: active
-                ? (mode === 'streets' ? 'rgba(255,255,255,0.92)' : 'rgba(34,211,238,0.15)')
-                : 'rgba(10,15,30,0.82)',
-              backdropFilter:'blur(10px)',
-              color: active
-                ? (mode === 'streets' ? '#111827' : '#22d3ee')
-                : '#cbd5e1',
-              boxShadow: active ? '0 0 14px rgba(34,211,238,0.25), 0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.25)',
-              display:'flex', alignItems:'center', gap:4, transition:'all 0.15s',
-              fontFamily:"'Courier New',monospace", letterSpacing:'0.04em',
-            }}>
-              <span style={{ fontSize:12 }}>{icon}</span>{label}
+      {/* ── MAP CONTROLS DROPDOWN ── */}
+      {(() => {
+        const styleMeta: Record<MapStyle, {icon:string;label:string}> = { streets: { icon:'☀️', label:'Light' }, dark: { icon:'🌙', label:'Dark' }, satellite: { icon:'🛰️', label:'Satellite' } };
+        const cur = styleMeta[styleMode];
+        return (
+          <div style={{ position:'absolute', top:12, left:198, zIndex:10 }}>
+            <button onClick={() => { setMapCtrlOpen(o => !o); setFilterOpen(false); }} style={btnStyle({ height:34, padding:'0 12px', borderRadius:10, border:`1px solid ${mapCtrlOpen ? 'rgba(34,211,238,0.5)' : 'rgba(34,211,238,0.2)'}`, background:'rgba(10,15,30,0.88)', backdropFilter:'blur(12px)', color:'#f1f5f9', cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:7, letterSpacing:'0.04em', boxShadow: mapCtrlOpen ? '0 0 16px rgba(34,211,238,0.2)' : '0 2px 10px rgba(0,0,0,0.4)', transition:'all 0.15s' })}>
+              <span style={{ fontSize:14 }}>{cur.icon}</span>
+              <span>{cur.label}</span>
+              {is3D && <span style={{ background:'rgba(34,211,238,0.15)', color:'#22d3ee', border:'1px solid rgba(34,211,238,0.3)', borderRadius:6, padding:'1px 6px', fontSize:9, fontWeight:800 }}>3D</span>}
+              <span style={{ color:'rgba(34,211,238,0.6)', fontSize:10 }}>{mapCtrlOpen ? '▲' : '▼'}</span>
             </button>
-          );
-        })}
-        <button onClick={toggle3D} style={{
-          height:34, padding:'0 11px', borderRadius:8,
-          border: is3D ? '1px solid rgba(34,211,238,0.5)' : '1px solid rgba(34,211,238,0.12)',
-          cursor:'pointer', fontSize:11, fontWeight: is3D ? 700 : 500,
-          background: is3D ? 'rgba(34,211,238,0.15)' : 'rgba(10,15,30,0.82)',
-          backdropFilter:'blur(10px)',
-          color: is3D ? '#22d3ee' : '#cbd5e1',
-          boxShadow: is3D ? '0 0 14px rgba(34,211,238,0.25), 0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.25)',
-          display:'flex', alignItems:'center', gap:4, transition:'all 0.15s',
-          fontFamily:"'Courier New',monospace", letterSpacing:'0.04em',
-        }}>
-          <span style={{ fontSize:12 }}>🏙️</span>{is3D ? '3D On' : '3D Off'}
-        </button>
-        <button onClick={resetView} style={{
-          height:34, padding:'0 11px', borderRadius:8,
-          border:'1px solid rgba(34,211,238,0.12)',
-          cursor:'pointer', fontSize:11, fontWeight:500, marginLeft:2,
-          background:'rgba(10,15,30,0.82)', backdropFilter:'blur(10px)',
-          color:'#cbd5e1',
-          boxShadow:'0 2px 8px rgba(0,0,0,0.25)',
-          display:'flex', alignItems:'center', gap:4,
-          fontFamily:"'Courier New',monospace", letterSpacing:'0.04em',
-        }}>
-          <span>⌖</span> Reset
-        </button>
-      </div>
+            {mapCtrlOpen && (
+              <div style={{ position:'absolute', top:38, left:0, background:'rgba(8,12,24,0.96)', backdropFilter:'blur(16px)', border:'1px solid rgba(34,211,238,0.2)', borderRadius:10, boxShadow:'0 8px 32px rgba(0,0,0,0.5)', padding:'6px', minWidth:170, zIndex:20 }}>
+                <div style={{ fontSize:9, color:'rgba(34,211,238,0.75)', fontFamily:"'Courier New',monospace", letterSpacing:'0.1em', padding:'4px 10px 6px', textTransform:'uppercase' }}>Map Style</div>
+                {([{ mode:'streets', icon:'☀️', label:'Light' }, { mode:'dark', icon:'🌙', label:'Dark' }, { mode:'satellite', icon:'🛰️', label:'Satellite' }] as {mode:MapStyle;icon:string;label:string}[]).map(({ mode, icon, label }) => {
+                  const active = styleMode === mode;
+                  return (
+                    <button key={mode} onClick={() => setStyleMode(mode)} style={btnStyle({ width:'100%', padding:'8px 10px', borderRadius:7, border:'none', cursor:'pointer', background: active ? 'rgba(34,211,238,0.12)' : 'transparent', display:'flex', alignItems:'center', gap:10 })} onMouseOver={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'; }} onMouseOut={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}>
+                      <span style={{ fontSize:15 }}>{icon}</span>
+                      <span style={{ flex:1, fontSize:12, fontWeight: active ? 700 : 500, color: active ? '#22d3ee' : '#94a3b8', textAlign:'left' }}>{label}</span>
+                      {active && <span style={{ color:'#22d3ee', fontSize:10 }}>✓</span>}
+                    </button>
+                  );
+                })}
+                <div style={{ height:1, background:'rgba(34,211,238,0.1)', margin:'6px 6px' }} />
+                <div style={{ fontSize:9, color:'rgba(34,211,238,0.75)', fontFamily:"'Courier New',monospace", letterSpacing:'0.1em', padding:'4px 10px 6px', textTransform:'uppercase' }}>View</div>
+                <button onClick={() => { toggle3D(); setMapCtrlOpen(false); }} style={btnStyle({ width:'100%', padding:'8px 10px', borderRadius:7, border:'none', cursor:'pointer', background: is3D ? 'rgba(34,211,238,0.12)' : 'transparent', display:'flex', alignItems:'center', gap:10 })}>
+                  <span style={{ fontSize:15 }}>🏙️</span>
+                  <span style={{ flex:1, fontSize:12, fontWeight: is3D ? 700 : 500, color: is3D ? '#22d3ee' : '#94a3b8', textAlign:'left' }}>3D Buildings</span>
+                  {is3D && <span style={{ color:'#22d3ee', fontSize:10 }}>✓</span>}
+                </button>
+                <button onClick={() => { resetView(); setMapCtrlOpen(false); }} style={btnStyle({ width:'100%', padding:'8px 10px', borderRadius:7, border:'none', cursor:'pointer', background:'transparent', display:'flex', alignItems:'center', gap:10 })} onMouseOver={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'; }} onMouseOut={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}>
+                  <span style={{ fontSize:15 }}>⌖</span>
+                  <span style={{ flex:1, fontSize:12, fontWeight:500, color:'#94a3b8', textAlign:'left' }}>Reset View</span>
+                </button>
+                <div style={{ height:1, background:'rgba(34,211,238,0.1)', margin:'6px 6px' }} />
+                <button onClick={() => { setShowStations(s => !s); setMapCtrlOpen(false); }} style={btnStyle({ width:'100%', padding:'8px 10px', borderRadius:7, border:'none', cursor:'pointer', background: showStations ? 'rgba(34,211,238,0.12)' : 'transparent', display:'flex', alignItems:'center', gap:10 })}>
+                  <span style={{ fontSize:15 }}>🏛️</span>
+                  <span style={{ flex:1, fontSize:12, fontWeight: showStations ? 700 : 500, color: showStations ? '#22d3ee' : '#94a3b8', textAlign:'left' }}>Stations</span>
+                  {showStations && <span style={{ color:'#22d3ee', fontSize:10 }}>✓</span>}
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
-      {/* ── LEGEND — bottom right ── */}
-      <div style={{
-        position:'absolute', bottom:36, right:14, zIndex:5,
-        background: 'rgba(10,15,30,0.82)',
-        backdropFilter:'blur(10px)',
-        borderRadius:10, padding:'10px 14px',
-        border: '1px solid rgba(34,211,238,0.15)',
-        boxShadow: '0 0 24px rgba(34,211,238,0.05), 0 4px 16px rgba(0,0,0,0.3)',
-        minWidth:110,
-      }}>
-        <div style={{ fontSize:9, fontWeight:700, color:'#22d3ee', textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:8, fontFamily:"'Courier New',monospace" }}>
-          ◈ SEVERITY
-        </div>
+      {(filterOpen || mapCtrlOpen) && (
+        <div style={{ position:'absolute', inset:0, zIndex:9 }} onClick={() => { setFilterOpen(false); setMapCtrlOpen(false); }} />
+      )}
+
+      {/* ── LEGEND ── */}
+      <div style={{ position:'absolute', bottom:36, right:14, zIndex:5, background:'rgba(10,15,30,0.82)', backdropFilter:'blur(10px)', borderRadius:10, padding:'10px 14px', border:'1px solid rgba(34,211,238,0.15)', boxShadow:'0 0 24px rgba(34,211,238,0.05), 0 4px 16px rgba(0,0,0,0.3)', minWidth:110 }}>
+        <div style={{ fontSize:9, fontWeight:700, color:'#22d3ee', textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:8, fontFamily:"'Courier New',monospace" }}>◈ SEVERITY</div>
         {Object.entries(SEVERITY_COLOR).map(([sev, color]) => (
           <div key={sev} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
             <div style={{ width:8, height:8, borderRadius:'50%', background:color, flexShrink:0, boxShadow:`0 0 6px ${color}` }} />
-            <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:500, fontFamily:"'Courier New',monospace" }}>
-              {sev.charAt(0)+sev.slice(1).toLowerCase()}
-            </span>
+            <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:500, fontFamily:"'Courier New',monospace" }}>{sev.charAt(0)+sev.slice(1).toLowerCase()}</span>
           </div>
         ))}
       </div>
@@ -443,75 +544,118 @@ const MapView: React.FC<MapViewProps> = ({
         </div>
       )}
 
-      {/* ── BOTTOM DRAWER ── */}
-      {drawerReport && (() => {
+      {/* ── DISASTER DRAWER ── */}
+      {drawerReport && !drawerUnit && (() => {
         const r = drawerReport;
-        const sevColor   = SEVERITY_COLOR[r.severity.toUpperCase()] ?? '#9ca3af';
-        const statColor  = STATUS_COLOR[r.disasterStatus] ?? '#9ca3af';
-        const emoji      = TYPE_EMOJI[r.type.toUpperCase()] ?? '⚠️';
+        const sevColor  = SEVERITY_COLOR[r.severity.toUpperCase()] ?? '#9ca3af';
+        const statColor = STATUS_COLOR[r.disasterStatus] ?? '#9ca3af';
+        const emoji     = TYPE_EMOJI[r.type.toUpperCase()] ?? '⚠️';
         const isResolved = r.disasterStatus === 'RESOLVED' || r.disasterStatus === 'ARCHIVED';
         const act = (action: () => void) => { setDrawerReport(null); action(); };
-
         return (
-          <div style={{
-            position:'absolute', bottom:0, left:0, right:0, zIndex:20,
-            background:'rgba(10,15,30,0.92)',
-            borderRadius:'16px 16px 0 0',
-            boxShadow:'0 -4px 30px rgba(0,0,0,0.6), 0 -1px 0 rgba(34,211,238,0.18)',
-            padding:'0 16px 16px', backdropFilter:'blur(16px)',
-            animation:'drawerSlideUp 0.22s ease-out',
-            border:'1px solid rgba(34,211,238,0.12)',
-            borderBottom:'none',
-          }}>
-            {/* Handle + close */}
-            <div style={{ display:'flex', justifyContent:'center', paddingTop:10, paddingBottom:8, position:'relative' }}>
+          <div style={{ position:'absolute', bottom:0, left:0, right:0, zIndex:20, background:'rgba(10,15,30,0.92)', borderRadius:'16px 16px 0 0', boxShadow:'0 -4px 30px rgba(0,0,0,0.6), 0 -1px 0 rgba(34,211,238,0.18)', padding:'0 16px 16px', backdropFilter:'blur(16px)', animation:'drawerSlideUp 0.22s ease-out', border:'1px solid rgba(34,211,238,0.12)', borderBottom:'none' }}>
+            <div style={{ display:'flex', justifyContent:'center', paddingTop:10, paddingBottom:14, position:'relative' }}>
               <div style={{ width:36, height:3, borderRadius:3, background:'rgba(34,211,238,0.25)' }} />
               <button onClick={() => setDrawerReport(null)} style={{ position:'absolute', right:0, top:8, background:'rgba(255,255,255,0.07)', border:'1px solid rgba(34,211,238,0.15)', borderRadius:'50%', width:26, height:26, cursor:'pointer', fontSize:11, color:'#cbd5e1', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             </div>
-
-            {/* Info row */}
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-              <div style={{ width:38, height:38, borderRadius:10, background:`${sevColor}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0, boxShadow:`0 0 12px ${sevColor}40` }}>
-                {emoji}
-              </div>
+              <div style={{ width:38, height:38, borderRadius:10, background:`${sevColor}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0, boxShadow:`0 0 12px ${sevColor}40` }}>{emoji}</div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontWeight:700, fontSize:14, color:'#f1f5f9', letterSpacing:'0.05em', fontFamily:"'Courier New',monospace" }}>
-                  {r.type.toUpperCase()}
-                </div>
+                <div style={{ fontWeight:700, fontSize:14, color:'#f1f5f9', letterSpacing:'0.05em', fontFamily:"'Courier New',monospace" }}>{r.type.toUpperCase()}</div>
                 <div style={{ fontSize:11, color:'#cbd5e1', marginTop:1, display:'flex', alignItems:'center', gap:6, fontFamily:"'Courier New',monospace" }}>
                   <span>{r.reportId}</span>
-                  <span style={{ display:'inline-block', width:3, height:3, borderRadius:'50%', background:'#475569' }} />
-                  <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
-                    <span style={{ width:6, height:6, borderRadius:'50%', background:statColor, display:'inline-block', boxShadow:`0 0 6px ${statColor}` }} />
-                    {STATUS_LABEL[r.disasterStatus] ?? r.disasterStatus}
-                  </span>
-                  <span style={{ display:'inline-block', width:3, height:3, borderRadius:'50%', background:'#475569' }} />
+                  <span style={{ width:3, height:3, borderRadius:'50%', background:'#475569', display:'inline-block' }} />
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}><span style={{ width:6, height:6, borderRadius:'50%', background:statColor, display:'inline-block', boxShadow:`0 0 6px ${statColor}` }} />{STATUS_LABEL[r.disasterStatus] ?? r.disasterStatus}</span>
+                  <span style={{ width:3, height:3, borderRadius:'50%', background:'#475569', display:'inline-block' }} />
                   <span>👥 {r.units}</span>
                 </div>
-                <div style={{ fontSize:11, color:'#94a3b8', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontFamily:"'Courier New',monospace" }}>📍 {r.location || 'Unknown'}</div>
+                <div style={{ fontSize:11, color:'#cbd5e1', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontFamily:"'Courier New',monospace" }}>📍 {r.location || 'Unknown'}</div>
               </div>
-              <span style={{ padding:'3px 9px', borderRadius:20, fontSize:10, fontWeight:800, letterSpacing:'0.4px', background:`${sevColor}22`, color:sevColor, border:`1.5px solid ${sevColor}50`, flexShrink:0, boxShadow:`0 0 8px ${sevColor}40` }}>
-                {r.severity.toUpperCase()}
-              </span>
+              <span style={{ padding:'3px 9px', borderRadius:20, fontSize:10, fontWeight:800, letterSpacing:'0.4px', background:`${sevColor}22`, color:sevColor, border:`1.5px solid ${sevColor}50`, flexShrink:0, boxShadow:`0 0 8px ${sevColor}40` }}>{r.severity.toUpperCase()}</span>
+            </div>
+            <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+              <button onClick={() => act(() => onViewPhotos(r))} style={btnStyle({ flex:'1 1 80px', minWidth:70, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>🖼️ Photos</button>
+              <button onClick={() => act(() => onViewLogs(r))} style={btnStyle({ flex:'1 1 80px', minWidth:70, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>📋 Logs</button>
+              <button disabled={isResolved} onClick={() => !isResolved && act(() => onDispatch(r))} style={btnStyle({ flex:'1 1 80px', minWidth:70, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(124,58,237,0.25)' : 'none', background: isResolved ? 'rgba(124,58,237,0.08)' : 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: isResolved ? 'rgba(167,139,250,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #7c3aed50' })}>🚨 Dispatch</button>
+              <button disabled={isResolved} onClick={() => !isResolved && act(() => onEscalate(r))} style={btnStyle({ flex:'1 1 80px', minWidth:70, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(239,68,68,0.25)' : 'none', background: isResolved ? 'rgba(239,68,68,0.08)' : 'linear-gradient(135deg,#ef4444,#dc2626)', color: isResolved ? 'rgba(252,165,165,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #ef444450' })}>⚡ Escalate</button>
+              <button disabled={isResolved} onClick={() => !isResolved && act(() => onResolve(r))} style={btnStyle({ flex:'1 1 80px', minWidth:70, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(34,197,94,0.25)' : '1px solid rgba(34,197,94,0.4)', background: isResolved ? 'rgba(34,197,94,0.06)' : 'rgba(22,101,52,0.3)', color: isResolved ? 'rgba(74,222,128,0.35)' : '#4ade80', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer' })}>✓ Resolve</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── STATION DRAWER ── */}
+      {drawerUnit && (() => {
+        const u = drawerUnit;
+        const deptColor  = DEPT_COLOR[u.department] ?? '#6b7280';
+        const deptIcon   = DEPT_ICON[u.department] ?? '🏢';
+        const statColor  = UNIT_STATUS_COLOR[u.unit_status] ?? '#9ca3af';
+        const statLabel  = u.unit_status.charAt(0) + u.unit_status.slice(1).toLowerCase();
+        const crewPct    = Math.round((u.crew_count / (u.capacity || 1)) * 100);
+        return (
+          <div style={{ position:'absolute', bottom:0, left:0, right:0, zIndex:20, background:'rgba(10,15,30,0.92)', borderRadius:'16px 16px 0 0', boxShadow:'0 -4px 30px rgba(0,0,0,0.6), 0 -1px 0 rgba(34,211,238,0.18)', padding:'0 16px 18px', backdropFilter:'blur(16px)', animation:'drawerSlideUp 0.22s ease-out', border:'1px solid rgba(34,211,238,0.12)', borderBottom:'none' }}>
+            {/* Handle + close */}
+            <div style={{ display:'flex', justifyContent:'center', paddingTop:10, paddingBottom:14, position:'relative' }}>
+              <div style={{ width:36, height:3, borderRadius:3, background:`${deptColor}60` }} />
+              <button onClick={() => setDrawerUnit(null)} style={{ position:'absolute', right:0, top:8, background:'rgba(255,255,255,0.07)', border:'1px solid rgba(34,211,238,0.15)', borderRadius:'50%', width:26, height:26, cursor:'pointer', fontSize:11, color:'#cbd5e1', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             </div>
 
-            {/* Actions */}
-            <div style={{ display:'flex', gap:6 }}>
-              <button onClick={() => act(() => onViewPhotos(r))} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5, padding:'7px 0', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:"'Courier New',monospace" }}>🖼️ Photos</button>
-              <button onClick={() => act(() => onViewLogs(r))}   style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5, padding:'7px 0', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:"'Courier New',monospace" }}>📋 Logs</button>
-              <button
-                disabled={isResolved}
-                onClick={() => !isResolved && act(() => onDispatch(r))}
-                style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5, padding:'7px 0', borderRadius:8, border: isResolved ? '1px solid rgba(124,58,237,0.25)' : 'none', background: isResolved ? 'rgba(124,58,237,0.08)' : 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: isResolved ? 'rgba(167,139,250,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #7c3aed50', fontFamily:"'Courier New',monospace" }}>🚨 Dispatch</button>
-              <button
-                disabled={isResolved}
-                onClick={() => !isResolved && act(() => onEscalate(r))}
-                style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5, padding:'7px 0', borderRadius:8, border: isResolved ? '1px solid rgba(239,68,68,0.25)' : 'none', background: isResolved ? 'rgba(239,68,68,0.08)' : 'linear-gradient(135deg,#ef4444,#dc2626)', color: isResolved ? 'rgba(252,165,165,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #ef444450', fontFamily:"'Courier New',monospace" }}>⚡ Escalate</button>
-              <button
-                disabled={isResolved}
-                onClick={() => !isResolved && act(() => onResolve(r))}
-                style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5, padding:'7px 0', borderRadius:8, border: isResolved ? '1px solid rgba(34,197,94,0.25)' : '1px solid rgba(34,197,94,0.4)', background: isResolved ? 'rgba(34,197,94,0.06)' : 'rgba(22,101,52,0.3)', color: isResolved ? 'rgba(74,222,128,0.35)' : '#4ade80', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', fontFamily:"'Courier New',monospace" }}>✓ Resolve</button>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom:12 }}>
+              {/* Icon */}
+              <div style={{ width:44, height:44, borderRadius:12, background:`${deptColor}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, flexShrink:0, boxShadow:`0 0 14px ${deptColor}40`, border:`1px solid ${deptColor}30` }}>
+                {deptIcon}
+              </div>
+              {/* Info — takes all remaining space */}
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:700, fontSize:14, color:'#f1f5f9', letterSpacing:'0.05em', fontFamily:"'Courier New',monospace", marginBottom:4, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                  {u.unit_name}
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4, flexWrap:'wrap' }}>
+                  <span style={{ padding:'2px 9px', borderRadius:20, fontSize:9, fontWeight:800, letterSpacing:'0.5px', background:`${deptColor}22`, color:deptColor, border:`1px solid ${deptColor}40` }}>{u.department}</span>
+                  <span style={{ padding:'2px 9px', borderRadius:20, fontSize:9, fontWeight:800, letterSpacing:'0.5px', background:`${statColor}18`, color:statColor, border:`1.5px solid ${statColor}50`, boxShadow:`0 0 6px ${statColor}25` }}>{u.unit_status}</span>
+                </div>
+                <div style={{ fontSize:11, color:'#cbd5e1', fontFamily:"'Courier New',monospace" }}>{u.unit_code} · {u.unit_type.replace(/_/g,' ')}</div>
+              </div>
             </div>
+
+            {/* Info grid */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12 }}>
+              {/* Station */}
+              <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(34,211,238,0.1)', borderRadius:10, padding:'10px 12px', gridColumn:'1 / -1' }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'rgba(34,211,238,0.75)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4, fontFamily:"'Courier New',monospace" }}>📍 Station</div>
+                <div style={{ fontSize:12, fontWeight:600, color:'#f1f5f9', fontFamily:"'Courier New',monospace", marginBottom:2 }}>{u.station?.name || u.station_name}</div>
+                <div style={{ fontSize:11, color:'#94a3b8', fontFamily:"'Courier New',monospace" }}>{u.station?.address || u.station_address}</div>
+              </div>
+              {/* Commander */}
+              <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(34,211,238,0.1)', borderRadius:10, padding:'10px 12px' }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'rgba(34,211,238,0.75)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4, fontFamily:"'Courier New',monospace" }}>👑 Commander</div>
+                <div style={{ fontSize:12, fontWeight:600, color:'#f1f5f9', fontFamily:"'Courier New',monospace" }}>{u.commander?.name || u.commander_name}</div>
+              </div>
+              {/* Crew */}
+              <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(34,211,238,0.1)', borderRadius:10, padding:'10px 12px' }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'rgba(34,211,238,0.75)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4, fontFamily:"'Courier New',monospace" }}>👥 Crew</div>
+                <div style={{ fontSize:12, fontWeight:600, color:'#f1f5f9', fontFamily:"'Courier New',monospace", marginBottom:5 }}>{u.crew_count} / {u.capacity}</div>
+                <div style={{ height:4, borderRadius:4, background:'rgba(255,255,255,0.08)', overflow:'hidden' }}>
+                  <div style={{ height:'100%', width:`${crewPct}%`, background:deptColor, borderRadius:4, boxShadow:`0 0 6px ${deptColor}` }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Current assignment */}
+            {u.current_assignment && (
+              <div style={{ background:`rgba(239,68,68,0.08)`, border:'1px solid rgba(239,68,68,0.25)', borderRadius:10, padding:'10px 12px', marginBottom:12 }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'#ef4444', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4, fontFamily:"'Courier New',monospace" }}>🚨 Currently Deployed</div>
+                <div style={{ fontSize:12, fontWeight:600, color:'#f1f5f9', fontFamily:"'Courier New',monospace", marginBottom:2 }}>{u.current_assignment.disaster_tracking_id} · {u.current_assignment.disaster_type}</div>
+                <div style={{ fontSize:11, color:'#94a3b8', fontFamily:"'Courier New',monospace" }}>📍 {u.current_assignment.location}</div>
+              </div>
+            )}
+
+            {/* Vehicle */}
+            {u.vehicle && (
+              <div style={{ fontSize:11, color:'#cbd5e1', fontFamily:"'Courier New',monospace", textAlign:'center' }}>
+                🚗 {u.vehicle.model} · {u.vehicle.year} · {u.vehicle.license_plate}
+              </div>
+            )}
           </div>
         );
       })()}
