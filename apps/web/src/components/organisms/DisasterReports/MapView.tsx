@@ -4,6 +4,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { Spin } from 'antd';
 import type { DisasterReport } from '../../../types';
 import apiClient from '../../../lib/axios';
+import DeployUnitModal from '../EmergencyTeams/modals/DeployUnitModal';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN || '';
 
@@ -135,6 +136,7 @@ const MapView: React.FC<MapViewProps> = ({
   const [mapCtrlOpen,    setMapCtrlOpen]    = useState(false);
   const [showStations,   setShowStations]   = useState(true);
   const [units,          setUnits]          = useState<EmergencyUnit[]>([]);
+  const [deployModalOpen, setDeployModalOpen] = useState(false);
 
   const isDark = styleMode === 'dark';
 
@@ -652,13 +654,52 @@ const MapView: React.FC<MapViewProps> = ({
 
             {/* Vehicle */}
             {u.vehicle && (
-              <div style={{ fontSize:11, color:'#cbd5e1', fontFamily:"'Courier New',monospace", textAlign:'center' }}>
+              <div style={{ fontSize:11, color:'#cbd5e1', fontFamily:"'Courier New',monospace", textAlign:'center', marginBottom:12 }}>
                 🚗 {u.vehicle.model} · {u.vehicle.year} · {u.vehicle.license_plate}
               </div>
+            )}
+
+            {/* Deploy button — only if unit is not already deployed */}
+            {u.unit_status !== 'DEPLOYED' && (
+              <button
+                onClick={() => setDeployModalOpen(true)}
+                style={btnStyle({
+                  width:'100%', padding:'10px 0', borderRadius:10, border:'none', cursor:'pointer',
+                  background:'linear-gradient(135deg,#7c3aed,#6d28d9)',
+                  color:'white', fontSize:13, fontWeight:700,
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                  boxShadow:'0 3px 12px #7c3aed50',
+                })}
+              >
+                🚀 Deploy Unit
+              </button>
             )}
           </div>
         );
       })()}
+      {/* ── DEPLOY UNIT MODAL ── */}
+      {drawerUnit && (
+        <DeployUnitModal
+          open={deployModalOpen}
+          unitId={drawerUnit.unit_code}
+          unitUuid={drawerUnit.id}
+          unitType={drawerUnit.unit_type}
+          station={drawerUnit.station?.name || drawerUnit.station_name}
+          onClose={() => setDeployModalOpen(false)}
+          onSuccess={() => {
+            setDeployModalOpen(false);
+            setDrawerUnit(null);
+            // Refresh units to get updated status
+            apiClient.get('/emergency-units/').then(res => {
+              const list: EmergencyUnit[] = res.data.units ?? [];
+              Promise.all(list.map(async u => {
+                try { const d = await apiClient.get(`/emergency-units/${u.id}`); return { ...u, ...d.data } as EmergencyUnit; }
+                catch { return u; }
+              })).then(setUnits);
+            });
+          }}
+        />
+      )}
     </div>
   );
 };
