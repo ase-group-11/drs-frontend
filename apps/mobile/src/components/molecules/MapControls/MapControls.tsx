@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing, shadows } from '@theme/spacing';
 import Svg, { Path, Circle } from 'react-native-svg';

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { AlertsList } from '@organisms/AlertsList';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';

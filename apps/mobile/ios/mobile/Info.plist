@@ -33,8 +33,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>We need your location to show nearby disasters</string>
+	<key>NSCameraUsageDescription</key>
+	<string>DRS needs camera access to photograph disaster scenes</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>DRS needs photo library access to attach images to disaster reports</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>DubResQ needs your location to show nearby disasters and emergencies on the map</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

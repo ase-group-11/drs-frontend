@@ -14,7 +14,7 @@ export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
   OTPVerification: {
-    phoneNumber: string; // Full phone number with country code: +353892039542
+    phoneNumber: string;
     isSignup: boolean;
     userName?: string;
     email?: string;
@@ -22,6 +22,7 @@ export type AuthStackParamList = {
   Welcome: {
     isNewUser: boolean;
   };
+  ResponderLogin: undefined;
 };
 
 // ───────────────────────────────────────────────────────────────────────────

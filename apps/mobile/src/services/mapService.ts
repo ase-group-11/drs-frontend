@@ -3,54 +3,12 @@
 // TRULY FINAL - Correctly reads backend format: location: { lat, lon }
 // ═══════════════════════════════════════════════════════════════════════════
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
 import type { Disaster } from '../types/disaster';
+import { ApiError, authRequest } from './authService';
 
-export class ApiError extends Error {
-  status: number;
-  data: any;
-
-  constructor(message: string, status: number, data?: any) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.data = data;
-  }
-}
-
-async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-  
-  try {
-    const token = await AsyncStorage.getItem('accessToken');
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        ...options.headers,
-      },
-    });
-    
-    clearTimeout(timeoutId);
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new ApiError(data.message ?? 'Something went wrong', response.status, data);
-    }
-    
-    return data;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') throw new ApiError('Request timed out', 408);
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(error.message ?? 'Network error', 0);
-  }
-}
+// ── apiRequest alias — uses authRequest which auto-refreshes on 401 ───────
+const apiRequest = <T>(endpoint: string, options: RequestInit = {}) =>
+  authRequest<T>(endpoint, options);
 
 // ✅ Convert backend disaster to frontend format
 const convertBackendDisaster = (backendData: any): Disaster | null => {
@@ -77,7 +35,7 @@ const convertBackendDisaster = (backendData: any): Disaster | null => {
     
     return {
       id: backendData.id || String(Math.random()),
-      type: (backendData.type || 'unknown').toLowerCase(),
+      type: (backendData.type || backendData.disaster_type || 'other').toLowerCase(),
       severity: (backendData.severity || 'medium').toLowerCase(),
       title: `${backendData.type} - ${backendData.severity}`,
       location: {
@@ -142,6 +100,9 @@ export const mapService = {
   
   getPendingDisasters: async (limit: number = 50) => {
     return apiRequest(`/live-map/pending-disasters?limit=${limit}`);
+  },
+  getReroutePlan: async (disasterId: string) => {
+    return apiRequest(`/reroute/status/${disasterId}`);
   },
 };
 

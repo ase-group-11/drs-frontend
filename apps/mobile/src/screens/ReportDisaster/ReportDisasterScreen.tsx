@@ -1,10 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/ReportDisaster/ReportDisasterScreen.tsx
-// COMPLETE - With backend API integration
+// FIXED: @/components/atoms → @atoms, correct disasterService.createReport call
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useState } from 'react';
-import { View, TouchableOpacity, Animated, ScrollView, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Alert } from 'react-native';
+import {
+  View, TouchableOpacity, Animated, ScrollView,
+  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Alert,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
@@ -14,318 +17,291 @@ import { disasterService } from '@services/disasterService';
 import { authService } from '@services/authService';
 
 import {
-    LocationStep,
-    TypeStep,
-    DetailsStep,
-    ReviewStep,
-    SuccessStep,
+  LocationStep,
+  TypeStep,
+  DetailsStep,
+  ReviewStep,
+  SuccessStep,
 } from './steps';
 
 export const ReportDisasterScreen = () => {
-    const navigation = useNavigation();
-    const [currentStep, setCurrentStep] = useState(1);
-    const [submitting, setSubmitting] = useState(false);
-    const [reportId, setReportId] = useState<string | null>(null);
-    
-    const [reportData, setReportData] = useState({
-        location: null,
-        type: null,
-        severity: null,
-        description: '',
-        photos: [],
-        peopleAffected: '',
-        additionalDetails: [],
+  const navigation = useNavigation();
+  const [currentStep, setCurrentStep] = useState(1);
+  const [submitting, setSubmitting]   = useState(false);
+  const [reportId, setReportId]       = useState<string | null>(null);
+
+  const [reportData, setReportData] = useState({
+    location:          null as any,
+    type:              null as string | null,
+    severity:          null as string | null,
+    description:       '',
+    photos:            [] as any[],
+    peopleAffected:    '',
+    additionalDetails: [] as string[],
+  });
+
+  const fadeAnim       = React.useRef(new Animated.Value(1)).current;
+  const scrollViewRef  = React.useRef<any>(null);
+
+  const goToStep = (step: number) => {
+    Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
+      setCurrentStep(step);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+      Animated.timing(fadeAnim, { toValue: 1, duration: 150, useNativeDriver: true }).start();
     });
+  };
 
-    const fadeAnim = React.useRef(new Animated.Value(1)).current;
-    const scrollViewRef = React.useRef(null);
+  const handleLocationNext = (location: any) => {
+    setReportData(prev => ({ ...prev, location }));
+    goToStep(2);
+  };
 
-    const goToStep = (step: number) => {
-        Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 150,
-            useNativeDriver: true,
-        }).start(() => {
-            setCurrentStep(step);
-            scrollViewRef.current?.scrollTo({ y: 0, animated: false });
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 150,
-                useNativeDriver: true,
-            }).start();
-        });
-    };
+  const handleTypeNext = (type: string, severity: string) => {
+    setReportData(prev => ({ ...prev, type, severity }));
+    goToStep(3);
+  };
 
-    const handleLocationNext = (location) => {
-        setReportData({ ...reportData, location });
-        goToStep(2);
-    };
+  const handleDetailsNext = (
+    description: string,
+    photos: any[],
+    peopleAffected: string,
+    additionalDetails: string[]
+  ) => {
+    setReportData(prev => ({ ...prev, description, photos, peopleAffected, additionalDetails }));
+    goToStep(4);
+  };
 
-    const handleTypeNext = (type, severity) => {
-        setReportData({ ...reportData, type, severity });
-        goToStep(3);
-    };
+  // ── Submit to backend ─────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      // Get current user
+      const user = await authService.getStoredUser();
+      if (!user) throw new Error('You must be logged in to submit a report.');
 
-    const handleDetailsNext = (description, photos, peopleAffected, additionalDetails) => {
-        setReportData({
-            ...reportData,
-            description,
-            photos,
-            peopleAffected,
-            additionalDetails,
-        });
-        goToStep(4);
-    };
+      // Map types to backend enum values (matches DisasterType enum exactly)
+      const typeMap: Record<string, string> = {
+        fire:       'FIRE',
+        flood:      'FLOOD',
+        storm:      'STORM',
+        earthquake: 'EARTHQUAKE',
+        hurricane:  'HURRICANE',
+        tornado:    'TORNADO',
+        tsunami:    'TSUNAMI',
+        drought:    'DROUGHT',
+        heatwave:   'HEATWAVE',
+        coldwave:   'COLDWAVE',
+        other:      'OTHER',
+      };
+      const severityMap: Record<string, string> = {
+        low: 'LOW', medium: 'MEDIUM', high: 'HIGH', critical: 'CRITICAL',
+      };
 
-    // ✅ NEW: Submit to backend API
-    const handleSubmit = async () => {
-        try {
-            setSubmitting(true);
+      // Parse people affected
+      let peopleCount: number | undefined;
+      const ppl = reportData.peopleAffected;
+      if (ppl && ppl !== '0 (Just property damage)') {
+        const num = parseInt(ppl.replace(/[^0-9]/g, ''));
+        if (!isNaN(num)) peopleCount = num;
+      }
 
-            // Map disaster types to backend format
-            const typeMap = {
-                'fire': 'FIRE',
-                'flood': 'FLOOD',
-                'storm': 'STORM',
-                'accident': 'ACCIDENT',
-                'power': 'POWER_OUTAGE',
-                'earthquake': 'EARTHQUAKE',
-                'landslide': 'LANDSLIDE',
-                'explosion': 'EXPLOSION',
-                'building_collapse': 'BUILDING_COLLAPSE',
-            };
+      // Map additional details to backend booleans
+      const multipleCasualties  = reportData.additionalDetails.includes('Multiple casualties present');
+      const structuralDamage    = reportData.additionalDetails.includes('Building structural damage');
+      const roadBlocked         = reportData.additionalDetails.includes('Road access blocked');
 
-            // Map severity to backend format
-            const severityMap = {
-                'low': 'LOW',
-                'medium': 'MEDIUM',
-                'high': 'HIGH',
-                'critical': 'CRITICAL',
-            };
+      const payload = {
+        user_id:            user.id,
+        disaster_type:      (typeMap[reportData.type || ''] || 'OTHER') as any,
+        severity:           (severityMap[reportData.severity || ''] || 'MEDIUM') as any,
+        latitude:           reportData.location.latitude,
+        longitude:          reportData.location.longitude,
+        location_address:   reportData.location.address,
+        description:        reportData.description || 'No description provided',
+        people_affected:    peopleCount,
+        multiple_casualties: multipleCasualties || undefined,
+        structural_damage:   structuralDamage   || undefined,
+        road_blocked:        roadBlocked        || undefined,
+      };
 
-            // Build additional details object
-            const additionalDetails = {};
-            reportData.additionalDetails.forEach((detail) => {
-                if (detail === 'Property Damage') additionalDetails.property_damage = true;
-                if (detail === 'Infrastructure Damage') additionalDetails.infrastructure_damage = true;
-                if (detail === 'Casualties') additionalDetails.casualties = true;
-                if (detail === 'Evacuation Needed') additionalDetails.evacuation_needed = true;
-            });
+      const response = await disasterService.createReport(payload);
+      console.log('Report submitted:', response.id);
+      setReportId(response.id);
+      goToStep(5);
 
-            // Build request payload
-            const payload = {
-                disaster_type: typeMap[reportData.type] || 'OTHER',
-                severity: severityMap[reportData.severity] || 'MEDIUM',
-                latitude: reportData.location.latitude,
-                longitude: reportData.location.longitude,
-                location_address: reportData.location.address,
-                description: reportData.description,
-                people_affected: reportData.peopleAffected ? parseInt(reportData.peopleAffected) : undefined,
-                images: reportData.photos.length > 0 ? reportData.photos : undefined,
-                additional_details: Object.keys(additionalDetails).length > 0 ? additionalDetails : undefined,
-            };
+    } catch (error: any) {
+      console.error('Submit failed:', error);
+      Alert.alert(
+        'Submission Failed',
+        error.message || 'Failed to submit disaster report. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-            // Submit to backend
-            const response = await disasterService.submitDisasterReport(payload);
-            
-            console.log('Report submitted successfully:', response);
-            setReportId(response.id);
-            
-            // Go to success screen
-            goToStep(5);
-            
-        } catch (error: any) {
-            console.error('Failed to submit report:', error);
-            
-            Alert.alert(
-                'Submission Failed',
-                error.message || 'Failed to submit disaster report. Please try again.',
-                [
-                    { text: 'OK', style: 'default' }
-                ]
-            );
-        } finally {
-            setSubmitting(false);
-        }
-    };
+  const handleClose = () => navigation.goBack();
 
-    const handleClose = () => {
-        navigation.goBack();
-    };
+  const handleBack = () => {
+    if (currentStep > 1 && currentStep < 5) {
+      goToStep(currentStep - 1);
+    } else {
+      handleClose();
+    }
+  };
 
-    const handleBack = () => {
-        if (currentStep > 1 && currentStep < 5) {
-            goToStep(currentStep - 1);
-        } else {
-            handleClose();
-        }
-    };
+  const getStepTitle = () => {
+    switch (currentStep) {
+      case 1: return 'Step 1 of 4 — Location';
+      case 2: return 'Step 2 of 4 — Type & Severity';
+      case 3: return 'Step 3 of 4 — Details & Media';
+      case 4: return 'Step 4 of 4 — Review & Submit';
+      default: return '';
+    }
+  };
 
-    const getStepTitle = () => {
-        switch (currentStep) {
-            case 1: return 'Step 1 of 4 - Location';
-            case 2: return 'Step 2 of 4 - Type & Severity';
-            case 3: return 'Step 3 of 4 - Details & Media';
-            case 4: return 'Step 4 of 4 - Review & Submit';
-            case 5: return '';
-            default: return '';
-        }
-    };
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
-    const handleScroll = (event) => {
-        const offsetY = event.nativeEvent.contentOffset.y;
-        if (offsetY < 0) {
-            scrollViewRef.current?.scrollTo({ y: 0, animated: false });
-        }
-    };
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={reportStyles.container}>
 
-    return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
-            
-            <KeyboardAvoidingView
-                style={{ flex: 1 }}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            >
-                <View style={reportStyles.container}>
-                    {/* HEADER */}
-                    {currentStep < 5 && (
-                        <View style={reportStyles.header}>
-                            <TouchableOpacity 
-                                onPress={handleBack}
-                                style={reportStyles.headerButton}
-                                disabled={submitting}
-                            >
-                                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                                    <Path 
-                                        d="M19 12H5M12 19l-7-7 7-7" 
-                                        stroke={colors.textPrimary} 
-                                        strokeWidth={2} 
-                                        strokeLinecap="round" 
-                                        strokeLinejoin="round"
-                                    />
-                                </Svg>
-                            </TouchableOpacity>
-                            
-                            <View style={reportStyles.headerCenter}>
-                                <Text variant="h3">Report Disaster</Text>
-                                <Text variant="bodySmall" color="textSecondary">
-                                    {reportId ? `#DR-${reportId.substring(0, 8)}` : '#DR-XXXX'}
-                                </Text>
-                            </View>
-                            
-                            <TouchableOpacity 
-                                onPress={handleClose}
-                                style={reportStyles.headerButton}
-                                disabled={submitting}
-                            >
-                                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                                    <Path 
-                                        d="M18 6L6 18M6 6l12 12" 
-                                        stroke={colors.textPrimary} 
-                                        strokeWidth={2} 
-                                        strokeLinecap="round" 
-                                        strokeLinejoin="round"
-                                    />
-                                </Svg>
-                            </TouchableOpacity>
-                        </View>
-                    )}
+          {/* HEADER */}
+          {currentStep < 5 && (
+            <View style={reportStyles.header}>
+              <TouchableOpacity
+                onPress={handleBack}
+                style={reportStyles.headerButton}
+                disabled={submitting}
+              >
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M19 12H5M12 19l-7-7 7-7"
+                    stroke={colors.textPrimary} strokeWidth={2}
+                    strokeLinecap="round" strokeLinejoin="round"
+                  />
+                </Svg>
+              </TouchableOpacity>
 
-                    {/* PROGRESS */}
-                    {currentStep < 5 && (
-                        <>
-                            <View style={reportStyles.progressContainer}>
-                                {[1, 2, 3, 4].map((step) => (
-                                    <View
-                                        key={step}
-                                        style={[
-                                            reportStyles.progressDot,
-                                            step <= currentStep && reportStyles.progressDotActive,
-                                        ]}
-                                    />
-                                ))}
-                            </View>
-                            <Text variant="bodyMedium" style={reportStyles.stepText}>
-                                {getStepTitle()}
-                            </Text>
-                        </>
-                    )}
+              <View style={reportStyles.headerCenter}>
+                <Text variant="h3">Report Disaster</Text>
+                <Text variant="bodySmall" color="textSecondary">
+                  {reportId ? `#${reportId.substring(0, 8).toUpperCase()}` : '#DR-XXXX'}
+                </Text>
+              </View>
 
-                    {/* CONTENT */}
-                    <ScrollView
-                        ref={scrollViewRef}
-                        style={{ flex: 1 }}
-                        contentContainerStyle={{
-                            flexGrow: 1,
-                            paddingHorizontal: 16,
-                            paddingBottom: 16,
-                        }}
-                        showsVerticalScrollIndicator={false}
-                        bounces={false}
-                        alwaysBounceVertical={false}
-                        overScrollMode="never"
-                        scrollEventThrottle={16}
-                        onScroll={handleScroll}
-                        contentInsetAdjustmentBehavior="never"
-                    >
-                        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-                            {currentStep === 1 && (
-                                <LocationStep
-                                    initialLocation={reportData.location}
-                                    onNext={handleLocationNext}
-                                />
-                            )}
-                            {currentStep === 2 && (
-                                <TypeStep
-                                    location={reportData.location}
-                                    initialType={reportData.type}
-                                    initialSeverity={reportData.severity}
-                                    onNext={handleTypeNext}
-                                />
-                            )}
-                            {currentStep === 3 && (
-                                <DetailsStep
-                                    location={reportData.location}
-                                    type={reportData.type}
-                                    severity={reportData.severity}
-                                    initialData={reportData}
-                                    onNext={handleDetailsNext}
-                                />
-                            )}
-                            {currentStep === 4 && (
-                                <ReviewStep
-                                    data={reportData}
-                                    onSubmit={handleSubmit}
-                                    onEdit={(step) => goToStep(step)}
-                                    submitting={submitting}
-                                />
-                            )}
-                            {currentStep === 5 && (
-                                <SuccessStep
-                                    reportId={reportId || 'DR-2025-XXXX'}
-                                    onReturnToMap={handleClose}
-                                    onReportAnother={() => {
-                                        setReportData({
-                                            location: null,
-                                            type: null,
-                                            severity: null,
-                                            description: '',
-                                            photos: [],
-                                            peopleAffected: '',
-                                            additionalDetails: [],
-                                        });
-                                        setReportId(null);
-                                        goToStep(1);
-                                    }}
-                                />
-                            )}
-                        </Animated.View>
-                    </ScrollView>
-                </View>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
-    );
+              <TouchableOpacity
+                onPress={handleClose}
+                style={reportStyles.headerButton}
+                disabled={submitting}
+              >
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M18 6L6 18M6 6l12 12"
+                    stroke={colors.textPrimary} strokeWidth={2}
+                    strokeLinecap="round" strokeLinejoin="round"
+                  />
+                </Svg>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* PROGRESS DOTS */}
+          {currentStep < 5 && (
+            <>
+              <View style={reportStyles.progressContainer}>
+                {[1, 2, 3, 4].map(step => (
+                  <View
+                    key={step}
+                    style={[
+                      reportStyles.progressDot,
+                      step <= currentStep && reportStyles.progressDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+              <Text variant="bodyMedium" style={reportStyles.stepText}>
+                {getStepTitle()}
+              </Text>
+            </>
+          )}
+
+          {/* CONTENT */}
+          <ScrollView
+            ref={scrollViewRef}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingBottom: 16 }}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            alwaysBounceVertical={false}
+            overScrollMode="never"
+          >
+            <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+              {currentStep === 1 && (
+                <LocationStep
+                  initialLocation={reportData.location}
+                  onNext={handleLocationNext}
+                />
+              )}
+              {currentStep === 2 && (
+                <TypeStep
+                  location={reportData.location}
+                  initialType={reportData.type}
+                  initialSeverity={reportData.severity}
+                  onNext={handleTypeNext}
+                />
+              )}
+              {currentStep === 3 && (
+                <DetailsStep
+                  location={reportData.location}
+                  type={reportData.type || ''}
+                  severity={reportData.severity || ''}
+                  initialData={reportData}
+                  onNext={handleDetailsNext}
+                />
+              )}
+              {currentStep === 4 && (
+                <ReviewStep
+                  data={reportData}
+                  onSubmit={handleSubmit}
+                  onEdit={goToStep}
+                  submitting={submitting}
+                />
+              )}
+              {currentStep === 5 && (
+                <SuccessStep
+                  reportId={reportId || 'DR-2025-XXXX'}
+                  onReturnToMap={handleClose}
+                  onTrackReport={() => {
+                    handleClose();
+                    // Navigate to ReportDetail after closing modal
+                    if (reportId) {
+                      setTimeout(() => {
+                        navigation.navigate('ReportDetail' as any, { reportId });
+                      }, 400);
+                    }
+                  }}
+                  onReportAnother={() => {
+                    setReportData({
+                      location: null, type: null, severity: null,
+                      description: '', photos: [], peopleAffected: '', additionalDetails: [],
+                    });
+                    setReportId(null);
+                    goToStep(1);
+                  }}
+                />
+              )}
+            </Animated.View>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
 };
 
 export default ReportDisasterScreen;

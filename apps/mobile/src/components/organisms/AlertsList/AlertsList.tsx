@@ -1,7 +1,7 @@
 import React from 'react';
 import { FlatList, View, StyleSheet } from 'react-native';
 import { AlertCard } from '@molecules/AlertCard';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { spacing } from '@theme/spacing';
 import type { Alert } from '../../../types/disaster';
 
