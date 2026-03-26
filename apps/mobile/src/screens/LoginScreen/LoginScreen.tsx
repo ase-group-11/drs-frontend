@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/LoginScreen/LoginScreen.tsx
-// CORRECTED - AuthTemplate uses children, not form prop!
+// UPDATED: Pass onResponderPress to navigate to ResponderLogin
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useState } from 'react';
@@ -12,53 +12,28 @@ import type { LoginScreenProps } from '@types/navigation';
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError]         = useState('');
 
   const handleLogin = async (phoneNumber: string, countryCode: string) => {
     setIsLoading(true);
     setError('');
-
     try {
-      // Format phone number for API: +353892039542
       const formattedPhone = formatPhoneForApi(countryCode, phoneNumber);
-
-      // Call login API
-      await authService.login({
-        phone_number: formattedPhone,
-      });
-
-      // Navigate to OTP verification screen
-      navigation.navigate('OTPVerification', {
-        phoneNumber: formattedPhone,
-        isSignup: false,
-      });
+      await authService.login({ phone_number: formattedPhone });
+      navigation.navigate('OTPVerification', { phoneNumber: formattedPhone, isSignup: false });
     } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError(err.message || 'Failed to send OTP. Please try again.');
-      }
+      setError(err instanceof ApiError ? err.message : err.message || 'Failed to send OTP.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSignupPress = () => {
-    navigation.navigate('Signup');
-  };
-
   return (
-    <AuthTemplate
-      header={
-        <AuthHeader
-          title="Welcome Back"
-          subtitle="Log in to continue"
-        />
-      }
-    >
+    <AuthTemplate header={<AuthHeader title="Welcome Back" subtitle="Log in to continue" />}>
       <LoginForm
         onSubmit={handleLogin}
-        onSignupPress={handleSignupPress}
+        onSignupPress={() => navigation.navigate('Signup')}
+        onResponderPress={() => navigation.navigate('ResponderLogin' as any)}
         isLoading={isLoading}
         error={error}
       />

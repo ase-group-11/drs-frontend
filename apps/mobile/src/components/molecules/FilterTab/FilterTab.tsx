@@ -1,7 +1,7 @@
 // src/components/molecules/FilterTab/FilterTab.tsx
 import React from 'react';
 import { TouchableOpacity, StyleSheet } from 'react-native';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
 

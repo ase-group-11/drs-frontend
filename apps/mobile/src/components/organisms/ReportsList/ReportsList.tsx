@@ -1,3 +1,8 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/components/organisms/ReportsList/ReportsList.tsx
+// FIXED: @/components/atoms/Text → @atoms/Text
+// ═══════════════════════════════════════════════════════════════════════════
+
 import React from 'react';
 import { FlatList, View, StyleSheet } from 'react-native';
 import { ReportCard } from '@molecules/ReportCard';
@@ -18,6 +23,7 @@ export const ReportsList: React.FC<ReportsListProps> = ({ reports, onPress }) =>
       <ReportCard report={item} onPress={() => onPress(item.id)} />
     )}
     contentContainerStyle={styles.list}
+    showsVerticalScrollIndicator={false}
     ListEmptyComponent={
       <View style={styles.empty}>
         <Text variant="bodyLarge" color="textSecondary" align="center">
@@ -29,7 +35,7 @@ export const ReportsList: React.FC<ReportsListProps> = ({ reports, onPress }) =>
 );
 
 const styles = StyleSheet.create({
-  list: { paddingBottom: spacing.massive },
+  list:  { paddingBottom: spacing.massive },
   empty: { padding: spacing.massive },
 });
 

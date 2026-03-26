@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';

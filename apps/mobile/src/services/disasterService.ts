@@ -3,61 +3,12 @@
 // Disaster Service - COMPLETE & READY TO USE
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
-import { ApiError } from './authService';
+import { ApiError, authRequest } from './authService';
 import { authService } from './authService';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// API Request Helper (with auth support)
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {},
-  requiresAuth: boolean = true
-): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-
-  try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string>),
-    };
-
-    // Add Bearer token for authenticated requests
-    if (requiresAuth) {
-      const authHeader = authService.getAuthHeader();
-      Object.assign(headers, authHeader);
-    }
-
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      signal: controller.signal,
-      headers,
-    });
-
-    clearTimeout(timeoutId);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new ApiError(
-        data.message || data.detail || 'Something went wrong',
-        response.status,
-        data
-      );
-    }
-
-    return data;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new ApiError('Request timed out', 408);
-    }
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(error.message || 'Network error', 500);
-  }
-}
+// ── apiRequest alias — uses authRequest which auto-refreshes on 401 ───────
+const apiRequest = <T>(endpoint: string, options: RequestInit = {}) =>
+  authRequest<T>(endpoint, options);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
