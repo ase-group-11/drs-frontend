@@ -274,10 +274,12 @@ const MapView: React.FC<MapViewProps> = ({
       if (lng && lat) { bounds.extend([lng, lat]); hasBounds = true; }
     };
 
-    // ── Draw routes FIRST (so blocked roads render on top) ──
+    // ── Draw active routes ONLY (so blocked roads render on top) ──
     plan.chosen_routes.forEach((route, i) => {
-      const srcId = `route-${plan.id}-${i}`;
       const isAssigned = assignedIds.has(route.route_id);
+      if (!isAssigned) return; // skip alternates
+
+      const srcId = `route-${plan.id}-${i}`;
       const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
 
       let coordinates: number[][];
@@ -290,12 +292,7 @@ const MapView: React.FC<MapViewProps> = ({
       }
 
       const geojson = { type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: {} };
-      addLineLayer(m, srcId, geojson, color,
-        isAssigned ? 6 : 3.5,
-        isAssigned ? 1 : 0.65,
-        !isAssigned,
-        isAssigned ? 16 : 8,
-      );
+      addLineLayer(m, srcId, geojson, color, 6, 1, false, 16);
       coordinates.forEach(([lng, lat]) => extendBounds(lng, lat));
     });
 
@@ -319,9 +316,9 @@ const MapView: React.FC<MapViewProps> = ({
       coordinates.forEach(([lng, lat]) => extendBounds(lng, lat));
     });
 
-    // Fit map to show all routes + blocked roads
+    // Fit map to show all routes + blocked roads, preserving current 3D pitch/bearing
     if (hasBounds && !bounds.isEmpty()) {
-      m.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 1000 });
+      m.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 1000, pitch: m.getPitch(), bearing: m.getBearing() });
     }
   }, [clearRerouteLayers]);
 
@@ -746,15 +743,14 @@ const MapView: React.FC<MapViewProps> = ({
           /* Mobile: horizontal scrollable chip strip pinned to bottom */
           <div style={{ position:'absolute', bottom:0, left:0, right:0, zIndex:10, background:'rgba(8,12,24,0.93)', backdropFilter:'blur(12px)', borderTop:'1px solid rgba(34,211,238,0.15)', fontFamily:"'Courier New',monospace" }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 12px', overflowX:'auto', scrollbarWidth:'none' }}>
-              {reroutePlan.chosen_routes.map((route, i) => {
-                const isAssigned = assignedIds.has(route.route_id);
+              {reroutePlan.chosen_routes.filter(route => assignedIds.has(route.route_id)).map((route, i) => {
                 const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
                 const vehicles = reroutePlan.capacity_usage[route.route_id]?.vehicles_assigned ?? 0;
                 return (
-                  <div key={route.route_id} style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, background: isAssigned ? `${color}18` : 'rgba(255,255,255,0.04)', border:`1px solid ${isAssigned ? color+'60' : 'rgba(255,255,255,0.08)'}`, borderRadius:8, padding:'4px 8px' }}>
+                  <div key={route.route_id} style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, background:`${color}18`, border:`1px solid ${color}60`, borderRadius:8, padding:'4px 8px' }}>
                     <div style={{ width:18, height:3, borderRadius:3, background:color, boxShadow:`0 0 4px ${color}` }} />
-                    <span style={{ fontSize:9, fontWeight: isAssigned ? 700 : 500, color: isAssigned ? '#f1f5f9' : '#cbd5e1', whiteSpace:'nowrap' }}>
-                      R{i+1}{isAssigned ? ' ★' : ''} · {fmtTime(route.travel_time_seconds)}{vehicles > 0 ? ` · ${vehicles}v` : ''}
+                    <span style={{ fontSize:9, fontWeight:700, color:'#f1f5f9', whiteSpace:'nowrap' }}>
+                      R{i+1} ★ · {fmtTime(route.travel_time_seconds)}{vehicles > 0 ? ` · ${vehicles}v` : ''}
                     </span>
                   </div>
                 );
@@ -769,16 +765,15 @@ const MapView: React.FC<MapViewProps> = ({
           /* Desktop: floating card bottom-left */
           <div style={{ position:'absolute', bottom:36, left:14, zIndex:10, background:'rgba(8,12,24,0.92)', backdropFilter:'blur(12px)', borderRadius:12, padding:'12px 14px', border:'1px solid rgba(34,211,238,0.2)', boxShadow:'0 4px 20px rgba(0,0,0,0.4)', minWidth:220, fontFamily:"'Courier New',monospace" }}>
             <div style={{ fontSize:9, fontWeight:700, color:'#22d3ee', textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:10 }}>◈ ROUTES</div>
-            {reroutePlan.chosen_routes.map((route, i) => {
-              const isAssigned = assignedIds.has(route.route_id);
+            {reroutePlan.chosen_routes.filter(route => assignedIds.has(route.route_id)).map((route, i) => {
               const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
               const vehicles = reroutePlan.capacity_usage[route.route_id]?.vehicles_assigned ?? 0;
               return (
                 <div key={route.route_id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:7 }}>
-                  <div style={{ width:28, height:3, borderRadius:3, background:color, flexShrink:0, boxShadow:`0 0 6px ${color}`, ...(isAssigned ? {} : { opacity:0.6 }) }} />
+                  <div style={{ width:28, height:3, borderRadius:3, background:color, flexShrink:0, boxShadow:`0 0 6px ${color}` }} />
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:10, fontWeight: isAssigned ? 700 : 500, color: isAssigned ? '#ffffff' : '#cbd5e1' }}>
-                      Route {i+1} {isAssigned ? '· ACTIVE' : '· Alternate'}
+                    <div style={{ fontSize:10, fontWeight:700, color:'#ffffff' }}>
+                      Route {i+1} · ACTIVE
                     </div>
                     <div style={{ fontSize:9, color:'#94a3b8' }}>{fmtTime(route.travel_time_seconds)} · {fmtDist(route.length_meters)} {vehicles > 0 ? `· ${vehicles} vehicle${vehicles>1?'s':''}` : ''}</div>
                   </div>
