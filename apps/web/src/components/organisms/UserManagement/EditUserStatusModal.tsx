@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { Modal, Button, Select, Input, Typography, message } from 'antd';
-import { EditOutlined } from '@ant-design/icons';
-import { updateUserStatus } from '../../../services';
+import { Modal, Button, Select, Input, Typography, message, Divider } from 'antd';
+import { EditOutlined, UserOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
+import apiClient from '../../../lib/axios';
+import { API_ENDPOINTS } from '../../../config';
 import type { AdminUser, ApiUserStatus } from '../../../types';
 
 const { Text } = Typography;
@@ -26,40 +26,71 @@ interface EditUserStatusModalProps {
   onSuccess: () => void;
 }
 
+const labelStyle: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: '#6b7280',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  display: 'block',
+  marginBottom: 6,
+};
+
 const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
   open, user, onClose, onSuccess,
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<ApiUserStatus>('ACTIVE');
-  const [reason, setReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [fullName,    setFullName]    = useState('');
+  const [email,       setEmail]       = useState('');
+  const [phone,       setPhone]       = useState('');
+  const [submitting,  setSubmitting]  = useState(false);
 
   useEffect(() => {
     if (open && user) {
       setSelectedStatus(user.status);
-      setReason('');
+      setFullName(user.fullName ?? '');
+      setEmail(user.email ?? '');
+      setPhone(user.phone ?? '');
     }
   }, [open, user]);
 
   if (!user) return null;
 
-  const hasChanged = selectedStatus !== user.status;
-  const currentCfg = STATUS_OPTIONS.find((o) => o.value === user.status);
-  const selectedCfg = STATUS_OPTIONS.find((o) => o.value === selectedStatus)!;
+  const statusChanged  = selectedStatus !== user.status;
+  const profileChanged =
+    fullName.trim() !== (user.fullName ?? '').trim() ||
+    email.trim()    !== (user.email ?? '').trim()    ||
+    phone.trim()    !== (user.phone ?? '').trim();
+
+  const hasChanged = statusChanged || profileChanged;
 
   const handleSubmit = async () => {
     if (!hasChanged) { onClose(); return; }
+
+    if (!fullName.trim()) {
+      message.warning('Full name cannot be empty');
+      return;
+    }
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      message.warning('Please enter a valid email address');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const result = await updateUserStatus(user.id, { status: selectedStatus, reason: reason.trim() || undefined });
-      if (result.success) {
-        message.success(`${user.fullName}'s status updated to ${selectedCfg.label}`);
-        onSuccess();
-        onClose();
-      } else {
-        message.error(result.message || 'Failed to update status');
-      }
-    } catch {
-      message.error('Failed to update status');
+      const payload: Record<string, any> = {
+        status:       selectedStatus,
+        full_name:    fullName.trim(),
+        email:        email.trim(),
+        phone_number: phone.trim(),
+      };
+
+      await apiClient.put(API_ENDPOINTS.USER_MANAGEMENT.UPDATE(user.id), payload);
+      message.success(`${fullName.trim()} updated successfully`);
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail || 'Failed to update user');
     } finally {
       setSubmitting(false);
     }
@@ -77,7 +108,7 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>
-              Edit User Status
+              Edit User
             </div>
             <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 400 }}>
               {user.fullName}
@@ -88,73 +119,91 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
       open={open}
       onCancel={onClose}
       footer={null}
-      width={420}
+      width={460}
       destroyOnClose
     >
-      <div style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-        {/* Current status */}
+        {/* Profile fields */}
         <div>
-          <Text style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-            Current Status
+          <Text style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 12 }}>
+            Profile Information
           </Text>
-          <div style={{
-            background: '#f9fafb', borderRadius: 8, padding: '10px 12px',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%',
-              background: currentCfg?.color ?? '#6b7280', flexShrink: 0,
-            }} />
-            <Text style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>
-              {currentCfg?.label ?? user.status}
-            </Text>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            <div>
+              <Text style={labelStyle}>Full Name</Text>
+              <Input
+                prefix={<UserOutlined style={{ color: '#9ca3af', fontSize: 13 }} />}
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Full name"
+                size="large"
+                style={{ borderRadius: 8, fontSize: 13 }}
+              />
+            </div>
+
+            <div>
+              <Text style={labelStyle}>Email</Text>
+              <Input
+                prefix={<MailOutlined style={{ color: '#9ca3af', fontSize: 13 }} />}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
+                type="email"
+                size="large"
+                style={{ borderRadius: 8, fontSize: 13 }}
+              />
+            </div>
+
+            <div>
+              <Text style={labelStyle}>Phone Number</Text>
+              <Input
+                prefix={<PhoneOutlined style={{ color: '#9ca3af', fontSize: 13 }} />}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+91 XXXXX XXXXX"
+                size="large"
+                style={{ borderRadius: 8, fontSize: 13 }}
+              />
+            </div>
+
           </div>
         </div>
 
-        {/* New status dropdown */}
-        <div>
-          <Text style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-            New Status
-          </Text>
-          <Select
-            value={selectedStatus}
-            onChange={(val) => setSelectedStatus(val as ApiUserStatus)}
-            style={{ width: '100%' }}
-            size="large"
-            optionLabelProp="label"
-            popupClassName="um-filter-dropdown"
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <Select.Option key={opt.value} value={opt.value} label={
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.color, flexShrink: 0, display: 'inline-block' }} />
-                  {opt.label}
-                </span>
-              }>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.color, flexShrink: 0, display: 'inline-block' }} />
-                  <Text style={{ fontSize: 13, color: opt.color, fontWeight: 500 }}>{opt.label}</Text>
-                </div>
-              </Select.Option>
-            ))}
-          </Select>
-        </div>
+        <Divider style={{ margin: '2px 0' }} />
 
-        {/* Reason */}
+        {/* Status section */}
         <div>
-          <Text style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-            Reason <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span>
+          <Text style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 12 }}>
+            Account Status
           </Text>
-          <Input.TextArea
-            placeholder="e.g. Account verified, Policy violation, User request..."
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={2}
-            maxLength={200}
-            showCount
-            style={{ borderRadius: 8, fontSize: 13 }}
-          />
+
+          <div>
+            <Text style={labelStyle}>Status</Text>
+            <Select
+              value={selectedStatus}
+              onChange={(val) => setSelectedStatus(val as ApiUserStatus)}
+              style={{ width: '100%' }}
+              size="large"
+              optionLabelProp="label"
+              popupClassName="um-filter-dropdown"
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <Select.Option key={opt.value} value={opt.value} label={
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.color, flexShrink: 0, display: 'inline-block' }} />
+                    {opt.label}
+                  </span>
+                }>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.color, flexShrink: 0, display: 'inline-block' }} />
+                    <Text style={{ fontSize: 13, color: opt.color, fontWeight: 500 }}>{opt.label}</Text>
+                  </div>
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
         </div>
 
         {/* Footer */}
@@ -173,9 +222,10 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
               borderColor: hasChanged ? '#7c3aed' : undefined,
             }}
           >
-            Update Status
+            Save Changes
           </Button>
         </div>
+
       </div>
     </Modal>
   );
