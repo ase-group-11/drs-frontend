@@ -24,6 +24,7 @@ interface EditUserStatusModalProps {
   user: AdminUser | null;
   onClose: () => void;
   onSuccess: () => void;
+  activelyDeployed?: boolean;
 }
 
 const labelStyle: React.CSSProperties = {
@@ -37,7 +38,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
-  open, user, onClose, onSuccess,
+  open, user, onClose, onSuccess, activelyDeployed = false,
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<ApiUserStatus>('ACTIVE');
   const [fullName,    setFullName]    = useState('');
@@ -97,7 +98,7 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
         phone_number: phone.trim(),
       };
 
-      await apiClient.post(API_ENDPOINTS.USER_MANAGEMENT.UPDATE(user.id), payload);
+      await apiClient.put(API_ENDPOINTS.USER_MANAGEMENT.UPDATE(user.id), payload);
       message.success(`${fullName.trim()} updated successfully`);
       onSuccess();
       onClose();
@@ -197,11 +198,30 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
             Account Status
           </Text>
 
+          {(user.commandingUnitsCount ?? 0) > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)', marginBottom: 8 }}>
+              <span style={{ fontSize: 13 }}>⚠️</span>
+              <Text style={{ fontSize: 12, color: '#92400e' }}>
+                Commanding {user.commandingUnitsCount} unit{(user.commandingUnitsCount ?? 0) > 1 ? 's' : ''} ({user.currentUnitCodes?.join(', ')}). Status cannot be changed.
+              </Text>
+            </div>
+          )}
+
+          {activelyDeployed && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', marginBottom: 8 }}>
+              <span style={{ fontSize: 13 }}>🚨</span>
+              <Text style={{ fontSize: 12, color: '#b91c1c' }}>
+                Unit {user.currentUnitCodes?.join(', ')} is currently deployed. Status cannot be changed until the mission is complete.
+              </Text>
+            </div>
+          )}
+
           <div>
             <Text style={labelStyle}>Status</Text>
             <Select
               value={selectedStatus}
               onChange={(val) => setSelectedStatus(val as ApiUserStatus)}
+              disabled={(user.commandingUnitsCount ?? 0) > 0 || activelyDeployed}
               style={{ width: '100%' }}
               size="large"
               optionLabelProp="label"

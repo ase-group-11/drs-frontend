@@ -33,7 +33,6 @@ export const requestSignupOTP = async (data: SignupData): Promise<ApiResponse> =
       data: response.data,
     };
   } catch (error: any) {
-    console.error('Signup OTP error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to send OTP. Please try again.',
@@ -77,7 +76,6 @@ export const verifySignupOTP = async (data: {
       },
     };
   } catch (error: any) {
-    console.error('OTP verification error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Invalid OTP. Please try again.',
@@ -118,7 +116,6 @@ export const login = async (email: string, password: string): Promise<ApiRespons
       },
     };
   } catch (error: any) {
-    console.error('Login error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Login failed. Please check your credentials.',
@@ -146,7 +143,6 @@ export const changePassword = async (data: {
       data: response.data,
     };
   } catch (error: any) {
-    console.error('Change password error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to change password.',

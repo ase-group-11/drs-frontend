@@ -1,3 +1,4 @@
+import { API_ENDPOINTS } from '../../../../config';
 import React, { useState, useEffect } from 'react';
 import { Modal, Input, Select, Button, Typography, message, Spin } from 'antd';
 import {
@@ -5,7 +6,6 @@ import {
   CarOutlined, CrownOutlined,
 } from '@ant-design/icons';
 import apiClient from '../../../../lib/axios';
-import { API_ENDPOINTS } from '../../../../config';
 
 const { Text } = Typography;
 
@@ -96,7 +96,7 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
   useEffect(() => {
     if (open) {
       setLoadingMembers(true);
-      apiClient.get<{ users: TeamMember[] }>('/users/?user_type=team&limit=200')
+      apiClient.get<{ users: TeamMember[] }>(API_ENDPOINTS.USERS.LIST + '?user_type=team&limit=200')
         .then((res) => setTeamMembers(res.data?.users ?? []))
         .catch(() => message.error('Failed to load team members'))
         .finally(() => setLoadingMembers(false));

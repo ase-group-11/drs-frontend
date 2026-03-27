@@ -57,7 +57,6 @@ export const getUsers = async (
       },
     };
   } catch (error: any) {
-    console.error('getUsers API failed:', error);
     return {
       success: false,
       message: error?.response?.data?.detail || 'Failed to load users',

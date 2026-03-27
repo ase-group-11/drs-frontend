@@ -1,3 +1,4 @@
+import { API_ENDPOINTS } from '../../../config';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -261,7 +262,6 @@ const MapView: React.FC<MapViewProps> = ({
         layerIdsRef.current.push(lineId);
       }
     } catch (err) {
-      console.error(`Failed to add layer ${srcId}:`, err);
     }
   };
 
@@ -419,25 +419,24 @@ const MapView: React.FC<MapViewProps> = ({
   useEffect(() => {
     const fetchUnits = async () => {
       try {
-        const res = await apiClient.get('/emergency-units/');
+        const res = await apiClient.get(API_ENDPOINTS.TEAMS.LIST);
         const list: EmergencyUnit[] = res.data.units ?? [];
         const detailed = await Promise.all(
           list.map(async (u) => {
-            try { const d = await apiClient.get(`/emergency-units/${u.id}`); return { ...u, ...d.data } as EmergencyUnit; }
+            try { const d = await apiClient.get(API_ENDPOINTS.TEAMS.UNIT_BY_ID(u.id)); return { ...u, ...d.data } as EmergencyUnit; }
             catch { return u; }
           })
         );
         setUnits(detailed);
-      } catch (e) { console.error('Failed to fetch emergency units', e); }
+      } catch { }
     };
     const fetchReroutePlans = async () => {
       try {
         const res = await apiClient.get('/reroute/plans');
         // API may return array directly or wrapped in an object
         const plans = Array.isArray(res.data) ? res.data : (res.data?.plans ?? res.data?.results ?? []);
-        console.log('[Reroute] Fetched plans:', plans.length, plans);
         setReroutePlans(plans);
-      } catch (e) { console.error('[Reroute] Failed to fetch reroute plans:', e); }
+      } catch { }
     };
     fetchUnits();
     fetchReroutePlans();
@@ -808,20 +807,17 @@ const MapView: React.FC<MapViewProps> = ({
     try {
       const res = await apiClient.get('/reroute/plans');
       plans = Array.isArray(res.data) ? res.data : (res.data?.plans ?? res.data?.results ?? []);
-      console.log('[Reroute] Fresh fetch on click:', plans.length, 'plans');
       setReroutePlans(plans);
-    } catch (e) { console.error('[Reroute] Failed to fetch on click:', e); }
+    } catch { }
 
     const plan = plans.find((p: ReroutePlan) => p.disaster_id === disaster.id);
     if (!plan) {
-      console.warn('[Reroute] No plan found for disaster:', disaster.id, 'available disaster_ids:', plans.map((p: ReroutePlan) => p.disaster_id));
       // Abort: restore normal state so the map isn't left blank with no markers
       rerouteModeRef.current = false;
       stationMarkersRef.current.forEach(mk => mk.getElement().style.opacity = '1');
       setTimeout(renderMarkers, 0); // rebuild disaster markers on next tick
       return;
     }
-    console.log('[Reroute] Entering reroute mode with plan:', plan);
     clearRerouteLayers();
     setDrawerReport(null);
     setRerouteDisaster(disaster);
@@ -1244,13 +1240,13 @@ const MapView: React.FC<MapViewProps> = ({
           onSuccess={() => {
             setDeployModalOpen(false);
             setDrawerUnit(null);
-            apiClient.get('/emergency-units/').then(res => {
+            apiClient.get(API_ENDPOINTS.TEAMS.LIST).then(res => {
               const list: EmergencyUnit[] = res.data.units ?? [];
               Promise.all(list.map(async u => {
-                try { const d = await apiClient.get(`/emergency-units/${u.id}`); return { ...u, ...d.data } as EmergencyUnit; }
+                try { const d = await apiClient.get(API_ENDPOINTS.TEAMS.UNIT_BY_ID(u.id)); return { ...u, ...d.data } as EmergencyUnit; }
                 catch { return u; }
-              })).then(setUnits);
-            });
+              })).then(setUnits).catch(() => {});
+            }).catch(() => {});
           }}
         />
       )}

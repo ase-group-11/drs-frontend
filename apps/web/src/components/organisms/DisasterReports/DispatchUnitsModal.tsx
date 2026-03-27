@@ -1,3 +1,4 @@
+import { API_ENDPOINTS } from '../../../config';
 import React, { useState, useEffect } from 'react';
 import { Modal, Switch, Input, Button, Select, Typography, message, Spin } from 'antd';
 import { EnvironmentOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons';
@@ -70,12 +71,13 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, o
     { key: 'IT', label: 'Rescue' },
   ];
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (open) fetchUnits(); }, [open]);
 
   const fetchUnits = async () => {
     setLoading(true);
     try {
-      const listRes = await apiClient.get<{ units: any[] }>('/emergency-units/');
+      const listRes = await apiClient.get<{ units: any[] }>(API_ENDPOINTS.EMERGENCY_UNITS.LIST);
       const rawUnits = listRes.data?.units ?? [];
       const disLat = report?.locationCoords?.lat;
       const disLon = report?.locationCoords?.lon;
@@ -84,7 +86,7 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, o
         let km: number | null = null;
         let eta: number | null = null;
         try {
-          const det = await apiClient.get<{ station: { lat: number; lon: number } }>(`/emergency-units/${raw.id}`);
+          const det = await apiClient.get<{ station: { lat: number; lon: number } }>(API_ENDPOINTS.EMERGENCY_UNITS.BY_ID(raw.id));
           const sLat = det.data?.station?.lat;
           const sLon = det.data?.station?.lon;
           if (disLat != null && disLon != null && sLat != null && sLon != null) {

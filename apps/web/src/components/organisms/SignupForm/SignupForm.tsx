@@ -26,8 +26,6 @@ const SignupForm: React.FC = () => {
     const navigate = useNavigate();
 
     const handleFormChange = () => {
-        const values = form.getFieldsValue();
-
         form.validateFields({ validateOnly: true })
             .then(() => {})
             .catch(() => {});
@@ -80,7 +78,6 @@ const SignupForm: React.FC = () => {
             }
         } catch (error) {
             message.error('Failed to send OTP. Please try again.');
-            console.error('Signup error:', error);
         } finally {
             setLoading(false);
         }

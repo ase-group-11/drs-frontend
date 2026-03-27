@@ -1,3 +1,4 @@
+import { API_ENDPOINTS } from '../../../../config';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Modal, Tabs, Input, Button, Typography, message, Select, Spin,
@@ -127,7 +128,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
   const fetchMembers = useCallback(async () => {
     setLoadingMembers(true);
     try {
-      const res = await apiClient.get('/users/', {
+      const res = await apiClient.get(API_ENDPOINTS.USERS.LIST, {
         params: { user_type: 'team', limit: 200 },
       });
       setAllMembers(res.data?.users ?? []);
@@ -218,7 +219,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
       if (unitForm.vehicle_year !== originalUnit.vehicle_year)
         payload.vehicle_year = parseInt(unitForm.vehicle_year, 10);
 
-      await apiClient.put(`/emergency-units/${unitUuid}`, payload);
+      await apiClient.put(API_ENDPOINTS.EMERGENCY_UNITS.UPDATE(unitUuid), payload);
       message.success('Unit details updated successfully');
       onSuccess();
     } catch (err: any) {
@@ -236,7 +237,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
       const payload: Record<string, any> = { crew_member_ids: crewIds };
       if (commanderId) payload.commander_id = commanderId;
 
-      await apiClient.put(`/emergency-units/${unitUuid}/crew`, payload);
+      await apiClient.put(API_ENDPOINTS.EMERGENCY_UNITS.UPDATE_CREW(unitUuid), payload);
       message.success('Crew updated successfully');
       onSuccess();
     } catch (err: any) {

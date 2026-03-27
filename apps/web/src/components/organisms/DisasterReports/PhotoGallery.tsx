@@ -1,9 +1,9 @@
+import { API_ENDPOINTS } from '../../../config';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Typography, Empty, message, Spin } from 'antd';
 import { ArrowLeftOutlined, EyeOutlined, PictureOutlined } from '@ant-design/icons';
 import type { DisasterReport } from '../../../types';
 import apiClient from '../../../lib/axios';
-import { API_ENDPOINTS } from '../../../config';
 import FullscreenPhotoViewer from './FullscreenPhotoViewer';
 import './PhotoGallery.css';
 
@@ -101,7 +101,7 @@ const PhotoGallery: React.FC<PhotoGalleryProps> = ({ report, onBack }) => {
       await Promise.allSettled(
         uniqueUploaders.map(async (uid) => {
           try {
-            const userRes = await apiClient.get<{ full_name: string }>(`/users/${uid}`);
+            const userRes = await apiClient.get<{ full_name: string }>(API_ENDPOINTS.USERS.BY_ID(uid));
             if (userRes.data?.full_name) userNames[uid] = userRes.data.full_name;
           } catch {
             // leave UUID as fallback

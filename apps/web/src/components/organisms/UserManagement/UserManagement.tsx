@@ -30,6 +30,8 @@ import {
   ToolOutlined,
 } from '@ant-design/icons';
 import { getUsers } from '../../../services';
+import apiClient from '../../../lib/axios';
+import { API_ENDPOINTS } from '../../../config';
 import type {
   AdminUser,
   ApiUserStatus,
@@ -86,6 +88,7 @@ const UserManagement: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [activelyDeployed, setActivelyDeployed] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
@@ -165,6 +168,22 @@ const UserManagement: React.FC = () => {
   };
 
   // ─── Columns ────────────────────────────────────────────────────────────────
+
+
+  const ACTIVE_DEPLOY_STATUSES = ['DEPLOYED', 'ON_SCENE', 'RETURNING'];
+
+  const checkUserUnitStatus = async (user: AdminUser): Promise<boolean> => {
+    if (!user.isAssigned || !user.currentUnitCodes?.length) return false;
+    try {
+      const res = await apiClient.get(API_ENDPOINTS.TEAMS.LIST);
+      const units: { unit_code: string; unit_status: string }[] = res.data?.units ?? [];
+      return units.some(
+        u => user.currentUnitCodes.includes(u.unit_code) && ACTIVE_DEPLOY_STATUSES.includes(u.unit_status)
+      );
+    } catch {
+      return false;
+    }
+  };
 
   const columns: TableColumnsType<AdminUser> = [
     {
@@ -283,30 +302,42 @@ const UserManagement: React.FC = () => {
       title: 'Actions',
       key: 'actions',
       width: 90,
-      render: (_, record) => (
-        <Space size={4}>
-          <Tooltip title="Edit status">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              className="um-action-btn"
-              style={{ color: '#6b7280' }}
-              onClick={() => { setEditingUser(record); setEditModalOpen(true); }}
-            />
-          </Tooltip>
-          <Tooltip title="Delete user">
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              className="um-action-btn um-delete-btn"
-              onClick={() => { setBulkDeleteUsers([]); setDeletingUser(record); setDeleteModalOpen(true); }}
-            />
-          </Tooltip>
-        </Space>
-      ),
+      render: (_, record) => {
+        const isDeleted = record.status === 'DELETED';
+        const isCommanding = (record.commandingUnitsCount ?? 0) > 0;
+        const cannotModify = isDeleted || isCommanding;
+        return (
+          <Space size={4}>
+            <Tooltip title={isDeleted ? 'User is deleted' : 'Edit user'}>
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                className="um-action-btn"
+                style={{ color: isDeleted ? '#d1d5db' : '#6b7280' }}
+                disabled={isDeleted}
+                onClick={async () => { if (!isDeleted) { setActivelyDeployed(false); const deployed = await checkUserUnitStatus(record); setActivelyDeployed(deployed); setEditingUser(record); setEditModalOpen(true); } }}
+              />
+            </Tooltip>
+            <Tooltip title={
+                isDeleted ? 'User is deleted' :
+                isCommanding ? 'Cannot delete — commanding a unit' :
+                'Delete user'
+              }>
+              <Button
+                type="text"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                className="um-action-btn um-delete-btn"
+                disabled={cannotModify}
+                style={{ opacity: cannotModify ? 0.3 : 1 }}
+                onClick={() => { if (!cannotModify) { setBulkDeleteUsers([]); setDeletingUser(record); setDeleteModalOpen(true); } }}
+              />
+            </Tooltip>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -461,6 +492,7 @@ const UserManagement: React.FC = () => {
       <EditUserStatusModal
         open={editModalOpen}
         user={editingUser}
+        activelyDeployed={activelyDeployed}
         onClose={() => { setEditModalOpen(false); setEditingUser(null); }}
         onSuccess={fetchUsers}
       />

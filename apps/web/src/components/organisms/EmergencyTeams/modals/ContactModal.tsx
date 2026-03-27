@@ -1,6 +1,6 @@
 // NEW FILE
 import React, { useEffect, useState } from 'react';
-import { Modal, Tag, Typography, Space, Spin } from 'antd';
+import { Modal, Tag, Typography, Space, Spin, message } from 'antd';
 import { PhoneOutlined, MailOutlined, UserOutlined, EnvironmentOutlined, FireOutlined } from '@ant-design/icons';
 import type { EmergencyTeam, EmergencyUnitDetail } from '../../../../types';
 import { getTeamById } from '../../../../services';
@@ -27,6 +27,7 @@ const ContactModal: React.FC<ContactModalProps> = ({ open, team, onClose }) => {
       setLoading(true);
       getTeamById(team.id)
         .then((res) => { if (res.success && res.data) setDetail(res.data); })
+        .catch(() => message.error('Failed to load contact details'))
         .finally(() => setLoading(false));
     } else {
       setDetail(null);

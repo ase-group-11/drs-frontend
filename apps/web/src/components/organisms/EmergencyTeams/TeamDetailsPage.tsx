@@ -53,6 +53,7 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
   const [decommissionOpen, setDecommissionOpen] = useState(false);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     fetchDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team.id]);
@@ -73,7 +74,8 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
     }
   };
 
-  const statusColor = STATUS_COLORS[team.statusType] || '#6b7280';
+  const liveStatus = detail?.unit_status?.toLowerCase() ?? team.statusType;
+  const statusColor = STATUS_COLORS[liveStatus] || '#6b7280';
   const emoji = TEAM_EMOJIS[team.type] || '🚒';
 
   const getInitials = (name: string | null) => {
@@ -138,7 +140,7 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
                 </div>
               </div>
               <Tag style={{ background: `${statusColor}18`, color: statusColor, border: `1px solid ${statusColor}40`, borderRadius: 20, fontWeight: 600, fontSize: 13, padding: '4px 12px' }}>
-                {team.status}
+                {detail?.unit_status ?? team.status}
               </Tag>
             </div>
 

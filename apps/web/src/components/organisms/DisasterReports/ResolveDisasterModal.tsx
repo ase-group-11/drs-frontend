@@ -24,9 +24,13 @@ const ResolveDisasterModal: React.FC<ResolveDisasterModalProps> = ({ open, repor
   if (!report) return null;
 
   const handleResolve = async () => {
+    if (!notes.trim()) {
+      message.warning('Please enter resolution notes before resolving.');
+      return;
+    }
     setSubmitting(true);
     try {
-      const response = await updateDisasterReportStatus(report.id, notes.trim() || 'Resolved by admin');
+      const response = await updateDisasterReportStatus(report.id, notes.trim());
       if (response.success) {
         message.success(`${report.reportId} marked as resolved`);
         onSuccess();
@@ -97,7 +101,7 @@ const ResolveDisasterModal: React.FC<ResolveDisasterModalProps> = ({ open, repor
             fontSize: 10, fontWeight: 600, color: '#6b7280',
             textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6,
           }}>
-            Resolution Notes <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span>
+            Resolution Notes <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>
           </Text>
           <Input.TextArea
             placeholder="e.g. Situation contained, all units returned to base..."

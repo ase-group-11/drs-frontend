@@ -101,7 +101,6 @@ const OtpVerificationForm: React.FC = () => {
       }
     } catch (error) {
       message.error('Verification failed. Please try again.');
-      console.error('OTP verification error:', error);
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {
@@ -131,7 +130,6 @@ const OtpVerificationForm: React.FC = () => {
       }
     } catch (error) {
       message.error('Failed to resend OTP. Please try again.');
-      console.error('Resend OTP error:', error);
     } finally {
       setResendLoading(false);
     }

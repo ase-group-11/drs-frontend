@@ -1,6 +1,7 @@
 // NEW FILE
 import React, { useEffect, useState } from 'react';
 import {
+  App,
   Button,
   Input,
   Switch,
@@ -8,7 +9,6 @@ import {
   Typography,
   Card,
   Spin,
-  message,
 } from 'antd';
 import {
   SettingOutlined,
@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import {
   getNotificationSettings,
-  changePassword,
+  changeAdminPassword,
   getSystemStatus,
 } from '../../../services';
 import type {
@@ -131,38 +131,19 @@ const NotificationsTab: React.FC = () => {
 
 // ─── Security Tab ────────────────────────────────────────────────────────────
 const SecurityTab: React.FC = () => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
-
-  const getTeamMemberId = (): string | null => {
-    const userRaw = localStorage.getItem('user');
-    if (userRaw) {
-      try {
-        const u = JSON.parse(userRaw);
-        return u?.userId ?? u?.id ?? null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  };
 
   const handleChangePassword = async () => {
     try {
       const values = await form.validateFields();
       const { currentPassword, newPassword } = values;
 
-      const teamMemberId = getTeamMemberId();
-      if (!teamMemberId) {
-        message.error('Unable to determine your account. Please sign in again.');
-        return;
-      }
-
       setSaving(true);
 
-      const res = await changePassword({
-        teamMemberId,
-        oldPassword: currentPassword,
+      const res = await changeAdminPassword({
+        currentPassword,
         newPassword,
       });
 
@@ -248,16 +229,30 @@ const SystemTab: React.FC = () => {
   }, []);
 
   const loadStatus = async () => {
-    const res = await getSystemStatus();
-    if (res.data) setStatus(res.data);
-    setLoading(false);
+    try {
+      const res = await getSystemStatus();
+      if (res.data) setStatus(res.data);
+    } catch {
+      // API not available yet — show placeholder
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const displayStatus: SystemStatus = status ?? {
+    databaseStatus: 'Down',
+    apiStatus: 'Down',
+    version: 'N/A',
+    dbVersion: 'N/A',
+    serverRegion: 'N/A',
+    lastBackup: 'N/A',
+    uptime: 'N/A',
   };
 
   if (loading) return <div className={styles.tabLoading}><Spin /></div>;
-  if (!status) return null;
 
-  const isOperational = status.databaseStatus === 'Operational';
-  const isHealthy = status.apiStatus === 'Healthy';
+  const isOperational = displayStatus.databaseStatus === 'Operational';
+  const isHealthy = displayStatus.apiStatus === 'Healthy';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -271,7 +266,7 @@ const SystemTab: React.FC = () => {
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>Database Status</Text>
               <Text strong style={{ fontSize: 16, display: 'block', color: isOperational ? '#15803d' : '#dc2626' }}>
-                {status.databaseStatus}
+                {displayStatus.databaseStatus}
               </Text>
             </div>
           </div>
@@ -283,7 +278,7 @@ const SystemTab: React.FC = () => {
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>API Status</Text>
               <Text strong style={{ fontSize: 16, display: 'block', color: isHealthy ? '#1d4ed8' : '#dc2626' }}>
-                {status.apiStatus}
+                {displayStatus.apiStatus}
               </Text>
             </div>
           </div>
@@ -294,11 +289,11 @@ const SystemTab: React.FC = () => {
         <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 16 }}>System Information</Text>
         <div className={styles.infoRows}>
           {[
-            ['Version', status.version],
-            ['Database Version', status.dbVersion],
-            ['Server Region', status.serverRegion],
-            ['Last Backup', status.lastBackup],
-            ['Uptime', status.uptime],
+            ['Version', displayStatus.version],
+            ['Database Version', displayStatus.dbVersion],
+            ['Server Region', displayStatus.serverRegion],
+            ['Last Backup', displayStatus.lastBackup],
+            ['Uptime', displayStatus.uptime],
           ].map(([label, value], idx, arr) => (
             <div key={label} className={`${styles.infoRow} ${idx === arr.length - 1 ? styles.infoRowLast : ''}`}>
               <Text type="secondary" style={{ fontSize: 13 }}>{label}</Text>

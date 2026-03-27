@@ -1,3 +1,4 @@
+import { API_ENDPOINTS } from '../../../config';
 import React, { useEffect, useState } from 'react';
 import { Card, Row, Col, Select, Button, Table, Tag, Spin, message } from 'antd';
 import {
@@ -8,7 +9,6 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-import { getDashboardStats, getActivityLogs } from '../../../services';
 import apiClient from '../../../lib/axios';
 import type { DashboardStats, ActivityLog, DisasterRaw, DisastersApiResponse } from '../../../types';
 import './Dashboard.css';
@@ -55,7 +55,7 @@ const Dashboard: React.FC = () => {
   const [distributionData, setDistributionData] = useState<{ name: string; value: number; color: string }[]>([]);
 
   // Activity / alerts
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [activityLogs] = useState<ActivityLog[]>([]);
 
   const [allDisasters, setAllDisasters] = useState<DisasterRaw[]>([]);
 
@@ -82,20 +82,14 @@ const Dashboard: React.FC = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [statsRes, activityRes, disastersRes, unitsRes, usersRes] = await Promise.all([
-        getDashboardStats(),
-        getActivityLogs(),
-        apiClient.get<DisastersApiResponse>('/disasters/all'),
-        apiClient.get<{ units: { unit_status: string }[]; total_count: number; active_count: number }>('/emergency-units/'),
-        apiClient.get<{ total_count: number; users: { created_at: string }[]; summary: { active: number } }>('/users/?limit=200'),
+      const [disastersRes, unitsRes, usersRes] = await Promise.all([
+        apiClient.get<DisastersApiResponse>(API_ENDPOINTS.ADMIN.DISASTERS_ALL),
+        apiClient.get<{ units: { unit_status: string }[]; total_count: number; active_count: number }>(API_ENDPOINTS.TEAMS.LIST),
+        apiClient.get<{ total_count: number; users: { created_at: string }[]; summary: { active: number } }>(API_ENDPOINTS.USER_MANAGEMENT.LIST + '?limit=200'),
       ]);
 
-      // ── KPI: existing stats (system status) ───────────────────────────────
-      if (statsRes.data) setStats(statsRes.data);
-      if (activityRes.data) setActivityLogs(activityRes.data);
-
       // ── KPI: Total Users from /users/ ─────────────────────────────────────
-      const totalUsersCount = usersRes.data?.total_count ?? statsRes.data?.totalUsers ?? 0;
+      const totalUsersCount = usersRes.data?.total_count ?? 0;
 
       // Count users created this calendar month
       const now = new Date();
@@ -106,7 +100,7 @@ const Dashboard: React.FC = () => {
 
       setStats((prev) => prev
         ? { ...prev, totalUsers: totalUsersCount, totalUsersChange: usersThisMonth }
-        : { totalUsers: totalUsersCount, totalUsersChange: usersThisMonth, systemStatus: 'Operational', systemUptime: '99.8%' } as any);
+        : { totalUsers: totalUsersCount, totalUsersChange: usersThisMonth, systemStatus: 'operational', uptime: 99.9 } as any);
 
       // ── KPI: Active Disasters from /disasters/all ─────────────────────────
       const disasters: DisasterRaw[] = disastersRes.data?.disasters ?? [];

@@ -66,7 +66,6 @@ export const getTeams = async (): Promise<AdminApiResponse<EmergencyTeam[]> & { 
       meta,
     };
   } catch (error: any) {
-    console.error('getTeams error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to fetch emergency units.',
@@ -83,7 +82,6 @@ export const getTeamById = async (id: string): Promise<AdminApiResponse<Emergenc
       data: response.data,
     };
   } catch (error: any) {
-    console.error('getTeamById error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to fetch unit details.',
@@ -105,7 +103,6 @@ export const createTeam = async (
     });
     return { success: true, message: 'Unit created successfully', data: mapUnit(response.data) };
   } catch (error: any) {
-    console.error('createTeam error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to create unit.',
@@ -124,7 +121,6 @@ export const deployUnit = async (
     });
     return { success: true, message: 'Unit dispatched successfully' };
   } catch (error: any) {
-    console.error('deployUnit error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to dispatch unit.',
@@ -142,7 +138,6 @@ export const decommissionUnit = async (
     });
     return { success: true, message: 'Unit decommissioned successfully' };
   } catch (error: any) {
-    console.error('decommissionUnit error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to decommission unit.',
@@ -161,7 +156,6 @@ export const getActiveDisasters = async (): Promise<AdminApiResponse<ActiveDisas
     );
     return { success: true, message: 'Active disasters fetched', data: activeDisasters };
   } catch (error: any) {
-    console.error('getActiveDisasters error:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to fetch active disasters.',
