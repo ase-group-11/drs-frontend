@@ -135,19 +135,11 @@ const SecurityTab: React.FC = () => {
   const [saving, setSaving] = useState(false);
 
   const getTeamMemberId = (): string | null => {
-    // Adjust this to match how your app stores the logged-in user.
-    // Common patterns:
-    // - localStorage.getItem("teamMemberId")
-    // - JSON.parse(localStorage.getItem("user")!).id
-    // - auth store / context
-    const raw = localStorage.getItem('teamMemberId');
-    if (raw) return raw;
-
     const userRaw = localStorage.getItem('user');
     if (userRaw) {
       try {
         const u = JSON.parse(userRaw);
-        return u?.teamMemberId ?? u?.id ?? null;
+        return u?.userId ?? u?.id ?? null;
       } catch {
         return null;
       }
@@ -158,12 +150,7 @@ const SecurityTab: React.FC = () => {
   const handleChangePassword = async () => {
     try {
       const values = await form.validateFields();
-      const { currentPassword, newPassword, confirmPassword } = values;
-
-      if (newPassword !== confirmPassword) {
-        message.error('New passwords do not match');
-        return;
-      }
+      const { currentPassword, newPassword } = values;
 
       const teamMemberId = getTeamMemberId();
       if (!teamMemberId) {
@@ -221,7 +208,18 @@ const SecurityTab: React.FC = () => {
         <Form.Item
           name="confirmPassword"
           label="Confirm Password"
-          rules={[{ required: true, message: 'Please confirm your password' }]}
+          dependencies={['newPassword']}
+          rules={[
+            { required: true, message: 'Please confirm your password' },
+            ({ getFieldValue }) => ({
+              validator(_, value) {
+                if (!value || getFieldValue('newPassword') === value) {
+                  return Promise.resolve();
+                }
+                return Promise.reject(new Error('Passwords do not match'));
+              },
+            }),
+          ]}
         >
           <Input.Password variant="filled" placeholder="Confirm new password" />
         </Form.Item>

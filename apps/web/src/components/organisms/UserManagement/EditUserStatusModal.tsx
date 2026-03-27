@@ -44,6 +44,7 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
   const [email,       setEmail]       = useState('');
   const [phone,       setPhone]       = useState('');
   const [submitting,  setSubmitting]  = useState(false);
+  const [errors, setErrors] = useState<{ fullName?: string; email?: string; phone?: string }>({});
 
   useEffect(() => {
     if (open && user) {
@@ -51,6 +52,7 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
       setFullName(user.fullName ?? '');
       setEmail(user.email ?? '');
       setPhone(user.phone ?? '');
+      setErrors({});
     }
   }, [open, user]);
 
@@ -67,14 +69,24 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
   const handleSubmit = async () => {
     if (!hasChanged) { onClose(); return; }
 
+    const newErrors: { fullName?: string; email?: string; phone?: string } = {};
+
     if (!fullName.trim()) {
-      message.warning('Full name cannot be empty');
-      return;
+      newErrors.fullName = 'Full name is required';
     }
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      message.warning('Please enter a valid email address');
-      return;
+    if (!email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      newErrors.email = 'Enter a valid email address';
     }
+    if (!phone.trim()) {
+      newErrors.phone = 'Phone number is required';
+    } else if (!/^\+?[0-9\s\-().]{7,20}$/.test(phone.trim())) {
+      newErrors.phone = 'Enter a valid phone number (e.g. +91 98765 43210)';
+    }
+
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) return;
 
     setSubmitting(true);
     try {
@@ -85,7 +97,7 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
         phone_number: phone.trim(),
       };
 
-      await apiClient.put(API_ENDPOINTS.USER_MANAGEMENT.UPDATE(user.id), payload);
+      await apiClient.post(API_ENDPOINTS.USER_MANAGEMENT.UPDATE(user.id), payload);
       message.success(`${fullName.trim()} updated successfully`);
       onSuccess();
       onClose();
@@ -132,40 +144,46 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
             <div>
-              <Text style={labelStyle}>Full Name</Text>
+              <Text style={labelStyle}>Full Name <span style={{ color: '#ef4444' }}>*</span></Text>
               <Input
-                prefix={<UserOutlined style={{ color: '#9ca3af', fontSize: 13 }} />}
+                prefix={<UserOutlined style={{ color: errors.fullName ? '#ef4444' : '#9ca3af', fontSize: 13 }} />}
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => { setFullName(e.target.value); setErrors(p => ({ ...p, fullName: undefined })); }}
                 placeholder="Full name"
                 size="large"
+                status={errors.fullName ? 'error' : ''}
                 style={{ borderRadius: 8, fontSize: 13 }}
               />
+              {errors.fullName && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.fullName}</div>}
             </div>
 
             <div>
-              <Text style={labelStyle}>Email</Text>
+              <Text style={labelStyle}>Email <span style={{ color: '#ef4444' }}>*</span></Text>
               <Input
-                prefix={<MailOutlined style={{ color: '#9ca3af', fontSize: 13 }} />}
+                prefix={<MailOutlined style={{ color: errors.email ? '#ef4444' : '#9ca3af', fontSize: 13 }} />}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => { setEmail(e.target.value); setErrors(p => ({ ...p, email: undefined })); }}
                 placeholder="email@example.com"
                 type="email"
                 size="large"
+                status={errors.email ? 'error' : ''}
                 style={{ borderRadius: 8, fontSize: 13 }}
               />
+              {errors.email && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.email}</div>}
             </div>
 
             <div>
-              <Text style={labelStyle}>Phone Number</Text>
+              <Text style={labelStyle}>Phone Number <span style={{ color: '#ef4444' }}>*</span></Text>
               <Input
-                prefix={<PhoneOutlined style={{ color: '#9ca3af', fontSize: 13 }} />}
+                prefix={<PhoneOutlined style={{ color: errors.phone ? '#ef4444' : '#9ca3af', fontSize: 13 }} />}
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => { setPhone(e.target.value); setErrors(p => ({ ...p, phone: undefined })); }}
                 placeholder="+91 XXXXX XXXXX"
                 size="large"
+                status={errors.phone ? 'error' : ''}
                 style={{ borderRadius: 8, fontSize: 13 }}
               />
+              {errors.phone && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.phone}</div>}
             </div>
 
           </div>

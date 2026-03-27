@@ -56,6 +56,7 @@ export interface DisasterReport {
   disasterStatus: DisasterStatus; // raw status from API
   peopleAffected: number;
   reportCount: number;
+  deployedUnits: string[];  // from deployed_units
 }
 
 // Raw shape from GET /api/v1/disasters/all
@@ -71,6 +72,7 @@ export interface DisasterRaw {
   people_affected: number;
   units_assigned: number;
   report_count: number;
+  deployed_units: string[];
   created_at: string;
   time_ago: string;
 }

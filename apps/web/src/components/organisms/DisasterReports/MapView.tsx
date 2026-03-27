@@ -71,6 +71,9 @@ interface ReroutePlan {
   capacity_usage: Record<string, { vehicles_assigned: number; capacity: number }>;
   estimated_times: Record<string, number>;
   created_at: string;
+  impact_radius_km?: number;
+  disaster_lat?: number;
+  disaster_lng?: number;
 }
 
 interface EmergencyUnit {
@@ -89,7 +92,8 @@ interface MapViewProps {
   onEscalate:   (report: DisasterReport) => void;
   onResolve:    (report: DisasterReport) => void;
   onViewPhotos: (report: DisasterReport) => void;
-  onViewLogs:   (report: DisasterReport) => void;
+  onViewLogs:        (report: DisasterReport) => void;
+  onViewDeployedUnits: (report: DisasterReport) => void;
 }
 
 function createMarkerSvg(color: string, emoji: string, pulse: boolean): string {
@@ -149,13 +153,15 @@ function fmtDist(meters: number): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const MapView: React.FC<MapViewProps> = ({
-  reports, onDispatch, onEscalate, onResolve, onViewPhotos, onViewLogs,
+  reports, onDispatch, onEscalate, onResolve, onViewPhotos, onViewLogs, onViewDeployedUnits,
 }) => {
   const containerRef      = useRef<HTMLDivElement>(null);
   const mapRef            = useRef<mapboxgl.Map | null>(null);
   const markersRef        = useRef<mapboxgl.Marker[]>([]);
   const stationMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const rerouteMarkerRef  = useRef<mapboxgl.Marker | null>(null);
+  const vehicleMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const animFrameRef      = useRef<number[]>([]);
   const popupRef          = useRef<mapboxgl.Popup | null>(null);
   const boundsSetRef      = useRef(false);
   const styleMountedRef   = useRef(false);
@@ -260,7 +266,67 @@ const MapView: React.FC<MapViewProps> = ({
   };
 
   // Draw blocked roads (dashed red) + reroute lines
-  const drawRerouteOnMap = useCallback((plan: ReroutePlan) => {
+  const drawImpactCircle = useCallback((plan: ReroutePlan) => {
+    const m = mapRef.current;
+    if (!m || !plan.impact_radius_km || !plan.disaster_lat || !plan.disaster_lng) return;
+
+    const srcId  = `impact-circle-${plan.id}`;
+    const fillId = `impact-fill-${plan.id}`;
+    const lineId = `impact-line-${plan.id}`;
+    const labelId = `impact-label-${plan.id}`;
+
+    // Remove previous if any
+    [fillId, lineId, labelId].forEach(id => { try { if (m.getLayer(id)) m.removeLayer(id); } catch {} });
+    try { if (m.getSource(srcId)) m.removeSource(srcId); } catch {}
+    sourceIdsRef.current.push(srcId);
+    layerIdsRef.current.push(fillId, lineId, labelId);
+
+    // Generate circle polygon (GeoJSON) using Turf-style math
+    const R_EARTH = 6371;
+    const radiusKm = plan.impact_radius_km;
+    const centerLat = plan.disaster_lat;
+    const centerLng = plan.disaster_lng;
+    const points = 64;
+    const coords: [number, number][] = [];
+    for (let i = 0; i <= points; i++) {
+      const angle = (i / points) * 2 * Math.PI;
+      const dLat = (radiusKm / R_EARTH) * (180 / Math.PI) * Math.sin(angle);
+      const dLng = (radiusKm / R_EARTH) * (180 / Math.PI) * Math.cos(angle) / Math.cos(centerLat * Math.PI / 180);
+      coords.push([centerLng + dLng, centerLat + dLat]);
+    }
+
+    m.addSource(srcId, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [
+          { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] }, properties: {} },
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [centerLng, centerLat + (radiusKm / R_EARTH) * (180 / Math.PI)] }, properties: { label: `⚠️ ${radiusKm} km impact radius` } },
+        ],
+      },
+    });
+
+    // Fill — semi-transparent red/orange
+    m.addLayer({ id: fillId, type: 'fill', source: srcId, filter: ['==', '$type', 'Polygon'],
+      paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.08 } });
+
+    // Dashed border
+    m.addLayer({ id: lineId, type: 'line', source: srcId, filter: ['==', '$type', 'Polygon'],
+      paint: { 'line-color': '#ef4444', 'line-width': 2, 'line-opacity': 0.7, 'line-dasharray': [4, 3] } });
+
+    // Label at top of circle
+    m.addLayer({ id: labelId, type: 'symbol', source: srcId, filter: ['==', '$type', 'Point'],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 11,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -0.3],
+      },
+      paint: { 'text-color': '#fca5a5', 'text-halo-color': 'rgba(0,0,0,0.8)', 'text-halo-width': 1.5 },
+    });
+  }, []);
+
+    const drawRerouteOnMap = useCallback((plan: ReroutePlan) => {
     const m = mapRef.current;
     if (!m || !m.isStyleLoaded()) return;
 
@@ -296,9 +362,16 @@ const MapView: React.FC<MapViewProps> = ({
       coordinates.forEach(([lng, lat]) => extendBounds(lng, lat));
     });
 
-    // ── Draw blocked roads LAST (renders on top of routes) ──
+    // ── Draw blocked roads LAST — Google Maps style with red circle markers ──
+    const blockedMarkerSvg = `<svg width="11" height="11" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="14" cy="14" r="13" fill="#e8281a" stroke="white" stroke-width="2.5"/>
+      <rect x="6" y="12" width="16" height="4" rx="2" fill="white"/>
+    </svg>`;
+
     plan.blocked_roads.forEach((road, i) => {
-      const srcId = `blocked-${plan.id}-${i}`;
+      const srcId    = `blocked-${plan.id}-${i}`;
+      const casingId = `blocked-casing-${plan.id}-${i}`;
+      const lineId   = `blocked-line-${plan.id}-${i}`;
       const startLng = road.start_lng;
       const startLat = road.start_lat;
       const endLng   = road.end_lng;
@@ -311,9 +384,29 @@ const MapView: React.FC<MapViewProps> = ({
         coordinates = [[startLng, startLat], [endLng ?? startLng, endLat ?? startLat]];
       }
 
-      const geojson = { type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: {} };
-      addLineLayer(m, srcId, geojson, '#ef4444', 7, 1, true);
-      coordinates.forEach(([lng, lat]) => extendBounds(lng, lat));
+      const geojson: any = { type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: {} };
+      try { m.addSource(srcId, { type: 'geojson', data: geojson }); } catch {}
+      sourceIdsRef.current.push(srcId);
+
+      // Dark casing
+      try { m.addLayer({ id: casingId, type: 'line', source: srcId,
+        paint: { 'line-color': '#1a0000', 'line-width': 14, 'line-opacity': 0.85 } }); } catch {}
+      layerIdsRef.current.push(casingId);
+
+      // Bright red line
+      try { m.addLayer({ id: lineId, type: 'line', source: srcId,
+        paint: { 'line-color': '#e8281a', 'line-width': 8, 'line-opacity': 1 } }); } catch {}
+      layerIdsRef.current.push(lineId);
+
+      // Red circle markers at every coordinate point
+      coordinates.forEach(([lng, lat], ptIdx) => {
+        const el = document.createElement('div');
+        el.style.cssText = 'width:11px;height:11px;cursor:default;';
+        el.innerHTML = blockedMarkerSvg;
+        const mk = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(m);
+        markersRef.current.push(mk);
+        extendBounds(lng, lat);
+      });
     });
 
     // Fit map to show all routes + blocked roads, preserving current 3D pitch/bearing
@@ -444,6 +537,7 @@ const MapView: React.FC<MapViewProps> = ({
         drawRerouteOnMap(reroutePlan);
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [styleMode, mapReady]);
 
   // ── Clear layers when drawer closes ────────────────────────────────────────
@@ -496,17 +590,24 @@ const MapView: React.FC<MapViewProps> = ({
       rerouteMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([lon, lat]).addTo(m);
     }
 
-    // Draw routes (which also fits bounds)
+    // Draw routes, impact circle, then start vehicle animations
     if (m.isStyleLoaded()) {
       drawRerouteOnMap(reroutePlan);
+      drawImpactCircle(reroutePlan);
+      startVehicleAnimations(reroutePlan);
     } else {
-      m.once('style.load', () => drawRerouteOnMap(reroutePlan));
+      m.once('style.load', () => { drawRerouteOnMap(reroutePlan); drawImpactCircle(reroutePlan); startVehicleAnimations(reroutePlan); });
     }
 
     return () => {
       rerouteMarkerRef.current?.remove();
       rerouteMarkerRef.current = null;
+      animFrameRef.current.forEach(id => cancelAnimationFrame(id));
+      animFrameRef.current = [];
+      vehicleMarkersRef.current.forEach(mk => mk.remove());
+      vehicleMarkersRef.current = [];
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rerouteMode, rerouteDisaster, reroutePlan, mapReady, drawRerouteOnMap]);
 
   const exitRerouteMode = useCallback(() => {
@@ -514,12 +615,98 @@ const MapView: React.FC<MapViewProps> = ({
     clearRerouteLayers();
     rerouteMarkerRef.current?.remove();
     rerouteMarkerRef.current = null;
+    // Stop vehicle animations and remove markers
+    animFrameRef.current.forEach(id => cancelAnimationFrame(id));
+    animFrameRef.current = [];
+    vehicleMarkersRef.current.forEach(m => m.remove());
+    vehicleMarkersRef.current = [];
     markersRef.current.forEach(mk => mk.getElement().style.opacity = '1');
     stationMarkersRef.current.forEach(mk => mk.getElement().style.opacity = '1');
     setRerouteMode(false);
     setRerouteDisaster(null);
     setReroutePlan(null);
   }, [clearRerouteLayers]);
+
+  // ── Vehicle movement animation ─────────────────────────────────────────────
+  const startVehicleAnimations = useCallback((plan: ReroutePlan) => {
+    const m = mapRef.current;
+    if (!m) return;
+
+    // Clear any existing vehicle markers/animations
+    animFrameRef.current.forEach(id => cancelAnimationFrame(id));
+    animFrameRef.current = [];
+    vehicleMarkersRef.current.forEach(mk => mk.remove());
+    vehicleMarkersRef.current = [];
+
+    const assignedIds = new Set(Object.values(plan.route_assignments));
+
+    plan.chosen_routes.forEach((route, routeIdx) => {
+      if (!assignedIds.has(route.route_id)) return;
+
+      // Build [lon, lat] coordinate array
+      let coords: [number, number][];
+      if (route.points && route.points.length > 1) {
+        coords = route.points.map(([lat, lon]: number[]) => [lon, lat] as [number, number]);
+      } else if (route.geojson?.geometry?.coordinates?.length > 1) {
+        coords = route.geojson.geometry.coordinates as [number, number][];
+      } else return;
+
+      const vehicleCount = plan.capacity_usage[route.route_id]?.vehicles_assigned ?? 1;
+      const color = ROUTE_COLORS[routeIdx % ROUTE_COLORS.length];
+
+      for (let v = 0; v < vehicleCount; v++) {
+        // Stagger start position so vehicles don't overlap
+        const staggerOffset = v / vehicleCount; // fractional offset 0..1
+        const lapMs = route.travel_time_seconds > 0 ? route.travel_time_seconds * 1000 : 60000;
+
+        // Persistent progress: store lap start time in sessionStorage keyed by route+vehicle
+        const storageKey = `drs_vehicle_${plan.id}_${route.route_id}_${v}`;
+        let lapStartMs: number;
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          lapStartMs = parseInt(stored, 10);
+        } else {
+          // Offset start time by stagger so vehicles are spread across the route
+          lapStartMs = Date.now() - Math.floor(staggerOffset * lapMs);
+          localStorage.setItem(storageKey, String(lapStartMs));
+        }
+
+        // Create vehicle marker element
+        const el = document.createElement('div');
+        el.style.cssText = 'width:20px;height:20px;';
+        el.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="10" cy="10" r="8" fill="${color}" opacity="0.9" stroke="white" stroke-width="1.5"/>
+          <circle cx="10" cy="10" r="3" fill="white" opacity="0.8"/>
+        </svg>`;
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(coords[0])
+          .addTo(m);
+        vehicleMarkersRef.current.push(marker);
+
+        const animate = (_ts: number) => {
+          if (!rerouteModeRef.current) return;
+
+          // Derive progress from wall-clock time so it survives refresh
+          const elapsed = Date.now() - lapStartMs;
+          const progress = (elapsed % lapMs) / lapMs;
+
+          const idx = Math.floor(progress * (coords.length - 1));
+          const next = Math.min(idx + 1, coords.length - 1);
+          const frac = progress * (coords.length - 1) - idx;
+          const lng = coords[idx][0] + (coords[next][0] - coords[idx][0]) * frac;
+          const lat = coords[idx][1] + (coords[next][1] - coords[idx][1]) * frac;
+          marker.setLngLat([lng, lat]);
+
+          const frameId = requestAnimationFrame(animate);
+          animFrameRef.current.push(frameId);
+        };
+
+        const frameId = requestAnimationFrame(animate);
+        animFrameRef.current.push(frameId);
+      }
+    });
+  }, []);
 
   // ── Disaster markers ────────────────────────────────────────────────────────
   const renderMarkers = useCallback(() => {
@@ -538,6 +725,7 @@ const MapView: React.FC<MapViewProps> = ({
       if (action === 'resolve')   onResolve(report);
       if (action === 'photos')    onViewPhotos(report);
       if (action === 'logs')      onViewLogs(report);
+      if (action === 'units')     onViewDeployedUnits(report);
     };
 
     const bounds = new mapboxgl.LngLatBounds();
@@ -605,7 +793,7 @@ const MapView: React.FC<MapViewProps> = ({
       boundsSetRef.current = true;
       mapRef.current.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 1000 });
     }
-  }, [visibleReports, mapReady, reports, onDispatch, onEscalate, onResolve, onViewPhotos, onViewLogs]);
+  }, [visibleReports, mapReady, reports, onDispatch, onEscalate, onResolve, onViewPhotos, onViewLogs, onViewDeployedUnits]);
 
   const enterRerouteMode = useCallback(async (disaster: DisasterReport) => {
     // Set ref immediately so any renderMarkers calls during the async fetch bail out
@@ -743,14 +931,15 @@ const MapView: React.FC<MapViewProps> = ({
           /* Mobile: horizontal scrollable chip strip pinned to bottom */
           <div style={{ position:'absolute', bottom:0, left:0, right:0, zIndex:10, background:'rgba(8,12,24,0.93)', backdropFilter:'blur(12px)', borderTop:'1px solid rgba(34,211,238,0.15)', fontFamily:"'Courier New',monospace" }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 12px', overflowX:'auto', scrollbarWidth:'none' }}>
-              {reroutePlan.chosen_routes.filter(route => assignedIds.has(route.route_id)).map((route, i) => {
-                const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
+              {reroutePlan.chosen_routes.filter(route => assignedIds.has(route.route_id)).map((route) => {
+                const routeIdx = reroutePlan.chosen_routes.indexOf(route);
+                const color = ROUTE_COLORS[routeIdx % ROUTE_COLORS.length];
                 const vehicles = reroutePlan.capacity_usage[route.route_id]?.vehicles_assigned ?? 0;
                 return (
                   <div key={route.route_id} style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, background:`${color}18`, border:`1px solid ${color}60`, borderRadius:8, padding:'4px 8px' }}>
                     <div style={{ width:18, height:3, borderRadius:3, background:color, boxShadow:`0 0 4px ${color}` }} />
                     <span style={{ fontSize:9, fontWeight:700, color:'#f1f5f9', whiteSpace:'nowrap' }}>
-                      R{i+1} ★ · {fmtTime(route.travel_time_seconds)}{vehicles > 0 ? ` · ${vehicles}v` : ''}
+                      R{routeIdx+1} ★ · {fmtTime(route.travel_time_seconds)}{vehicles > 0 ? ` · ${vehicles}v` : ''}
                     </span>
                   </div>
                 );
@@ -765,15 +954,16 @@ const MapView: React.FC<MapViewProps> = ({
           /* Desktop: floating card bottom-left */
           <div style={{ position:'absolute', bottom:36, left:14, zIndex:10, background:'rgba(8,12,24,0.92)', backdropFilter:'blur(12px)', borderRadius:12, padding:'12px 14px', border:'1px solid rgba(34,211,238,0.2)', boxShadow:'0 4px 20px rgba(0,0,0,0.4)', minWidth:220, fontFamily:"'Courier New',monospace" }}>
             <div style={{ fontSize:9, fontWeight:700, color:'#22d3ee', textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:10 }}>◈ ROUTES</div>
-            {reroutePlan.chosen_routes.filter(route => assignedIds.has(route.route_id)).map((route, i) => {
-              const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
+            {reroutePlan.chosen_routes.filter(route => assignedIds.has(route.route_id)).map((route) => {
+              const routeIdx = reroutePlan.chosen_routes.indexOf(route);
+              const color = ROUTE_COLORS[routeIdx % ROUTE_COLORS.length];
               const vehicles = reroutePlan.capacity_usage[route.route_id]?.vehicles_assigned ?? 0;
               return (
                 <div key={route.route_id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:7 }}>
                   <div style={{ width:28, height:3, borderRadius:3, background:color, flexShrink:0, boxShadow:`0 0 6px ${color}` }} />
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:10, fontWeight:700, color:'#ffffff' }}>
-                      Route {i+1} · ACTIVE
+                      Route {routeIdx+1} · ACTIVE
                     </div>
                     <div style={{ fontSize:9, color:'#94a3b8' }}>{fmtTime(route.travel_time_seconds)} · {fmtDist(route.length_meters)} {vehicles > 0 ? `· ${vehicles} vehicle${vehicles>1?'s':''}` : ''}</div>
                   </div>
@@ -970,6 +1160,9 @@ const MapView: React.FC<MapViewProps> = ({
             <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
               <button onClick={() => act(() => onViewPhotos(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>🖼️ Photos</button>
               <button onClick={() => act(() => onViewLogs(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>📋 Logs</button>
+              {r.deployedUnits?.length > 0 && (
+                <button onClick={() => act(() => onViewDeployedUnits(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>🚨 Units</button>
+              )}
               <button disabled={isResolved} onClick={() => !isResolved && act(() => onDispatch(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(124,58,237,0.25)' : 'none', background: isResolved ? 'rgba(124,58,237,0.08)' : 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: isResolved ? 'rgba(167,139,250,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #7c3aed50' })}>🚨 Dispatch</button>
               <button disabled={isResolved} onClick={() => !isResolved && act(() => onEscalate(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(239,68,68,0.25)' : 'none', background: isResolved ? 'rgba(239,68,68,0.08)' : 'linear-gradient(135deg,#ef4444,#dc2626)', color: isResolved ? 'rgba(252,165,165,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #ef444450' })}>⚡ Escalate</button>
               <button disabled={isResolved} onClick={() => !isResolved && act(() => onResolve(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(34,197,94,0.25)' : '1px solid rgba(34,197,94,0.4)', background: isResolved ? 'rgba(34,197,94,0.06)' : 'rgba(22,101,52,0.3)', color: isResolved ? 'rgba(74,222,128,0.35)' : '#4ade80', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer' })}>✓ Resolve</button>

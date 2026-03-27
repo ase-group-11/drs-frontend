@@ -27,8 +27,6 @@ import {
   ClockCircleOutlined,
   TeamOutlined,
   MoreOutlined,
-  PictureOutlined,
-  FileTextOutlined,
   RocketOutlined,
   ExclamationCircleOutlined,
   CheckCircleOutlined,
@@ -44,11 +42,15 @@ import EscalateSeverityModal from './EscalateSeverityModal';
 import ResolveDisasterModal from './ResolveDisasterModal';
 import PhotoGallery from './PhotoGallery';
 import LogUpdates from './LogUpdates';
+import DeployedUnits from './DeployedUnits';
 import './DisasterReports.css';
 
 const { Search } = Input;
 
-type DisasterView = 'list' | 'photos' | 'logs';
+type DisasterView = 'list' | 'photos' | 'logs' | 'units';
+
+
+
 
 const DisasterReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -158,6 +160,12 @@ const DisasterReports: React.FC = () => {
     setCurrentView('photos');
   };
 
+  const openDeployedUnits = (report: DisasterReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedReport(report);
+    setCurrentView('units');
+  };
+
   const openLogUpdates = (report: DisasterReport, e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedReport(report);
@@ -244,6 +252,10 @@ const DisasterReports: React.FC = () => {
 
   if (currentView === 'logs' && selectedReport) {
     return <LogUpdates report={selectedReport} onBack={() => setCurrentView('list')} />;
+  }
+
+  if (currentView === 'units' && selectedReport) {
+    return <DeployedUnits report={selectedReport} onBack={() => setCurrentView('list')} />;
   }
 
   // ─── Main list view ──────────────────────────────────────────────────────────
@@ -457,19 +469,25 @@ const DisasterReports: React.FC = () => {
 
                           <div className="section-buttons">
                             <Button
-                              icon={<PictureOutlined />}
                               size="small"
                               onClick={(e) => openPhotoGallery(report, e)}
                             >
-                              View Photos
+                              🖼️ View Photos
                             </Button>
                             <Button
-                              icon={<FileTextOutlined />}
                               size="small"
                               onClick={(e) => openLogUpdates(report, e)}
                             >
-                              Disaster Logs
+                              📋 Disaster Logs
                             </Button>
+                            {report.deployedUnits?.length > 0 && (
+                              <Button
+                                size="small"
+                                onClick={(e) => openDeployedUnits(report, e)}
+                              >
+                                🚨 Deployed Units
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </Col>
@@ -581,6 +599,7 @@ const DisasterReports: React.FC = () => {
           onResolve={(report)  => { setActiveModalReport(report); setResolveModalOpen(true); }}
           onViewPhotos={(report) => { setSelectedReport(report); setCurrentView('photos'); }}
           onViewLogs={(report)   => { setSelectedReport(report); setCurrentView('logs'); }}
+          onViewDeployedUnits={(report) => { setSelectedReport(report); setCurrentView('units'); }}
         />
       )}
 

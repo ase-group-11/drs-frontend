@@ -84,6 +84,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logoutService();
     setUser(null);
     setToken(null);
+    // Clear persisted vehicle animation positions for all disaster plans
+    Object.keys(localStorage).filter(k => k.startsWith('drs_vehicle_')).forEach(k => localStorage.removeItem(k));
     navigate('/login');
   };
 

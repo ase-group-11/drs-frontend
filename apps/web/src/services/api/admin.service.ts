@@ -222,6 +222,7 @@ const mapDisaster = (raw: DisasterRaw): DisasterReport => ({
   disasterStatus:  raw.disaster_status,
   peopleAffected:  raw.people_affected,
   reportCount:     raw.report_count,
+  deployedUnits:   raw.deployed_units ?? [],
 });
 
 export const getDisasterReports = async (): Promise<AdminApiResponse<DisasterReport[]> & { summary?: DisastersApiResponse['summary'] }> => {
@@ -239,6 +240,15 @@ export const getDisasterReports = async (): Promise<AdminApiResponse<DisasterRep
       success: false,
       message: error.response?.data?.detail || 'Failed to fetch disaster reports.',
     };
+  }
+};
+
+export const getEmergencyUnitById = async (id: string): Promise<import('../../types').EmergencyUnitDetail | null> => {
+  try {
+    const response = await apiClient.get(API_ENDPOINTS.TEAMS.UNIT_BY_ID(id));
+    return response.data;
+  } catch {
+    return null;
   }
 };
 
