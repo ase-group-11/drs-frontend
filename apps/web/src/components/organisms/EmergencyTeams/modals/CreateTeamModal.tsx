@@ -30,8 +30,14 @@ interface TeamMember {
   role: string;
   status: string;
   is_assigned: boolean;
-  commanding_units_count: number;
-  assigned_units_count: number;
+  stats?: {
+    commanding_units_count: number;
+    assigned_units_count: number;
+    reviews_count?: number;
+  };
+  // top-level aliases (some API versions return these flat)
+  commanding_units_count?: number;
+  assigned_units_count?: number;
 }
 
 interface CreateTeamModalProps {
@@ -57,6 +63,12 @@ const EMPTY_FORM = {
   crewIds: [] as string[],
 };
 
+// Safely read counts from either nested stats or top-level (API returns nested)
+const getCommandingCount = (m: TeamMember) =>
+  m.stats?.commanding_units_count ?? m.commanding_units_count ?? 0;
+const getAssignedCount = (m: TeamMember) =>
+  m.stats?.assigned_units_count ?? m.assigned_units_count ?? 0;
+
 const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSuccess }) => {
   const [form, setForm]         = useState({ ...EMPTY_FORM });
   const [errors, setErrors]     = useState<Record<string, string>>({});
@@ -75,14 +87,14 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
     return true;
   });
 
-  // Commander: must be ACTIVE and not belong to any unit at all
+  // Commander: must be ACTIVE and not commanding or assigned to any unit
   const commanderOptions = eligibleMembers.filter((m) =>
-    (m.status === 'ACTIVE' && m.commanding_units_count === 0 && m.assigned_units_count === 0) || m.id === form.commanderId
+    (m.status === 'ACTIVE' && getCommandingCount(m) === 0 && getAssignedCount(m) === 0) || m.id === form.commanderId
   );
 
-  // Crew: must be ACTIVE and not belong to any unit at all, OR is the selected commander
+  // Crew: must be ACTIVE and not assigned to any unit, OR is the selected commander
   const crewOptions = eligibleMembers.filter((m) =>
-    (m.status === 'ACTIVE' && m.commanding_units_count === 0 && m.assigned_units_count === 0) || m.id === form.commanderId
+    (m.status === 'ACTIVE' && getCommandingCount(m) === 0 && getAssignedCount(m) === 0) || m.id === form.commanderId
   );
 
   const set = (field: string, value: any) => {

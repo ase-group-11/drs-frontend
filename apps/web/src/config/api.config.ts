@@ -12,6 +12,7 @@ export const API_ENDPOINTS = {
     REGISTER:          '/emergency-team/register',
     REGISTER_VERIFY:   '/emergency-team/register/verify',
     LOGIN:             '/emergency-team/login',
+    LOGIN_VERIFY:      '/emergency-team/login/verify',
     CHANGE_PASSWORD:   '/emergency-team/change-password',
     DEACTIVATE:        (id: string) => `/emergency-team/deactivate/${id}`,
     HEALTH:            '/emergency-team/health',

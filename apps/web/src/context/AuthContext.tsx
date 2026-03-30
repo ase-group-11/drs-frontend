@@ -55,6 +55,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const result = await loginService(email, password);
 
       if (result.success && result.data) {
+        // New OTP flow — redirect to OTP page with email
+        if (result.data.otpPending) {
+          navigate('/otp', { state: { mode: 'login', loginToken: result.data.loginToken, mobileNumber: '' } });
+          return;
+        }
+
         const userRole = result.data.user.role?.toLowerCase();
 
         // This panel is admin-only — reject all other roles immediately

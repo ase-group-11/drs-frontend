@@ -12,6 +12,8 @@ import type {
 import type { AdminApiResponse } from '../../types';
 
 // Map API user → internal AdminUser shape
+// API returns commanding_units_count / assigned_units_count / reviews_count
+// nested under `stats`. Read nested first, fall back to flat top-level, then 0.
 const mapUser = (u: ApiUser): AdminUser => ({
   id: u.id,
   fullName: u.full_name,
@@ -23,10 +25,10 @@ const mapUser = (u: ApiUser): AdminUser => ({
   department: u.department,
   employeeId: u.employee_id,
   reportsCount: u.reports_count ?? 0,
-  reviewsCount: u.reviews_count ?? 0,
+  reviewsCount: u.stats?.reviews_count ?? u.reviews_count ?? 0,
   isAssigned: u.is_assigned ?? false,
-  assignedUnitsCount: u.assigned_units_count ?? 0,
-  commandingUnitsCount: u.commanding_units_count ?? 0,
+  assignedUnitsCount: u.stats?.assigned_units_count ?? u.assigned_units_count ?? 0,
+  commandingUnitsCount: u.stats?.commanding_units_count ?? u.commanding_units_count ?? 0,
   currentUnitCodes: u.current_unit_codes ?? [],
   createdAt: u.created_at,
 });

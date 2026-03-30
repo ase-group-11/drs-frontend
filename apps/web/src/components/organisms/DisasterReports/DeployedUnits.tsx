@@ -97,7 +97,7 @@ const UnitCard: React.FC<{ unit: EmergencyUnitDetail }> = ({ unit }) => {
         </div>
 
         {/* ── Commander ── */}
-        {unit.commander && (
+        {unit.commander?.id && unit.commander?.name && (
           <>
             <SectionHeader icon={<UserOutlined />} title="Commander" />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f9fafb', borderRadius: 10, padding: '10px 12px' }}>

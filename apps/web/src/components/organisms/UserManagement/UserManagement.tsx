@@ -95,7 +95,7 @@ const UserManagement: React.FC = () => {
   const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
   const [bulkDeleteUsers, setBulkDeleteUsers] = useState<AdminUser[]>([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [summary, setSummary] = useState<{ citizens: number; team_members: number; active: number; inactive: number } | null>(null);
+  const [summary, setSummary] = useState<{ citizens: number; team?: number; team_members?: number; active: number; inactive: number } | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize]       = useState(10);
@@ -388,7 +388,7 @@ const UserManagement: React.FC = () => {
           {[
             { label: 'Total Users',  value: totalCount,           color: '#7c3aed' },
             { label: 'Citizens',     value: summary.citizens,     color: '#2563eb' },
-            { label: 'Team Members', value: summary.team_members, color: '#0891b2' },
+            { label: 'Team Members', value: summary.team ?? summary.team_members ?? 0, color: '#0891b2' },
             { label: 'Active',       value: summary.active,       color: '#059669' },
           ].map((c) => (
             <div key={c.label} style={{ flex: '1 1 160px', minWidth: 0 }}>

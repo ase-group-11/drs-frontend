@@ -1,7 +1,7 @@
 import { API_ENDPOINTS } from '../../../../config';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Modal, Tabs, Input, Button, Typography, message, Select, Spin,
+  Modal, Tabs, Input, Button, Typography, App, Select, Spin,
 } from 'antd';
 import {
   SettingOutlined, TeamOutlined, CrownOutlined,
@@ -42,9 +42,20 @@ interface TeamMember {
   employee_id: string | null;
   role: string;
   status: string;
-  commanding_units_count: number;
-  assigned_units_count: number;
+  stats?: {
+    commanding_units_count: number;
+    assigned_units_count: number;
+  };
+  // top-level aliases (some API versions return these flat)
+  commanding_units_count?: number;
+  assigned_units_count?: number;
 }
+
+// Safely read counts from either nested stats or top-level
+const getCommandingCount = (m: TeamMember) =>
+  m.stats?.commanding_units_count ?? m.commanding_units_count ?? 0;
+const getAssignedCount = (m: TeamMember) =>
+  m.stats?.assigned_units_count ?? m.assigned_units_count ?? 0;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -82,8 +93,10 @@ const sectionLabelStyle: React.CSSProperties = {
 const EditConfigModal: React.FC<EditConfigModalProps> = ({
   open, unitId, unitUuid, unitType, detail, onClose, onSuccess,
 }) => {
+  const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState('unit');
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof UnitFormState, string>>>({});
 
   // ── Unit tab state ──
   const [unitForm, setUnitForm] = useState<UnitFormState>(buildInitialUnit(detail));
@@ -107,6 +120,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
     setUnitForm(initial);
     setOriginalUnit(initial);
     setActiveTab('unit');
+    setFieldErrors({});
 
     // Crew tab
     const cap = detail?.stats?.capacity ?? 4;
@@ -169,7 +183,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
   const crewAddOptions = eligibleMembers.filter(
     (m) =>
       m.status === 'ACTIVE' &&
-      (m.assigned_units_count === 0 || existingCrewSet.has(m.id)) &&
+      (getAssignedCount(m) === 0 || existingCrewSet.has(m.id)) &&
       !crewIds.includes(m.id)
   );
 
@@ -178,13 +192,10 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
     (m) =>
       m.status === 'ACTIVE' &&
       m.id !== commanderId &&
-      (crewIds.includes(m.id) || m.assigned_units_count === 0 || existingCrewSet.has(m.id))
+      (crewIds.includes(m.id) || getAssignedCount(m) === 0 || existingCrewSet.has(m.id))
   );
 
   // ── Handlers ──
-  const setField = (field: keyof UnitFormState, value: string) =>
-    setUnitForm((prev) => ({ ...prev, [field]: value }));
-
   const handleAddCrewMember = (memberId: string) => {
     if (!crewIds.includes(memberId)) {
       setCrewIds((prev) => [...prev, memberId]);
@@ -210,11 +221,43 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
     setCommanderId(origCommanderId);
     setCrewIds(origCrewIds);
     setCapacity(detail?.stats?.capacity ?? 4);
+    setFieldErrors({});
     onClose();
   };
 
-  // ── Save Unit ──
+  // ── Validation ──
+  const validateUnit = (): boolean => {
+    const errors: Partial<Record<keyof UnitFormState, string>> = {};
+    if (!unitForm.unit_name.trim())           errors.unit_name            = 'Unit name is required';
+    if (!unitForm.station_name.trim())        errors.station_name         = 'Station name is required';
+    if (!unitForm.station_address.trim())     errors.station_address      = 'Station address is required';
+    if (!unitForm.station_latitude.trim())    errors.station_latitude     = 'Latitude is required';
+    else if (isNaN(parseFloat(unitForm.station_latitude)))
+                                              errors.station_latitude     = 'Must be a valid number';
+    if (!unitForm.station_longitude.trim())   errors.station_longitude    = 'Longitude is required';
+    else if (isNaN(parseFloat(unitForm.station_longitude)))
+                                              errors.station_longitude    = 'Must be a valid number';
+    if (!unitForm.vehicle_model.trim())       errors.vehicle_model        = 'Vehicle model is required';
+    if (!unitForm.vehicle_license_plate.trim()) errors.vehicle_license_plate = 'License plate is required';
+    if (!unitForm.vehicle_year.trim())        errors.vehicle_year         = 'Year is required';
+    else if (isNaN(parseInt(unitForm.vehicle_year, 10)))
+                                              errors.vehicle_year         = 'Must be a valid year';
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const setField = (field: keyof UnitFormState, value: string) => {
+    setUnitForm((prev) => ({ ...prev, [field]: value }));
+    // Clear error for this field as user types
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => { const next = { ...prev }; delete next[field]; return next; });
+    }
+  };
   const handleSaveUnit = async () => {
+    if (!validateUnit()) {
+      message.warning('Please fill in all required fields.');
+      return;
+    }
     setSaving(true);
     try {
       const payload: Record<string, any> = {};
@@ -272,41 +315,120 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
       children: (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', maxHeight: '52vh', paddingRight: 4 }}>
           <div>
-            <Text style={labelStyle}>Unit Name</Text>
-            <Input value={unitForm.unit_name} onChange={(e) => setField('unit_name', e.target.value)} style={inputStyle} placeholder="e.g. Fire Unit Alpha 1" />
+            <Text style={labelStyle}>
+              Unit Name <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <Input
+              value={unitForm.unit_name}
+              onChange={(e) => setField('unit_name', e.target.value)}
+              status={fieldErrors.unit_name ? 'error' : undefined}
+              style={inputStyle}
+              placeholder="e.g. Fire Unit Alpha 1"
+            />
+            {fieldErrors.unit_name && (
+              <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.unit_name}</Text>
+            )}
           </div>
           <Text style={sectionLabelStyle}>Station</Text>
           <div>
-            <Text style={labelStyle}>Station Name</Text>
-            <Input value={unitForm.station_name} onChange={(e) => setField('station_name', e.target.value)} style={inputStyle} placeholder="e.g. Tara Street Fire Station" />
+            <Text style={labelStyle}>
+              Station Name <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <Input
+              value={unitForm.station_name}
+              onChange={(e) => setField('station_name', e.target.value)}
+              status={fieldErrors.station_name ? 'error' : undefined}
+              style={inputStyle}
+              placeholder="e.g. Tara Street Fire Station"
+            />
+            {fieldErrors.station_name && (
+              <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.station_name}</Text>
+            )}
           </div>
           <div>
-            <Text style={labelStyle}>Station Address</Text>
-            <Input value={unitForm.station_address} onChange={(e) => setField('station_address', e.target.value)} style={inputStyle} placeholder="e.g. Tara St, Dublin 1" />
+            <Text style={labelStyle}>
+              Station Address <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <Input
+              value={unitForm.station_address}
+              onChange={(e) => setField('station_address', e.target.value)}
+              status={fieldErrors.station_address ? 'error' : undefined}
+              style={inputStyle}
+              placeholder="e.g. Tara St, Dublin 1"
+            />
+            {fieldErrors.station_address && (
+              <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.station_address}</Text>
+            )}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <Text style={labelStyle}>Latitude</Text>
-              <Input value={unitForm.station_latitude} onChange={(e) => setField('station_latitude', e.target.value)} style={inputStyle} placeholder="53.3457" />
+              <Text style={labelStyle}>Latitude <span style={{ color: '#ef4444' }}>*</span></Text>
+              <Input
+                value={unitForm.station_latitude}
+                onChange={(e) => setField('station_latitude', e.target.value)}
+                status={fieldErrors.station_latitude ? 'error' : undefined}
+                style={inputStyle}
+                placeholder="53.3457"
+              />
+              {fieldErrors.station_latitude && (
+                <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.station_latitude}</Text>
+              )}
             </div>
             <div>
-              <Text style={labelStyle}>Longitude</Text>
-              <Input value={unitForm.station_longitude} onChange={(e) => setField('station_longitude', e.target.value)} style={inputStyle} placeholder="-6.2565" />
+              <Text style={labelStyle}>Longitude <span style={{ color: '#ef4444' }}>*</span></Text>
+              <Input
+                value={unitForm.station_longitude}
+                onChange={(e) => setField('station_longitude', e.target.value)}
+                status={fieldErrors.station_longitude ? 'error' : undefined}
+                style={inputStyle}
+                placeholder="-6.2565"
+              />
+              {fieldErrors.station_longitude && (
+                <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.station_longitude}</Text>
+              )}
             </div>
           </div>
           <Text style={sectionLabelStyle}>Vehicle</Text>
           <div>
-            <Text style={labelStyle}>Vehicle Model</Text>
-            <Input value={unitForm.vehicle_model} onChange={(e) => setField('vehicle_model', e.target.value)} style={inputStyle} placeholder="e.g. Scania P-Series" />
+            <Text style={labelStyle}>Vehicle Model <span style={{ color: '#ef4444' }}>*</span></Text>
+            <Input
+              value={unitForm.vehicle_model}
+              onChange={(e) => setField('vehicle_model', e.target.value)}
+              status={fieldErrors.vehicle_model ? 'error' : undefined}
+              style={inputStyle}
+              placeholder="e.g. Scania P-Series"
+            />
+            {fieldErrors.vehicle_model && (
+              <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.vehicle_model}</Text>
+            )}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <Text style={labelStyle}>License Plate</Text>
-              <Input value={unitForm.vehicle_license_plate} onChange={(e) => setField('vehicle_license_plate', e.target.value)} style={inputStyle} placeholder="e.g. 211-D-12345" />
+              <Text style={labelStyle}>License Plate <span style={{ color: '#ef4444' }}>*</span></Text>
+              <Input
+                value={unitForm.vehicle_license_plate}
+                onChange={(e) => setField('vehicle_license_plate', e.target.value)}
+                status={fieldErrors.vehicle_license_plate ? 'error' : undefined}
+                style={inputStyle}
+                placeholder="e.g. 211-D-12345"
+              />
+              {fieldErrors.vehicle_license_plate && (
+                <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.vehicle_license_plate}</Text>
+              )}
             </div>
             <div>
-              <Text style={labelStyle}>Year</Text>
-              <Input type="number" value={unitForm.vehicle_year} onChange={(e) => setField('vehicle_year', e.target.value)} style={inputStyle} placeholder="e.g. 2021" />
+              <Text style={labelStyle}>Year <span style={{ color: '#ef4444' }}>*</span></Text>
+              <Input
+                type="number"
+                value={unitForm.vehicle_year}
+                onChange={(e) => setField('vehicle_year', e.target.value)}
+                status={fieldErrors.vehicle_year ? 'error' : undefined}
+                style={inputStyle}
+                placeholder="e.g. 2021"
+              />
+              {fieldErrors.vehicle_year && (
+                <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>{fieldErrors.vehicle_year}</Text>
+              )}
             </div>
           </div>
         </div>
@@ -431,7 +553,8 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
     },
   ];
 
-  const saveDisabled = activeTab === 'unit' ? !unitDirty : !crewDirty;
+  const hasFieldErrors = Object.keys(fieldErrors).length > 0;
+  const saveDisabled = activeTab === 'unit' ? (!unitDirty || hasFieldErrors) : !crewDirty;
 
   return (
     <Modal

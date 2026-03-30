@@ -2,13 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button, message } from 'antd';
 import { PhoneOutlined, CloseOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { verifySignupOTP, requestSignupOTP } from '../../../services';
+import { verifySignupOTP, requestSignupOTP, verifyLoginOTP } from '../../../services';
 import { useAuth } from '../../../hooks';
 import './OtpVerificationForm.css';
 
 interface LocationState {
   mobileNumber: string;
   signupData?: any;
+  // Login OTP mode
+  mode?: 'login' | 'signup';
+  email?: string;
+  phoneNumber?: string;
+  loginToken?: string;
 }
 
 const OtpVerificationForm: React.FC = () => {
@@ -21,16 +26,23 @@ const OtpVerificationForm: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { loginWithToken } = useAuth();
-  
+
   const state = location.state as LocationState;
+  const mode = state?.mode ?? 'signup';
   const mobileNumber = state?.mobileNumber;
+  const email = state?.email;
+  const loginToken = state?.loginToken;
 
   useEffect(() => {
-    if (!mobileNumber) {
+    if (mode === 'signup' && !mobileNumber) {
       message.error('Invalid access. Please start from signup page.');
       navigate('/signup');
     }
-  }, [mobileNumber, navigate]);
+    if (mode === 'login' && !loginToken) {
+      message.error('Invalid access. Please start from login page.');
+      navigate('/login');
+    }
+  }, [mobileNumber, email, mode, navigate, loginToken]);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -43,11 +55,9 @@ const OtpVerificationForm: React.FC = () => {
 
   const handleChange = (index: number, value: string) => {
     if (value && !/^\d$/.test(value)) return;
-
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
-
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -68,7 +78,6 @@ const OtpVerificationForm: React.FC = () => {
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').trim();
-    
     if (/^\d{6}$/.test(pastedData)) {
       const newOtp = pastedData.split('');
       setOtp(newOtp);
@@ -76,9 +85,13 @@ const OtpVerificationForm: React.FC = () => {
     }
   };
 
+  const resetOtp = () => {
+    setOtp(['', '', '', '', '', '']);
+    inputRefs.current[0]?.focus();
+  };
+
   const handleVerify = async () => {
     const otpCode = otp.join('');
-    
     if (otpCode.length !== 6) {
       message.error('Please enter all 6 digits');
       return;
@@ -86,23 +99,44 @@ const OtpVerificationForm: React.FC = () => {
 
     setLoading(true);
     try {
-      const result = await verifySignupOTP({
-        mobileNumber: mobileNumber!,
-        otpCode: otpCode,
-      });
-
-      if (result.success && result.data) {
-        message.success('Account verified successfully!');
-        loginWithToken(result.data.token, result.data.user);
+      if (mode === 'login') {
+        // ── Login OTP verification ──
+        const result = await verifyLoginOTP({ loginToken: loginToken!, otpCode });
+        if (result.success && result.data) {
+          // Role check — admin panel only
+          if (result.data.user?.role?.toLowerCase() !== 'admin') {
+            message.error('Access denied. Admin accounts only.');
+            resetOtp();
+            return;
+          }
+          // Save everything to localStorage exactly like direct login
+          localStorage.setItem('token', result.data.token);
+          localStorage.setItem('user', JSON.stringify(result.data.user));
+          if (result.data.refreshToken) {
+            localStorage.setItem('refreshToken', result.data.refreshToken);
+          }
+          message.success('Login successful!');
+          loginWithToken(result.data.token, result.data.user);
+        } else {
+          const errMsg = typeof result.message === 'string' ? result.message : 'Invalid OTP';
+          message.error(errMsg);
+          resetOtp();
+        }
       } else {
-        message.error(result.message || 'Invalid OTP');
-        setOtp(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
+        // ── Signup OTP verification ──
+        const result = await verifySignupOTP({ mobileNumber: mobileNumber!, otpCode });
+        if (result.success && result.data) {
+          message.success('Account verified successfully!');
+          loginWithToken(result.data.token, result.data.user);
+        } else {
+          const errMsg = typeof result.message === 'string' ? result.message : 'Invalid OTP';
+          message.error(errMsg);
+          resetOtp();
+        }
       }
-    } catch (error) {
+    } catch {
       message.error('Verification failed. Please try again.');
-      setOtp(['', '', '', '', '', '']);
-      inputRefs.current[0]?.focus();
+      resetOtp();
     } finally {
       setLoading(false);
     }
@@ -110,35 +144,47 @@ const OtpVerificationForm: React.FC = () => {
 
   const handleResendOTP = async () => {
     if (!canResend) return;
-
     setResendLoading(true);
     try {
-
-      const result = await requestSignupOTP({
-        ...state?.signupData,
-        phoneNumber: mobileNumber!,
-      });
-
-      if (result.success) {
-        message.success('OTP resent successfully!');
-        setCountdown(60);
-        setCanResend(false);
-        setOtp(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
+      if (mode === 'login') {
+        // Re-trigger login to resend OTP
+        const { login: loginService } = await import('../../../services/api/auth.service');
+        const result = await loginService(email!, '');
+        if (result.success) {
+          message.success('OTP resent successfully!');
+          setCountdown(60);
+          setCanResend(false);
+          resetOtp();
+        } else {
+          message.error(result.message || 'Failed to resend OTP');
+        }
       } else {
-        message.error(result.message);
+        const result = await requestSignupOTP({ ...state?.signupData, phoneNumber: mobileNumber! });
+        if (result.success) {
+          message.success('OTP resent successfully!');
+          setCountdown(60);
+          setCanResend(false);
+          resetOtp();
+        } else {
+          message.error(result.message);
+        }
       }
-    } catch (error) {
+    } catch {
       message.error('Failed to resend OTP. Please try again.');
     } finally {
       setResendLoading(false);
     }
   };
 
-  const maskMobileNumber = (number: string) => {
-    if (!number) return '';
-    const last4 = number.slice(-4);
-    return `${number.slice(0, 4)} ** *** ${last4}`;
+  const maskContact = () => {
+    if (mode === 'login' && mobileNumber) {
+      return `number ending in ${mobileNumber.slice(-4)}`;
+    }
+    if (mobileNumber) {
+      const last4 = mobileNumber.slice(-4);
+      return `${mobileNumber.slice(0, 4)} ** *** ${last4}`;
+    }
+    return email ?? '';
   };
 
   const isOtpComplete = otp.every(digit => digit !== '');
@@ -146,9 +192,9 @@ const OtpVerificationForm: React.FC = () => {
   return (
     <div className="otp-modal-overlay">
       <div className="otp-modal-container">
-        <button 
+        <button
           className="otp-modal-close"
-          onClick={() => navigate('/signup')}
+          onClick={() => navigate(mode === 'login' ? '/login' : '/signup')}
         >
           <CloseOutlined />
         </button>
@@ -160,7 +206,7 @@ const OtpVerificationForm: React.FC = () => {
         <h2 className="otp-modal-title">Verify Your Phone Number</h2>
 
         <p className="otp-modal-description">
-          We've sent a 6-digit code to {maskMobileNumber(mobileNumber || '')}
+          We've sent a 6-digit code to your registered {maskContact()}
         </p>
 
         <div className="otp-input-container" onPaste={handlePaste}>

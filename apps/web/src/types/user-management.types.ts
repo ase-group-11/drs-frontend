@@ -6,6 +6,8 @@ export type ApiUserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING' | 'D
 export type ApiDepartment = 'FIRE' | 'MEDICAL' | 'POLICE' | 'IT' | null;
 
 // Raw shape from GET /api/v1/users/
+// NOTE: reviews_count, assigned_units_count, commanding_units_count are nested
+// under `stats` in the actual API response. Flat top-level aliases kept for safety.
 export interface ApiUser {
   id: string;
   full_name: string;
@@ -16,6 +18,13 @@ export interface ApiUser {
   user_type: ApiUserType;
   department: ApiDepartment;
   employee_id: string | null;
+  // Nested stats (actual API shape)
+  stats?: {
+    reviews_count?: number;
+    assigned_units_count?: number;
+    commanding_units_count?: number;
+  };
+  // Top-level aliases (flat fallback — some API versions return these flat)
   reports_count?: number;
   reviews_count?: number;
   is_assigned?: boolean;

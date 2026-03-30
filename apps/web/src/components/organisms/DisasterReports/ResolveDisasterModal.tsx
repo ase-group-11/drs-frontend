@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, Input, Typography, message } from 'antd';
+import { Modal, Button, Input, Typography, App } from 'antd';
 import { CheckCircleOutlined } from '@ant-design/icons';
 import { updateDisasterReportStatus } from '../../../services';
 import type { DisasterReport } from '../../../types';
 
 const { Text } = Typography;
+
+const MIN_NOTES_LENGTH = 5;
 
 interface ResolveDisasterModalProps {
   open: boolean;
@@ -14,6 +16,7 @@ interface ResolveDisasterModalProps {
 }
 
 const ResolveDisasterModal: React.FC<ResolveDisasterModalProps> = ({ open, report, onClose, onSuccess }) => {
+  const { message } = App.useApp();
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,16 +26,24 @@ const ResolveDisasterModal: React.FC<ResolveDisasterModalProps> = ({ open, repor
 
   if (!report) return null;
 
+  const trimmedNotes = notes.trim();
+  const isTooShort = trimmedNotes.length > 0 && trimmedNotes.length < MIN_NOTES_LENGTH;
+  const isValid = trimmedNotes.length >= MIN_NOTES_LENGTH;
+
   const handleResolve = async () => {
-    if (!notes.trim()) {
+    if (!trimmedNotes) {
       message.warning('Please enter resolution notes before resolving.');
+      return;
+    }
+    if (!isValid) {
+      message.warning(`Resolution notes must be at least ${MIN_NOTES_LENGTH} characters.`);
       return;
     }
     setSubmitting(true);
     try {
-      const response = await updateDisasterReportStatus(report.id, notes.trim());
+      const response = await updateDisasterReportStatus(report.id, trimmedNotes);
       if (response.success) {
-        message.success(`${report.reportId} marked as resolved`);
+        message.success(`${report.reportId} has been marked as resolved.`);
         onSuccess();
         onClose();
       } else {
@@ -110,8 +121,14 @@ const ResolveDisasterModal: React.FC<ResolveDisasterModalProps> = ({ open, repor
             rows={3}
             maxLength={300}
             showCount
+            status={isTooShort ? 'error' : undefined}
             style={{ borderRadius: 8, fontSize: 13 }}
           />
+          {isTooShort && (
+            <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 4, display: 'block' }}>
+              Minimum {MIN_NOTES_LENGTH} characters required ({MIN_NOTES_LENGTH - trimmedNotes.length} more needed)
+            </Text>
+          )}
         </div>
 
       </div>
@@ -128,9 +145,10 @@ const ResolveDisasterModal: React.FC<ResolveDisasterModalProps> = ({ open, repor
         <Button
           loading={submitting}
           onClick={handleResolve}
+          disabled={!isValid || submitting}
           style={{
             height: 36, paddingInline: 16, borderRadius: 6, fontWeight: 600, fontSize: 12, flex: 1,
-            background: '#059669', borderColor: '#059669', color: '#fff',
+            background: isValid ? '#059669' : '#d1fae5', borderColor: isValid ? '#059669' : '#d1fae5', color: '#fff',
           }}
         >
           Resolve Disaster

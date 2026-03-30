@@ -15,7 +15,6 @@ const USER_TYPE_OPTIONS = [
 ];
 
 const ROLE_OPTIONS   = ['ADMIN', 'STAFF'];
-const DEPT_OPTIONS   = ['FIRE', 'MEDICAL', 'POLICE', 'IT'];
 
 interface AddUserModalProps {
   open: boolean;
