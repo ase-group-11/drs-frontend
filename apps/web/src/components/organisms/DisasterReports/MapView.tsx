@@ -95,6 +95,8 @@ interface MapViewProps {
   onViewPhotos: (report: DisasterReport) => void;
   onViewLogs:        (report: DisasterReport) => void;
   onViewDeployedUnits: (report: DisasterReport) => void;
+  evacuationPlanMap?: Record<string, string>;
+  onViewEvacuationPlan?: (report: DisasterReport, planId: string) => void;
 }
 
 function createMarkerSvg(color: string, emoji: string, pulse: boolean): string {
@@ -155,6 +157,7 @@ function fmtDist(meters: number): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 const MapView: React.FC<MapViewProps> = ({
   reports, onDispatch, onEscalate, onResolve, onViewPhotos, onViewLogs, onViewDeployedUnits,
+  evacuationPlanMap = {}, onViewEvacuationPlan,
 }) => {
   const containerRef      = useRef<HTMLDivElement>(null);
   const mapRef            = useRef<mapboxgl.Map | null>(null);
@@ -1158,6 +1161,9 @@ const MapView: React.FC<MapViewProps> = ({
               <button onClick={() => act(() => onViewLogs(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>📋 Logs</button>
               {r.deployedUnits?.length > 0 && (
                 <button onClick={() => act(() => onViewDeployedUnits(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>🚨 Units</button>
+              )}
+              {evacuationPlanMap[r.id] && onViewEvacuationPlan && (
+                <button onClick={() => act(() => onViewEvacuationPlan(r, evacuationPlanMap[r.id]))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border:'1px solid rgba(34,211,238,0.15)', background:'rgba(255,255,255,0.06)', color:'#cbd5e1', fontSize:11, fontWeight:600, cursor:'pointer' })}>🚶 Evacuation</button>
               )}
               <button disabled={isResolved} onClick={() => !isResolved && act(() => onDispatch(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(124,58,237,0.25)' : 'none', background: isResolved ? 'rgba(124,58,237,0.08)' : 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: isResolved ? 'rgba(167,139,250,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #7c3aed50' })}>🚨 Dispatch</button>
               <button disabled={isResolved} onClick={() => !isResolved && act(() => onEscalate(r))} style={btnStyle({ flex:'1 1 70px', minWidth:60, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px 6px', borderRadius:8, border: isResolved ? '1px solid rgba(239,68,68,0.25)' : 'none', background: isResolved ? 'rgba(239,68,68,0.08)' : 'linear-gradient(135deg,#ef4444,#dc2626)', color: isResolved ? 'rgba(252,165,165,0.4)' : 'white', fontSize:11, fontWeight:700, cursor: isResolved ? 'not-allowed' : 'pointer', boxShadow: isResolved ? 'none' : '0 2px 8px #ef444450' })}>⚡ Escalate</button>

@@ -8,6 +8,7 @@ import {
   UsergroupAddOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import apiClient from '../../../../lib/axios';
+import { friendlyApiError } from '../../../../utils';
 import type { EmergencyUnitDetail } from '../../../../types';
 
 const { Text } = Typography;
@@ -52,8 +53,6 @@ interface TeamMember {
 }
 
 // Safely read counts from either nested stats or top-level
-const getCommandingCount = (m: TeamMember) =>
-  m.stats?.commanding_units_count ?? m.commanding_units_count ?? 0;
 const getAssignedCount = (m: TeamMember) =>
   m.stats?.assigned_units_count ?? m.assigned_units_count ?? 0;
 
@@ -151,6 +150,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
     } finally {
       setLoadingMembers(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -282,8 +282,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
       message.success('Unit details updated successfully');
       onSuccess();
     } catch (err: any) {
-      const errDetail = err?.response?.data?.detail;
-      message.error(typeof errDetail === 'string' ? errDetail : 'Failed to update unit details');
+      message.error(friendlyApiError(err, 'Failed to update unit details'));
     } finally {
       setSaving(false);
     }
@@ -300,8 +299,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
       message.success('Crew updated successfully');
       onSuccess();
     } catch (err: any) {
-      const errDetail = err?.response?.data?.detail;
-      message.error(typeof errDetail === 'string' ? errDetail : 'Failed to update crew');
+      message.error(friendlyApiError(err, 'Failed to update crew'));
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,7 @@
 // UPDATED — wired to real API GET /api/v1/users/
 import apiClient from '../../lib/axios';
 import { API_ENDPOINTS } from '../../config';
+import { friendlyApiError } from '../../utils';
 import type {
   AdminUser,
   ApiUser,
@@ -61,7 +62,7 @@ export const getUsers = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error?.response?.data?.detail || 'Failed to load users',
+      message: friendlyApiError(error, 'Failed to load users'),
     };
   }
 };
@@ -75,7 +76,7 @@ export const deleteUser = async (id: string, reason?: string): Promise<AdminApiR
   } catch (error: any) {
     return {
       success: false,
-      message: error?.response?.data?.detail || 'Failed to delete user',
+      message: friendlyApiError(error, 'Failed to delete user'),
     };
   }
 };
@@ -90,7 +91,7 @@ export const updateUserStatus = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error?.response?.data?.detail || 'Failed to update status',
+      message: friendlyApiError(error, 'Failed to update user status'),
     };
   }
 };
@@ -103,7 +104,7 @@ export const createUser = async (payload: any): Promise<AdminApiResponse<any>> =
   } catch (error: any) {
     return {
       success: false,
-      message: error?.response?.data?.detail || 'Failed to create user',
+      message: friendlyApiError(error, 'Failed to create user'),
     };
   }
 };
@@ -115,7 +116,7 @@ export const updateUser = async (id: string, payload: any): Promise<AdminApiResp
   } catch (error: any) {
     return {
       success: false,
-      message: error?.response?.data?.detail || 'Failed to update user',
+      message: friendlyApiError(error, 'Failed to update user'),
     };
   }
 };

@@ -111,6 +111,12 @@ export const API_ENDPOINTS = {
     ACTIVE_DISASTERS: '/disasters/active',
   },
 
+  // ── Evacuations ──────────────────────────────────────────────────────────────
+  EVACUATIONS: {
+    LIST:  '/evacuations',
+    BY_ID: (id: string) => `/evacuations/${id}`,
+  },
+
   // ── Settings ─────────────────────────────────────────────────────────────────
   SETTINGS: {
     GENERAL:        '/admin/settings/general',

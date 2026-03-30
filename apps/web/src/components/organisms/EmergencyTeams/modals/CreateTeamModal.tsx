@@ -6,6 +6,7 @@ import {
   CarOutlined, CrownOutlined,
 } from '@ant-design/icons';
 import apiClient from '../../../../lib/axios';
+import { friendlyApiError } from '../../../../utils';
 
 const { Text } = Typography;
 
@@ -185,7 +186,7 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
       onSuccess();
       handleClose();
     } catch (err: any) {
-      message.error(err?.response?.data?.detail || 'Failed to create unit');
+      message.error(friendlyApiError(err, 'Failed to create unit'));
     } finally {
       setSubmitting(false);
     }

@@ -1,6 +1,7 @@
 // File: /web/src/services/api/admin.service.ts
 import apiClient from '../../lib/axios';
 import { API_ENDPOINTS } from '../../config';
+import { friendlyApiError } from '../../utils';
 import type {
   DashboardStats,
   TrendDataPoint,
@@ -19,7 +20,7 @@ export const getDashboardStats = async (): Promise<AdminApiResponse<DashboardSta
     const response = await apiClient.get(API_ENDPOINTS.ADMIN.DASHBOARD_STATS);
     return { success: true, message: 'Dashboard stats fetched successfully', data: response.data };
   } catch (error: any) {
-    return { success: false, message: error?.response?.data?.detail || 'Failed to load dashboard stats' };
+    return { success: false, message: friendlyApiError(error, 'Failed to load dashboard stats') };
   }
 };
 
@@ -28,7 +29,7 @@ export const getTrendData = async (days: number = 7): Promise<AdminApiResponse<T
     const response = await apiClient.get(API_ENDPOINTS.ADMIN.TREND_DATA, { params: { days } });
     return { success: true, message: 'Trend data fetched successfully', data: response.data };
   } catch (error: any) {
-    return { success: false, message: error?.response?.data?.detail || 'Failed to load trend data' };
+    return { success: false, message: friendlyApiError(error, 'Failed to load trend data') };
   }
 };
 
@@ -37,7 +38,7 @@ export const getDistributionData = async (): Promise<AdminApiResponse<Distributi
     const response = await apiClient.get(API_ENDPOINTS.ADMIN.DISTRIBUTION_DATA);
     return { success: true, message: 'Distribution data fetched successfully', data: response.data };
   } catch (error: any) {
-    return { success: false, message: error?.response?.data?.detail || 'Failed to load distribution data' };
+    return { success: false, message: friendlyApiError(error, 'Failed to load distribution data') };
   }
 };
 
@@ -46,7 +47,7 @@ export const getActivityLogs = async (limit: number = 10): Promise<AdminApiRespo
     const response = await apiClient.get(API_ENDPOINTS.ADMIN.ACTIVITY_LOGS, { params: { limit } });
     return { success: true, message: 'Activity logs fetched successfully', data: response.data };
   } catch (error: any) {
-    return { success: false, message: error?.response?.data?.detail || 'Failed to load activity logs' };
+    return { success: false, message: friendlyApiError(error, 'Failed to load activity logs') };
   }
 };
 
@@ -55,7 +56,7 @@ export const getSystemAlerts = async (): Promise<AdminApiResponse<SystemAlert[]>
     const response = await apiClient.get(API_ENDPOINTS.ADMIN.SYSTEM_ALERTS);
     return { success: true, message: 'System alerts fetched successfully', data: response.data };
   } catch (error: any) {
-    return { success: false, message: error?.response?.data?.detail || 'Failed to load system alerts' };
+    return { success: false, message: friendlyApiError(error, 'Failed to load system alerts') };
   }
 };
 // Disaster Reports APIs
@@ -102,7 +103,7 @@ export const getDisasterReports = async (): Promise<AdminApiResponse<DisasterRep
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to fetch disaster reports.',
+      message: friendlyApiError(error, 'Failed to fetch disaster reports'),
     };
   }
 };
@@ -127,7 +128,7 @@ export const getDisasterReportById = async (id: string): Promise<AdminApiRespons
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to fetch disaster report.',
+      message: friendlyApiError(error, 'Failed to fetch disaster report'),
     };
   }
 };
@@ -148,7 +149,7 @@ export const updateDisasterReportStatus = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to resolve disaster',
+      message: friendlyApiError(error, 'Failed to resolve disaster'),
     };
   }
 };
@@ -171,7 +172,7 @@ export const escalateDisasterSeverity = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to escalate severity',
+      message: friendlyApiError(error, 'Failed to escalate severity'),
     };
   }
 };
@@ -196,7 +197,7 @@ export const dispatchUnits = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to dispatch units',
+      message: friendlyApiError(error, 'Failed to dispatch units'),
     };
   }
 };

@@ -1,6 +1,7 @@
 // NEW FILE
 import apiClient from '../../lib/axios';
 import { API_ENDPOINTS } from '../../config';
+import { friendlyApiError } from '../../utils';
 import type {
   EmergencyTeam,
   EmergencyUnitRaw,
@@ -68,7 +69,7 @@ export const getTeams = async (): Promise<AdminApiResponse<EmergencyTeam[]> & { 
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to fetch emergency units.',
+      message: friendlyApiError(error, 'Failed to fetch emergency units.'),
     };
   }
 };
@@ -84,7 +85,7 @@ export const getTeamById = async (id: string): Promise<AdminApiResponse<Emergenc
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to fetch unit details.',
+      message: friendlyApiError(error, 'Failed to fetch unit details.'),
     };
   }
 };
@@ -105,7 +106,7 @@ export const createTeam = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to create unit.',
+      message: friendlyApiError(error, 'Failed to create unit.'),
     };
   }
 };
@@ -123,7 +124,7 @@ export const deployUnit = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to dispatch unit.',
+      message: friendlyApiError(error, 'Failed to dispatch unit.'),
     };
   }
 };
@@ -140,7 +141,7 @@ export const decommissionUnit = async (
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to decommission unit.',
+      message: friendlyApiError(error, 'Failed to decommission unit.'),
     };
   }
 };
@@ -158,7 +159,7 @@ export const getActiveDisasters = async (): Promise<AdminApiResponse<ActiveDisas
   } catch (error: any) {
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to fetch active disasters.',
+      message: friendlyApiError(error, 'Failed to fetch active disasters.'),
     };
   }
 };

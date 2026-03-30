@@ -35,6 +35,8 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import { getDisasterReports } from '../../../services';
+import apiClient from '../../../lib/axios';
+import { API_ENDPOINTS } from '../../../config';
 import type { DisasterReport } from '../../../types';
 import MapView from './MapView';
 import DispatchUnitsModal from './DispatchUnitsModal';
@@ -43,11 +45,12 @@ import ResolveDisasterModal from './ResolveDisasterModal';
 import PhotoGallery from './PhotoGallery';
 import LogUpdates from './LogUpdates';
 import DeployedUnits from './DeployedUnits';
+import EvacuationPlanPage from './EvacuationPlanPage';
 import './DisasterReports.css';
 
 const { Search } = Input;
 
-type DisasterView = 'list' | 'photos' | 'logs' | 'units';
+type DisasterView = 'list' | 'photos' | 'logs' | 'units' | 'evacuation';
 
 
 
@@ -68,6 +71,10 @@ const DisasterReports: React.FC = () => {
   // Sub-page navigation
   const [currentView, setCurrentView] = useState<DisasterView>('list');
   const [selectedReport, setSelectedReport] = useState<DisasterReport | null>(null);
+  const [selectedEvacPlanId, setSelectedEvacPlanId] = useState<string | null>(null);
+
+  // Evacuation plans: map of disaster_id → plan_id
+  const [evacuationPlanMap, setEvacuationPlanMap] = useState<Record<string, string>>({});
 
   // Modal state
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
@@ -77,6 +84,7 @@ const DisasterReports: React.FC = () => {
 
   useEffect(() => {
     fetchReports();
+    fetchEvacuationPlans();
   }, []);
 
   const filterReports = useCallback(() => {
@@ -118,6 +126,21 @@ const DisasterReports: React.FC = () => {
   useEffect(() => {
     filterReports();
   }, [filterReports]);
+
+  const fetchEvacuationPlans = async () => {
+    try {
+      const res = await apiClient.get<{ evacuation_plans: { id: string; disaster_id: string }[]; count: number }>(
+        API_ENDPOINTS.EVACUATIONS.LIST
+      );
+      const map: Record<string, string> = {};
+      (res.data?.evacuation_plans ?? []).forEach((p) => {
+        map[p.disaster_id] = p.id;
+      });
+      setEvacuationPlanMap(map);
+    } catch {
+      // silent — evacuation data is supplementary
+    }
+  };
 
   const fetchReports = async () => {
     setLoading(true);
@@ -164,6 +187,13 @@ const DisasterReports: React.FC = () => {
     e.stopPropagation();
     setSelectedReport(report);
     setCurrentView('units');
+  };
+
+  const openEvacuationPlan = (report: DisasterReport, planId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedReport(report);
+    setSelectedEvacPlanId(planId);
+    setCurrentView('evacuation');
   };
 
   const openLogUpdates = (report: DisasterReport, e: React.MouseEvent) => {
@@ -256,6 +286,16 @@ const DisasterReports: React.FC = () => {
 
   if (currentView === 'units' && selectedReport) {
     return <DeployedUnits report={selectedReport} onBack={() => setCurrentView('list')} />;
+  }
+
+  if (currentView === 'evacuation' && selectedReport && selectedEvacPlanId) {
+    return (
+      <EvacuationPlanPage
+        report={selectedReport}
+        planId={selectedEvacPlanId}
+        onBack={() => { setCurrentView('list'); setSelectedEvacPlanId(null); }}
+      />
+    );
   }
 
   // ─── Main list view ──────────────────────────────────────────────────────────
@@ -488,6 +528,14 @@ const DisasterReports: React.FC = () => {
                                 🚨 Deployed Units
                               </Button>
                             )}
+                            {evacuationPlanMap[report.id] && (
+                              <Button
+                                size="small"
+                                onClick={(e) => openEvacuationPlan(report, evacuationPlanMap[report.id], e)}
+                              >
+                                🚶 Evacuation Plan
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </Col>
@@ -600,6 +648,8 @@ const DisasterReports: React.FC = () => {
           onViewPhotos={(report) => { setSelectedReport(report); setCurrentView('photos'); }}
           onViewLogs={(report)   => { setSelectedReport(report); setCurrentView('logs'); }}
           onViewDeployedUnits={(report) => { setSelectedReport(report); setCurrentView('units'); }}
+          evacuationPlanMap={evacuationPlanMap}
+          onViewEvacuationPlan={(report, planId) => { setSelectedReport(report); setSelectedEvacPlanId(planId); setCurrentView('evacuation'); }}
         />
       )}
 

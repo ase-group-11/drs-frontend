@@ -4,6 +4,7 @@ import { EditOutlined, UserOutlined, MailOutlined, PhoneOutlined } from '@ant-de
 import apiClient from '../../../lib/axios';
 import { API_ENDPOINTS } from '../../../config';
 import type { AdminUser, ApiUserStatus } from '../../../types';
+import { friendlyApiError } from '../../../utils';
 
 const { Text } = Typography;
 
@@ -103,7 +104,7 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      message.error(err?.response?.data?.detail || 'Failed to update user');
+      message.error(friendlyApiError(err, 'Failed to update user'));
     } finally {
       setSubmitting(false);
     }
