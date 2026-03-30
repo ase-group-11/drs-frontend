@@ -153,7 +153,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
 
   // ── Derived values ──
   const unitDirty = JSON.stringify(unitForm) !== JSON.stringify(originalUnit);
-  const crewDirty = JSON.stringify(crewIds) !== JSON.stringify(origCrewIds);
+  const crewDirty = JSON.stringify(crewIds) !== JSON.stringify(origCrewIds) || commanderId !== origCommanderId;
 
   const totalSlots = capacity;
   const crewFull = crewIds.length >= totalSlots;
@@ -173,6 +173,14 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
       !crewIds.includes(m.id)
   );
 
+  // Commander options: current crew members + unassigned eligible members (exclude current commander)
+  const commanderOptions = eligibleMembers.filter(
+    (m) =>
+      m.status === 'ACTIVE' &&
+      m.id !== commanderId &&
+      (crewIds.includes(m.id) || m.assigned_units_count === 0 || existingCrewSet.has(m.id))
+  );
+
   // ── Handlers ──
   const setField = (field: keyof UnitFormState, value: string) =>
     setUnitForm((prev) => ({ ...prev, [field]: value }));
@@ -186,6 +194,14 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
   const handleRemoveCrewMember = (memberId: string) => {
     if (memberId === commanderId) return; // commander locked
     setCrewIds((prev) => prev.filter((id) => id !== memberId));
+  };
+
+  const handleChangeCommander = (newCommanderId: string) => {
+    setCommanderId(newCommanderId);
+    // Ensure new commander is in the crew
+    if (!crewIds.includes(newCommanderId)) {
+      setCrewIds((prev) => [newCommanderId, ...prev]);
+    }
   };
 
   const handleCancel = () => {
@@ -325,20 +341,27 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
               />
             </div>
 
-            {/* Read-only Commander */}
+            {/* Editable Commander — can swap but never delete */}
             <div style={{ marginBottom: 14 }}>
               <Text style={labelStyle}><CrownOutlined style={{ color: '#7c3aed', marginRight: 5 }} />Commander</Text>
               {loadingMembers ? <Spin size="small" /> : (
-                <Input
-                  value={
-                    commanderId
-                      ? (allMembers.find((m) => m.id === commanderId)
-                          ? memberLabel(allMembers.find((m) => m.id === commanderId)!)
-                          : commanderId)
-                      : 'No commander assigned'
+                <Select
+                  value={commanderId || undefined}
+                  placeholder="Select a commander..."
+                  onChange={handleChangeCommander}
+                  showSearch
+                  filterOption={(input, opt) =>
+                    (opt?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  disabled
-                  style={{ ...inputStyle, color: '#6b7280', cursor: 'default' }}
+                  style={{ width: '100%', height: 42 }}
+                  popupClassName="ecm-dropdown"
+                  options={[
+                    // Keep current commander at top if set
+                    ...(commanderId && allMembers.find(m => m.id === commanderId)
+                      ? [{ value: commanderId, label: `${memberLabel(allMembers.find(m => m.id === commanderId)!)} (current)` }]
+                      : []),
+                    ...commanderOptions.map((m) => ({ value: m.id, label: memberLabel(m) })),
+                  ]}
                 />
               )}
             </div>
@@ -382,7 +405,7 @@ const EditConfigModal: React.FC<EditConfigModalProps> = ({
             {/* Add crew dropdown — hidden when full */}
             {!crewFull && (
               <Select
-                key={`crew-${commanderId}`}
+                key={`crew-${commanderId}-${crewIds.length}`}
                 placeholder="Add crew member..."
                 value={undefined}
                 onChange={(v: string) => handleAddCrewMember(v)}

@@ -391,12 +391,27 @@
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
+    overflow: visible;
   }
 
   .typeFilters {
-    overflow-x: auto;
+    display: flex;
     flex-wrap: nowrap;
-    padding-bottom: 4px;
+    overflow-x: scroll;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    width: 100%;
+  }
+
+  .typeFilters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filterBtn {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .searchWrap {

@@ -89,6 +89,7 @@ const UserManagement: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [activelyDeployed, setActivelyDeployed] = useState(false);
+  const [deployedUnitCodes, setDeployedUnitCodes] = useState<Set<string>>(new Set());
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
@@ -118,7 +119,20 @@ const UserManagement: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  const fetchDeployedUnits = useCallback(async () => {
+    try {
+      const res = await apiClient.get(API_ENDPOINTS.TEAMS.LIST);
+      const units: { unit_code: string; unit_status: string }[] = res.data?.units ?? [];
+      const active = new Set(
+        units
+          .filter(u => ['DEPLOYED', 'ON_SCENE', 'RETURNING'].includes(u.unit_status))
+          .map(u => u.unit_code)
+      );
+      setDeployedUnitCodes(active);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { fetchUsers(); fetchDeployedUnits(); }, [fetchUsers, fetchDeployedUnits]);
 
   // Client-side filtering — no API calls
   useEffect(() => {
@@ -305,7 +319,8 @@ const UserManagement: React.FC = () => {
       render: (_, record) => {
         const isDeleted = record.status === 'DELETED';
         const isCommanding = (record.commandingUnitsCount ?? 0) > 0;
-        const cannotModify = isDeleted || isCommanding;
+        const isActivelyDeployed = (record.currentUnitCodes ?? []).some(code => deployedUnitCodes.has(code));
+        const cannotModify = isDeleted || isCommanding || isActivelyDeployed;
         return (
           <Space size={4}>
             <Tooltip title={isDeleted ? 'User is deleted' : 'Edit user'}>
@@ -322,6 +337,7 @@ const UserManagement: React.FC = () => {
             <Tooltip title={
                 isDeleted ? 'User is deleted' :
                 isCommanding ? 'Cannot delete — commanding a unit' :
+                isActivelyDeployed ? `Cannot delete — unit is currently deployed (${record.currentUnitCodes?.join(', ')})` :
                 'Delete user'
               }>
               <Button

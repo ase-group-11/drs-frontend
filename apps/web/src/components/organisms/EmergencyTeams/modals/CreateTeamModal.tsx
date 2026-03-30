@@ -310,7 +310,7 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
 
           {!crewFull && (
             <Select
-              key={`crew-select-${form.commanderId}`}
+              key={`crew-select-${form.commanderId}-${form.crewIds.length}`}
               placeholder={!form.unitType ? 'Select unit type first' : !form.commanderId ? 'Select commander first' : 'Add crew member...'}
               value={undefined}
               onChange={(v: string) => {
