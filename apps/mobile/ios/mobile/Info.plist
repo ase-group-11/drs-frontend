@@ -33,8 +33,16 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>DRS needs camera access to photograph disaster scenes</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>DRS needs photo library access to attach images to disaster reports</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>DubResQ needs your location to show nearby disasters and emergencies on the map</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>DubResQ needs your location to show nearby disasters and provide emergency alerts even when not using the app</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>DubResQ needs background location access to provide critical emergency alerts</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

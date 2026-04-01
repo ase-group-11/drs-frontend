@@ -1,26 +1,29 @@
 import React from 'react';
-import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {authStackParamList} from './types';
-import {authRoutes} from '../config/routes';
-import {RequestOtpScreen, VerifyOtpScreen} from '../screens/auth';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { LoginScreen } from '@screens/LoginScreen';
+import { SignupScreen } from '@screens/SignupScreen';
+import { OTPVerificationScreen } from '@screens/OTPVerificationScreen';
+// import { WelcomeScreen } from '@screens/WelcomeScreen';
+import { ResponderLoginScreen } from '@screens/ResponderLoginScreen';
+import type { AuthStackParamList } from '../types/navigation';
 
-const AuthStack = createNativeStackNavigator<authStackParamList>();
+const Stack = createNativeStackNavigator<AuthStackParamList>();
 
-function AuthNavigator() {
+export const AuthNavigator: React.FC = () => {
   return (
-    <AuthStack.Navigator initialRouteName={authRoutes.requestOtp}>
-      <AuthStack.Screen
-        name={authRoutes.requestOtp}
-        component={RequestOtpScreen}
-        options={{title: 'Request OTP'}}
-      />
-      <AuthStack.Screen
-        name={authRoutes.verifyOtp}
-        component={VerifyOtpScreen}
-        options={{title: 'Verify OTP'}}
-      />
-    </AuthStack.Navigator>
+    <Stack.Navigator 
+      initialRouteName="Login"
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Signup" component={SignupScreen} />
+      <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
+      {/* <Stack.Screen name="Welcome" component={WelcomeScreen} /> */}
+      <Stack.Screen name="ResponderLogin" component={ResponderLoginScreen} />
+    </Stack.Navigator>
   );
-}
+};
 
 export default AuthNavigator;

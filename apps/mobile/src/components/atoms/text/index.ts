@@ -1,1 +1,2 @@
-export {default as Text} from './text';
+export { Text, type TextProps } from './Text';
+export { Text as default } from './Text';

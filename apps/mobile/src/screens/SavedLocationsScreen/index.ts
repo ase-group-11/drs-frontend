@@ -1,0 +1,1 @@
+export { SavedLocationsScreen } from './SavedLocationsScreen';
