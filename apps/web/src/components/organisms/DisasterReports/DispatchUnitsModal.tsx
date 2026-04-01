@@ -1,7 +1,7 @@
 import { API_ENDPOINTS } from '../../../config';
 import React, { useState, useEffect } from 'react';
 import { Modal, Switch, Input, Button, Select, Typography, message, Spin } from 'antd';
-import { EnvironmentOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons';
+import { EnvironmentOutlined, TeamOutlined } from '@ant-design/icons';
 import type { DisasterReport } from '../../../types';
 import { dispatchUnits } from '../../../services';
 import apiClient from '../../../lib/axios';
@@ -9,16 +9,7 @@ import apiClient from '../../../lib/axios';
 const { TextArea } = Input;
 const { Text } = Typography;
 
-// ─── Haversine distance (km) ──────────────────────────────────────────────────
-const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  const R = 6371;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(a));
-};
-const etaMins = (km: number) => Math.round((km / 40) * 60);
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface UnitDisplay {
   id: string;
@@ -28,8 +19,6 @@ interface UnitDisplay {
   station: string;
   crew: string;
   status: string;
-  km: number | null;
-  eta: number | null;
 }
 
 const DEPT_EMOJI: Record<string, string> = { FIRE: '🚒', MEDICAL: '🚑', POLICE: '🚓', IT: '🚁' };
@@ -79,33 +68,16 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, o
     try {
       const listRes = await apiClient.get<{ units: any[] }>(API_ENDPOINTS.EMERGENCY_UNITS.LIST);
       const rawUnits = listRes.data?.units ?? [];
-      const disLat = report?.locationCoords?.lat;
-      const disLon = report?.locationCoords?.lon;
 
-      const detailPromises = rawUnits.map(async (raw): Promise<UnitDisplay> => {
-        let km: number | null = null;
-        let eta: number | null = null;
-        try {
-          const det = await apiClient.get<{ station: { lat: number; lon: number } }>(API_ENDPOINTS.EMERGENCY_UNITS.BY_ID(raw.id));
-          const sLat = det.data?.station?.lat;
-          const sLon = det.data?.station?.lon;
-          if (disLat != null && disLon != null && sLat != null && sLon != null) {
-            km = Math.round(haversineKm(disLat, disLon, sLat, sLon) * 10) / 10;
-            eta = etaMins(km);
-          }
-        } catch {}
-        return {
-          id: raw.id, unitCode: raw.unit_code,
-          type: DEPT_LABEL[raw.department] ?? 'Rescue',
-          emoji: DEPT_EMOJI[raw.department] ?? '🚒',
-          station: raw.station_name,
-          crew: `${raw.crew_count}/${raw.capacity}`,
-          status: raw.unit_status, km, eta,
-        };
-      });
+      const resolved: UnitDisplay[] = rawUnits.map((raw) => ({
+        id: raw.id, unitCode: raw.unit_code,
+        type: DEPT_LABEL[raw.department] ?? 'Rescue',
+        emoji: DEPT_EMOJI[raw.department] ?? '🚒',
+        station: raw.station_name,
+        crew: `${raw.crew_count}/${raw.capacity}`,
+        status: raw.unit_status,
+      }));
 
-      const resolved = await Promise.all(detailPromises);
-      resolved.sort((a, b) => (a.km ?? 999) - (b.km ?? 999));
       setUnits(resolved);
     } catch { message.error('Failed to load units'); }
     finally { setLoading(false); }
@@ -140,7 +112,6 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, o
   };
 
   const selectedUnits = units.filter((u) => selectedIds.includes(u.id));
-  const fastestEta = selectedUnits.length > 0 ? Math.min(...selectedUnits.map((u) => u.eta ?? 999)) : null;
 
   return (
     <Modal
@@ -245,18 +216,6 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, o
                     <TeamOutlined style={{ color: '#9ca3af', fontSize: 10 }} />
                     <Text style={{ fontSize: 11, color: '#6b7280' }}>{unit.crew} crew</Text>
                   </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <ClockCircleOutlined style={{ color: '#7c3aed', fontSize: 10 }} />
-                      <Text style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>
-                        {unit.eta != null ? `Est. ${unit.eta} mins` : 'ETA N/A'}
-                      </Text>
-                    </div>
-                    {unit.km != null && (
-                      <Text style={{ fontSize: 10, color: '#9ca3af' }}>{unit.km} km</Text>
-                    )}
-                  </div>
                 </div>
               );
             })}
@@ -294,11 +253,6 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, o
                 <Text strong style={{ fontSize: 12, color: '#111827', display: 'block' }}>
                   {selectedIds.length} unit{selectedIds.length > 1 ? 's' : ''} selected
                 </Text>
-                {fastestEta != null && fastestEta < 999 && (
-                  <Text style={{ fontSize: 11, color: '#7c3aed', fontWeight: 500 }}>
-                    Fastest arrival: {fastestEta} mins
-                  </Text>
-                )}
               </div>
             </div>
           )}

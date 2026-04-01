@@ -50,14 +50,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    setIsLoading(true);
     try {
       const result = await loginService(email, password);
 
       if (result.success && result.data) {
         // New OTP flow — redirect to OTP page with email
         if (result.data.otpPending) {
-          navigate('/otp', { state: { mode: 'login', loginToken: result.data.loginToken, mobileNumber: '' } });
+          navigate('/otp', { state: { mode: 'login', loginToken: result.data.loginToken, mobileNumber: '', email, password } });
           return;
         }
 
@@ -81,8 +80,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error) {
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -92,6 +89,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setToken(null);
     // Clear persisted vehicle animation positions for all disaster plans
     Object.keys(localStorage).filter(k => k.startsWith('drs_vehicle_')).forEach(k => localStorage.removeItem(k));
+    // Clear notifications — should not carry over to next user session
+    localStorage.removeItem('drs_notifications');
     navigate('/login');
   };
 

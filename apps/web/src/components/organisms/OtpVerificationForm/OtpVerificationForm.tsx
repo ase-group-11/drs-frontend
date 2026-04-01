@@ -12,6 +12,7 @@ interface LocationState {
   // Login OTP mode
   mode?: 'login' | 'signup';
   email?: string;
+  password?: string;
   phoneNumber?: string;
   loginToken?: string;
 }
@@ -147,9 +148,8 @@ const OtpVerificationForm: React.FC = () => {
     setResendLoading(true);
     try {
       if (mode === 'login') {
-        // Re-trigger login to resend OTP
         const { login: loginService } = await import('../../../services/api/auth.service');
-        const result = await loginService(email!, '');
+        const result = await loginService(email!, state?.password ?? '');
         if (result.success) {
           message.success('OTP resent successfully!');
           setCountdown(60);
@@ -166,7 +166,7 @@ const OtpVerificationForm: React.FC = () => {
           setCanResend(false);
           resetOtp();
         } else {
-          message.error(result.message);
+          message.error(typeof result.message === 'string' ? result.message : 'Failed to resend OTP');
         }
       }
     } catch {
@@ -177,15 +177,20 @@ const OtpVerificationForm: React.FC = () => {
   };
 
   const maskContact = () => {
-    if (mode === 'login' && mobileNumber) {
-      return `number ending in ${mobileNumber.slice(-4)}`;
+    if (mode === 'login') {
+      // OTP sent to phone number registered with this email account
+      if (email) return email;
+      return 'your account';
     }
+    // Signup — OTP sent to phone number
     if (mobileNumber) {
       const last4 = mobileNumber.slice(-4);
       return `${mobileNumber.slice(0, 4)} ** *** ${last4}`;
     }
-    return email ?? '';
+    return 'your phone number';
   };
+
+  const contactLabel = mode === 'login' ? 'Phone Number' : 'Phone Number';
 
   const isOtpComplete = otp.every(digit => digit !== '');
 
@@ -203,10 +208,13 @@ const OtpVerificationForm: React.FC = () => {
           <PhoneOutlined className="otp-phone-icon" />
         </div>
 
-        <h2 className="otp-modal-title">Verify Your Phone Number</h2>
+        <h2 className="otp-modal-title">Verify Your {contactLabel}</h2>
 
         <p className="otp-modal-description">
-          We've sent a 6-digit code to your registered {maskContact()}
+          {mode === 'login'
+            ? <>We've sent a 6-digit code to the phone number registered with <strong>{maskContact()}</strong></>
+            : <>We've sent a 6-digit code to {maskContact()}</>
+          }
         </p>
 
         <div className="otp-input-container" onPaste={handlePaste}>

@@ -188,6 +188,10 @@ const MapView: React.FC<MapViewProps> = ({
   const [rerouteDisaster, setRerouteDisaster] = useState<DisasterReport | null>(null);
   const [reroutePlan,     setReroutePlan]     = useState<ReroutePlan | null>(null);
   const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 950 || window.innerHeight < 500);
+  const [vehicleUserMap,  setVehicleUserMap]  = useState<Record<string, any>>({});
+  const vehiclePopupRef   = useRef<mapboxgl.Popup | null>(null);
+  const vehicleUserMapRef = useRef<Record<string, any>>({});
+  vehicleUserMapRef.current = vehicleUserMap;
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 950 || window.innerHeight < 500);
@@ -622,6 +626,8 @@ const MapView: React.FC<MapViewProps> = ({
     animFrameRef.current = [];
     vehicleMarkersRef.current.forEach(m => m.remove());
     vehicleMarkersRef.current = [];
+    vehiclePopupRef.current?.remove();
+    vehiclePopupRef.current = null;
     markersRef.current.forEach(mk => mk.getElement().style.opacity = '1');
     stationMarkersRef.current.forEach(mk => mk.getElement().style.opacity = '1');
     setRerouteMode(false);
@@ -642,6 +648,13 @@ const MapView: React.FC<MapViewProps> = ({
 
     const assignedIds = new Set(Object.values(plan.route_assignments));
 
+    // Invert route_assignments: { routeId → [userId, ...] }
+    const routeToUsers: Record<string, string[]> = {};
+    Object.entries(plan.route_assignments).forEach(([userId, routeId]) => {
+      if (!routeToUsers[routeId]) routeToUsers[routeId] = [];
+      routeToUsers[routeId].push(userId);
+    });
+
     plan.chosen_routes.forEach((route, routeIdx) => {
       if (!assignedIds.has(route.route_id)) return;
 
@@ -655,41 +668,105 @@ const MapView: React.FC<MapViewProps> = ({
 
       const vehicleCount = plan.capacity_usage[route.route_id]?.vehicles_assigned ?? 1;
       const color = ROUTE_COLORS[routeIdx % ROUTE_COLORS.length];
+      const userIds = routeToUsers[route.route_id] ?? [];
 
       for (let v = 0; v < vehicleCount; v++) {
-        // Stagger start position so vehicles don't overlap
-        const staggerOffset = v / vehicleCount; // fractional offset 0..1
+        const staggerOffset = v / vehicleCount;
         const lapMs = route.travel_time_seconds > 0 ? route.travel_time_seconds * 1000 : 60000;
 
-        // Persistent progress: store lap start time in sessionStorage keyed by route+vehicle
         const storageKey = `drs_vehicle_${plan.id}_${route.route_id}_${v}`;
         let lapStartMs: number;
         const stored = localStorage.getItem(storageKey);
         if (stored) {
           lapStartMs = parseInt(stored, 10);
         } else {
-          // Offset start time by stagger so vehicles are spread across the route
           lapStartMs = Date.now() - Math.floor(staggerOffset * lapMs);
           localStorage.setItem(storageKey, String(lapStartMs));
         }
 
         // Create vehicle marker element
         const el = document.createElement('div');
-        el.style.cssText = 'width:20px;height:20px;';
-        el.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        el.style.cssText = 'width:20px;height:20px;cursor:pointer;';
+        el.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" style="pointer-events:none">
           <circle cx="10" cy="10" r="8" fill="${color}" opacity="0.9" stroke="white" stroke-width="1.5"/>
           <circle cx="10" cy="10" r="3" fill="white" opacity="0.8"/>
         </svg>`;
 
+        const userId = userIds[v] ?? null;
+
+        const markerId = `${route.route_id}_${v}`;
+        el.dataset.markerId = markerId;
+
+        // Declare marker first so click handler can reference it
         const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
           .setLngLat(coords[0])
           .addTo(m);
         vehicleMarkersRef.current.push(marker);
 
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          vehiclePopupRef.current?.remove();
+          const user = userId ? vehicleUserMapRef.current[userId] : null;
+
+          const initials = user?.full_name
+            ? user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+            : '?';
+
+          const html = `
+            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-width:160px;padding:0">
+              <div style="background:${color};padding:8px 10px;border-radius:6px 6px 0 0;display:flex;align-items:center;gap:8px">
+                <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0">
+                  ${initials}
+                </div>
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:white;line-height:1.2">
+                    ${user?.full_name ?? 'Unknown User'}
+                  </div>
+                  ${user?.role ? `<div style="font-size:9px;color:rgba(255,255,255,0.8);margin-top:1px;text-transform:uppercase;letter-spacing:0.05em">${user.role}</div>` : ''}
+                </div>
+              </div>
+              <div style="padding:8px 10px;background:#fff;border-radius:0 0 6px 6px">
+                ${user?.department ? `
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                    <span style="font-size:10px;color:#9ca3af;width:52px">Dept</span>
+                    <span style="font-size:11px;color:#374151;font-weight:500">${user.department}</span>
+                  </div>` : ''}
+                ${user?.phone_number ? `
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                    <span style="font-size:10px;color:#9ca3af;width:52px">Phone</span>
+                    <span style="font-size:11px;color:#374151">${user.phone_number}</span>
+                  </div>` : ''}
+                ${user?.email ? `
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-size:10px;color:#9ca3af;width:52px">Email</span>
+                    <span style="font-size:11px;color:#374151">${user.email}</span>
+                  </div>` : ''}
+                ${!user ? `<div style="font-size:11px;color:#9ca3af">ID: ${userId?.slice(0,8) ?? 'N/A'}…</div>` : ''}
+              </div>
+            </div>`;
+
+          const popup = new mapboxgl.Popup({
+            closeButton: true,
+            maxWidth: '200px',
+            offset: 14,
+            className: 'vehicle-user-popup',
+          })
+            .setLngLat(marker.getLngLat())
+            .setHTML(html)
+            .addTo(m);
+
+          // Tag popup element so animation loop can identify it
+          setTimeout(() => {
+            const popupEl = popup.getElement();
+            if (popupEl) popupEl.dataset.markerId = markerId;
+          }, 0);
+
+          vehiclePopupRef.current = popup;
+        });
+
         const animate = (_ts: number) => {
           if (!rerouteModeRef.current) return;
 
-          // Derive progress from wall-clock time so it survives refresh
           const elapsed = Date.now() - lapStartMs;
           const progress = (elapsed % lapMs) / lapMs;
 
@@ -699,6 +776,14 @@ const MapView: React.FC<MapViewProps> = ({
           const lng = coords[idx][0] + (coords[next][0] - coords[idx][0]) * frac;
           const lat = coords[idx][1] + (coords[next][1] - coords[idx][1]) * frac;
           marker.setLngLat([lng, lat]);
+
+          // If this marker's popup is open, keep it tracking the marker
+          if (
+            vehiclePopupRef.current?.isOpen() &&
+            vehiclePopupRef.current?.getElement()?.dataset.markerId === marker.getElement().dataset.markerId
+          ) {
+            vehiclePopupRef.current.setLngLat([lng, lat]);
+          }
 
           const frameId = requestAnimationFrame(animate);
           animFrameRef.current.push(frameId);
@@ -830,6 +915,26 @@ const MapView: React.FC<MapViewProps> = ({
 
   useEffect(() => { boundsSetRef.current = false; }, [statusFilter]);
   useEffect(() => { if (!rerouteMode) renderMarkers(); }, [renderMarkers, rerouteMode]);
+
+  // Fetch user details for all vehicle IDs in the active reroute plan
+  useEffect(() => {
+    if (!reroutePlan) { setVehicleUserMap({}); return; }
+    const vehicleIds = Object.keys(reroutePlan.route_assignments);
+    if (vehicleIds.length === 0) return;
+
+    Promise.all(
+      vehicleIds.map(async (id) => {
+        try {
+          const res = await apiClient.get(API_ENDPOINTS.USERS.BY_ID(id));
+          return [id, res.data] as [string, any];
+        } catch {
+          return [id, null] as [string, null];
+        }
+      })
+    ).then((entries) => {
+      setVehicleUserMap(Object.fromEntries(entries.filter(([, v]) => v !== null)));
+    });
+  }, [reroutePlan]);
 
   const resetView = () => mapRef.current?.flyTo({ center: DUBLIN, zoom: DEFAULT_ZOOM, duration: 1000 });
   const toggle3D = () => {

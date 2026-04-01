@@ -1,32 +1,26 @@
 // MODIFIED FILE — changes: Handle ACCESS_DENIED error from auth to show "Admin only" message
 import React, { useState } from 'react';
-import { Form, Input, Button, Alert, message } from 'antd';
+import { Form, Input, Button, App } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks';
 import type { LoginFormData } from '../../../types';
 import './LoginForm.css';
 
-const LoginForm: React.FC = () => {
+const LoginFormInner: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>('');
   const { login } = useAuth();
   const [form] = Form.useForm();
+  const { message } = App.useApp();
 
   const handleSubmit = async (values: LoginFormData) => {
     setLoading(true);
-    setError('');
     try {
       await login(values.email, values.password);
-      } catch (err: any) {
-      const msg = err?.message || 'Login failed. Please check your credentials.';
-      if (msg === 'ACCESS_DENIED') {
-        setError('Access denied. This administration panel is restricted to admin accounts only. Please contact your system administrator.');
-        message.error('Access denied. Admin accounts only.');
-      } else {
-        setError(msg);
-        message.error(msg);
-      }
+    } catch (err: any) {
+      const raw = err?.message || 'Login failed. Please check your credentials.';
+      const msg = raw.replace(/^rate_limit:\s*/i, '');
+      message.error(msg);
     } finally {
       setLoading(false);
     }
@@ -34,17 +28,6 @@ const LoginForm: React.FC = () => {
 
   return (
     <div className="login-form-container">
-
-      {error && (
-        <Alert
-          message={error}
-          type={error.includes('Access denied') ? 'warning' : 'error'}
-          showIcon
-          className="login-error-alert"
-          style={{ marginBottom: '16px' }}
-        />
-      )}
-
       <Form
         form={form}
         name="login"
@@ -117,5 +100,11 @@ const LoginForm: React.FC = () => {
     </div>
   );
 };
+
+const LoginForm: React.FC = () => (
+  <App>
+    <LoginFormInner />
+  </App>
+);
 
 export default LoginForm;

@@ -1,6 +1,6 @@
 import { API_ENDPOINTS } from '../../../config';
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Select, Button, Table, Tag, Spin, message } from 'antd';
+import { Card, Row, Col, Select, Button, Tag, Spin, message } from 'antd';
 import {
   UserOutlined, AlertOutlined, TeamOutlined, ThunderboltOutlined, ArrowUpOutlined,
 } from '@ant-design/icons';
@@ -8,9 +8,12 @@ import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import apiClient from '../../../lib/axios';
-import type { DashboardStats, ActivityLog, DisasterRaw, DisastersApiResponse } from '../../../types';
+import { useNotifications } from '../../../context/NotificationContext';
+import type { AppNotification } from '../../../hooks/useWebSocket';
+import type { DashboardStats, DisasterRaw, DisastersApiResponse } from '../../../types';
+import SystemActivityPage from './SystemActivityPage';
 import './Dashboard.css';
 
 const TYPE_COLORS: Record<string, string> = {
@@ -39,9 +42,9 @@ const getDayBuckets = (days: number): { label: string; dateStr: string }[] => {
 };
 
 const Dashboard: React.FC = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [trendPeriod, setTrendPeriod] = useState(7);
+  const [showActivity, setShowActivity] = useState(false);
 
   // KPI stats
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -54,10 +57,28 @@ const Dashboard: React.FC = () => {
   const [trendData, setTrendData] = useState<{ day: string; total: number; critical: number }[]>([]);
   const [distributionData, setDistributionData] = useState<{ name: string; value: number; color: string }[]>([]);
 
-  // Activity / alerts
-  const [activityLogs] = useState<ActivityLog[]>([]);
-
   const [allDisasters, setAllDisasters] = useState<DisasterRaw[]>([]);
+  const location = useLocation();
+
+  // Shared notifications from context — same instance as AdminTemplate + NotificationPanel
+  const { notifications, connected, scrollToId, setScrollToId } = useNotifications();
+
+  // On mount: if navigated here via notification click, read scrollToId from route state
+  useEffect(() => {
+    const navState = location.state as { scrollToId?: string } | null;
+    if (navState?.scrollToId) {
+      setScrollToId(navState.scrollToId);
+      setShowActivity(true);
+      // Clear state so back-navigation doesn't re-trigger
+      window.history.replaceState({}, '');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When scrollToId is set from panel click while already on dashboard
+  useEffect(() => {
+    if (scrollToId) setShowActivity(true);
+  }, [scrollToId]);
 
   useEffect(() => {
     fetchAll();
@@ -137,17 +158,38 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const activityColumns = [
-    { title: 'Time', dataIndex: 'time', key: 'time', width: 80, render: (t: string) => <span className="activity-time">{t}</span> },
-    { title: 'Activity', dataIndex: 'activity', key: 'activity' },
-    { title: 'User', dataIndex: 'user', key: 'user' },
-    { title: 'Status', dataIndex: 'status', key: 'status', render: (s: string, r: ActivityLog) => <Tag color={r.statusColor}>{s}</Tag> },
-  ];
+  const SEV_COLOR: Record<AppNotification['severity'], string> = {
+    critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#3b82f6', info: '#22c55e',
+  };
+  const SEV_BG: Record<AppNotification['severity'], string> = {
+    critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#eff6ff', info: '#f0fdf4',
+  };
+
+  function formatAgo(date: Date): string {
+    const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (diff < 60)   return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    return `${Math.floor(diff / 3600)}h ago`;
+  }
 
   const totalReports = distributionData.reduce((sum, d) => sum + d.value, 0);
 
   if (loading) {
     return <div className="dashboard-loading"><Spin size="large" /></div>;
+  }
+
+  // ── Sub-page: full activity log ─────────────────────────────────────────────
+  if (showActivity) {
+    return (
+      <div className="dashboard-container">
+        <SystemActivityPage
+          notifications={notifications}
+          connected={connected}
+          scrollToId={scrollToId}
+          onBack={() => { setShowActivity(false); setScrollToId(null); }}
+        />
+      </div>
+    );
   }
 
   return (
@@ -300,20 +342,65 @@ const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Bottom Row */}
+      {/* Recent System Activity */}
       <Row gutter={[16, 16]} className="dashboard-bottom">
         <Col xs={24} lg={24}>
           <Card
             title="Recent System Activity"
-            extra={<Button type="link" size="small" onClick={() => navigate('/admin/disaster-reports')}>View All</Button>}
           >
-            <Table
-              columns={activityColumns}
-              dataSource={activityLogs}
-              pagination={false}
-              rowKey="time"
-              className="activity-table"
-            />
+            {notifications.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: '#9ca3af', fontSize: 13 }}>
+                No events yet. Listening for WebSocket events...
+              </div>
+            ) : (
+              <div>
+                {notifications.slice(0, 5).map((n) => (
+                  <div key={n.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 0',
+                    borderBottom: '1px solid #f3f4f6',
+                  }}>
+                    {/* Severity dot */}
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: SEV_COLOR[n.severity], flexShrink: 0,
+                    }} />
+
+                    {/* Event info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
+                        {n.title}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {n.description}
+                      </div>
+                    </div>
+
+                    {/* Severity tag */}
+                    <Tag style={{
+                      fontSize: 10, padding: '1px 8px', borderRadius: 10, margin: 0, flexShrink: 0,
+                      color: SEV_COLOR[n.severity], background: SEV_BG[n.severity],
+                      border: `1px solid ${SEV_COLOR[n.severity]}33`,
+                    }}>
+                      {n.severity.charAt(0).toUpperCase() + n.severity.slice(1)}
+                    </Tag>
+
+                    {/* Time */}
+                    <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0, minWidth: 48, textAlign: 'right' }}>
+                      {formatAgo(n.timestamp)}
+                    </span>
+                  </div>
+                ))}
+
+                {notifications.length > 0 && (
+                  <div style={{ textAlign: 'center', paddingTop: 12 }}>
+                    <Button type="link" size="small" onClick={() => { setScrollToId(null); setShowActivity(true); }}>
+                      View all {notifications.length} event{notifications.length !== 1 ? 's' : ''} →
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </Card>
         </Col>
       </Row>

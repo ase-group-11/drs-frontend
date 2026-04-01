@@ -413,3 +413,23 @@
     gap: 6px;
   }
 }
+
+/* Vehicle user popup — remove default Mapbox padding */
+.vehicle-user-popup .mapboxgl-popup-content {
+  padding: 0 !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25) !important;
+}
+.vehicle-user-popup .mapboxgl-popup-close-button {
+  color: rgba(255,255,255,0.8) !important;
+  font-size: 16px !important;
+  top: 6px !important;
+  right: 8px !important;
+  background: none !important;
+  z-index: 10 !important;
+}
+.vehicle-user-popup .mapboxgl-popup-close-button:hover {
+  color: white !important;
+  background: rgba(0,0,0,0.1) !important;
+}

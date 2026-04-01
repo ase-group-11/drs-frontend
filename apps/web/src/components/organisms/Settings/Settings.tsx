@@ -1,5 +1,5 @@
 // NEW FILE
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   App,
   Button,
@@ -17,15 +17,9 @@ import {
   DatabaseOutlined,
   WifiOutlined,
 } from '@ant-design/icons';
-import {
-  getNotificationSettings,
-  changeAdminPassword,
-  getSystemStatus,
-} from '../../../services';
-import type {
-  NotificationSettings,
-  SystemStatus,
-} from '../../../types';
+import { changeAdminPassword, getSystemStatus } from '../../../services';
+import { useNotifications } from '../../../context/NotificationContext';
+import type { SystemStatus } from '../../../types';
 import styles from './Settings.module.css';
 
 const { Text } = Typography;
@@ -66,64 +60,56 @@ const GeneralTab: React.FC = () => {
 };
 
 // ─── Notifications Tab ───────────────────────────────────────────────────────
-interface ToggleRowProps {
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  last?: boolean;
-}
 
-const ToggleRow: React.FC<ToggleRowProps> = ({ title, description, checked, onChange, last }) => (
-  <div className={`${styles.toggleRow} ${last ? styles.toggleRowLast : ''}`}>
-    <div>
-      <Text strong style={{ fontSize: 14, display: 'block', color: '#111827' }}>{title}</Text>
-      <Text type="secondary" style={{ fontSize: 13 }}>{description}</Text>
-    </div>
-    <Switch checked={checked} onChange={onChange} style={checked ? { background: '#111827' } : {}} />
-  </div>
-);
-
+// ─── Notifications Tab ───────────────────────────────────────────────────────
 const NotificationsTab: React.FC = () => {
-  const [settings, setSettings] = useState<NotificationSettings>({
-    criticalAlerts: true,
-    dailySummary: true,
-    teamUpdates: false,
-    systemMaintenance: true,
-    desktopNotifications: true,
-    soundAlerts: false,
-  });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadNotifications();
-  }, []);
-
-  const loadNotifications = async () => {
-    const res = await getNotificationSettings();
-    if (res.data) setSettings(res.data);
-    setLoading(false);
-  };
-
-  const update = (key: keyof NotificationSettings) => (val: boolean) =>
-    setSettings((prev) => ({ ...prev, [key]: val }));
-
-  if (loading) return <div className={styles.tabLoading}><Spin /></div>;
+  const { socketEnabled, soundEnabled, toggleSocket, toggleSound, connected } = useNotifications();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card className={styles.settingsCard}>
-        <Text style={{ fontSize: 15, display: 'block', marginBottom: 20, color: '#111827' }}>Email Notifications</Text>
-        <ToggleRow title="Critical Alerts" description="Receive email for critical incidents" checked={settings.criticalAlerts} onChange={update('criticalAlerts')} />
-        <ToggleRow title="Daily Summary" description="Daily report digest" checked={settings.dailySummary} onChange={update('dailySummary')} />
-        <ToggleRow title="Team Updates" description="Team status changes" checked={settings.teamUpdates} onChange={update('teamUpdates')} />
-        <ToggleRow title="System Maintenance" description="Scheduled maintenance alerts" checked={settings.systemMaintenance} onChange={update('systemMaintenance')} last />
-      </Card>
+        <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 6, color: '#111827' }}>
+          Notification Settings
+        </Text>
+        <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 24 }}>
+          These settings are session-only and reset to ON on every login.
+        </Text>
 
-      <Card className={styles.settingsCard}>
-        <Text style={{ fontSize: 15, display: 'block', marginBottom: 20, color: '#111827' }}>Push Notifications</Text>
-        <ToggleRow title="Desktop Notifications" description="Browser push notifications" checked={settings.desktopNotifications} onChange={update('desktopNotifications')} />
-        <ToggleRow title="Sound Alerts" description="Audio alert for critical events" checked={settings.soundAlerts} onChange={update('soundAlerts')} last />
+        {/* WebSocket toggle */}
+        <div className={`${styles.toggleRow}`}>
+          <div>
+            <Text strong style={{ fontSize: 14, display: 'block', color: '#111827' }}>
+              Live Notifications
+            </Text>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              {socketEnabled
+                ? connected ? 'Connected — receiving live events' : 'Connecting...'
+                : 'Disconnected — no live events will be received'}
+            </Text>
+          </div>
+          <Switch
+            checked={socketEnabled}
+            onChange={toggleSocket}
+            style={socketEnabled ? { background: '#7c3aed' } : {}}
+          />
+        </div>
+
+        {/* Sound toggle */}
+        <div className={`${styles.toggleRow} ${styles.toggleRowLast}`}>
+          <div>
+            <Text strong style={{ fontSize: 14, display: 'block', color: '#111827' }}>
+              Notification Sound
+            </Text>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              {soundEnabled ? 'Audio alert plays on new notifications' : 'Silent — no sound on notifications'}
+            </Text>
+          </div>
+          <Switch
+            checked={soundEnabled}
+            onChange={toggleSound}
+            style={soundEnabled ? { background: '#7c3aed' } : {}}
+          />
+        </div>
       </Card>
     </div>
   );
