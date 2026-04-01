@@ -14,6 +14,8 @@ export const API_ENDPOINTS = {
     LOGIN:             '/emergency-team/login',
     LOGIN_VERIFY:      '/emergency-team/login/verify',
     CHANGE_PASSWORD:   '/emergency-team/change-password',
+    FORGOT_PASSWORD:   '/emergency-team/forgot-password',
+    RESET_PASSWORD:    '/emergency-team/reset-password',
     DEACTIVATE:        (id: string) => `/emergency-team/deactivate/${id}`,
     HEALTH:            '/emergency-team/health',
   },
