@@ -1,126 +1,166 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/MyReportsScreen/MyReportsScreen.tsx
-// FIXED: @/components/atoms/Text → @atoms/Text
-//        Null-safe convertBackendReport (disaster_type may be undefined)
+// FIXED - Proper navigation with back button
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, StyleSheet, SafeAreaView, StatusBar,
-  TouchableOpacity, ActivityIndicator,
+  View, StyleSheet, SafeAreaView, StatusBar, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ReportsList } from '@organisms/ReportsList';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
-import { disasterService } from '@services/disasterService';
-import { authService } from '@services/authService';
+import { disasterService, authService } from '@services';
 import type { Report } from '../../types/disaster';
 
 type Tab = 'active' | 'resolved' | 'all';
 
-// Null-safe conversion — backend fields may be missing
-const convertBackendReport = (r: any): Report => ({
-  id:           r.id ?? String(Math.random()),
-  reportNumber: `DR-${(r.id ?? '????????').substring(0, 8).toUpperCase()}`,
-  type:         (r.disaster_type ?? 'unknown').toLowerCase(),
-  severity:     (r.severity ?? 'medium').toLowerCase(),
-  title:        `${(r.disaster_type ?? 'Incident')} — ${(r.severity ?? 'Medium')}`,
-  location: {
-    latitude:  r.latitude ?? 0,
-    longitude: r.longitude ?? 0,
-    address:   r.location_address ?? 'Unknown location',
-  },
-  reportedAt:     new Date(r.created_at ?? Date.now()),
-  status:         (r.status ?? 'evaluating').toLowerCase() as any,
-  reportedBy:     'You',
-  description:    r.description ?? '',
-  unitsResponding: r.status === 'VERIFIED'
-    ? Math.floor(Math.random() * 5) + 1
-    : undefined,
-});
+// Convert backend report to frontend format
+const convertBackendReport = (backendReport: any): Report => {
+  // Use String() to safely handle null — null.toLowerCase() would crash
+  const disasterType = String(backendReport.disaster_type ?? 'OTHER');
+  const severity     = String(backendReport.severity      ?? 'MEDIUM');
+  const reportStatus = String(backendReport.report_status ?? backendReport.status ?? 'pending');
+
+  // Backend returns location as { lat, lon } object or flat latitude/longitude fields
+  const lat = backendReport.latitude  ?? backendReport.location?.lat  ?? 53.3498;
+  const lon = backendReport.longitude ?? backendReport.location?.lon  ?? -6.2603;
+
+  return {
+    id:           String(backendReport.id ?? ''),
+    reportNumber: `DR-${String(backendReport.id ?? '00000000').substring(0, 8).toUpperCase()}`,
+    type:         disasterType.toLowerCase(),         // e.g. 'fire', 'flood'
+    severity:     severity.toLowerCase(),             // e.g. 'high', 'critical'
+    title:        `${disasterType.replace(/_/g, ' ')} — ${severity}`,
+    location: {
+      latitude:  Number(lat),
+      longitude: Number(lon),
+      address:   String(backendReport.location_address ?? backendReport.location?.address ?? 'Unknown location'),
+    },
+    reportedAt:  backendReport.created_at ? new Date(backendReport.created_at) : new Date(),
+    status:      reportStatus.toLowerCase() as any,  // pending/verified/active/resolved/rejected
+    reportedBy:  'You',
+    description: String(backendReport.description ?? ''),
+  };
+};
 
 export const MyReportsScreen: React.FC = () => {
-  const navigation = useNavigation();
-  const [tab, setTab]         = useState<Tab>('active');
+  const navigation = useNavigation<any>();
+  const [tab, setTab] = useState<Tab>('active');
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { loadReports(); }, []);
+  useEffect(() => {
+    loadReports();
+  }, []);
 
   const loadReports = async () => {
     try {
       setLoading(true);
-      setError(null);
-
       const user = await authService.getStoredUser();
+      
       if (!user) {
         setError('Please log in to view your reports');
+        setLoading(false);
         return;
       }
 
-      const backendReports = await disasterService.getMyReports(user.id);
-      setReports(backendReports.map(convertBackendReport));
+      // Guard: user.id must be a valid UUID string
+      const userId = user?.id;
+      if (!userId || userId === 'undefined' || userId === 'null') {
+        console.error('[MyReports] Invalid user ID:', userId, 'user object:', JSON.stringify(user));
+        setError('Could not identify user. Please log out and log in again.');
+        setLoading(false);
+        return;
+      }
 
+      console.log('[MyReports] Loading reports for user:', userId);
+      // API: GET /disaster-reports/user/{user_id}
+      // NOTE: If this returns 404, the endpoint is missing from the backend.
+      // Tell backend team to add GET /disaster-reports/user/{user_id} to disaster_report.py
+      const backendReports = await disasterService.getMyReports(userId);
+      const convertedReports = backendReports.map(convertBackendReport);
+      setReports(convertedReports);
+      setError(null);
     } catch (err: any) {
       console.error('Failed to load reports:', err);
-      setError(err.message || 'Failed to load reports. Tap to retry.');
+      const msg = err.message || '';
+      if (msg.includes('Not Found') || msg.includes('404')) {
+        setError('Your reports could not be loaded. The backend may need a configuration update.');
+        console.error('[MyReports] 404 — backend is missing GET /disaster-reports/user/{user_id} endpoint.');
+      } else {
+        setError(msg || 'Failed to load reports');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const activeCount   = reports.filter(r => r.status !== 'resolved' && r.status !== 'rejected').length;
-  const resolvedCount = reports.filter(r => r.status === 'resolved'  || r.status === 'rejected').length;
-
-  const filtered = reports.filter(r => {
-    if (tab === 'active')   return r.status !== 'resolved' && r.status !== 'rejected';
-    if (tab === 'resolved') return r.status === 'resolved'  || r.status === 'rejected';
+  const filtered = reports.filter((r) => {
+    if (tab === 'active') return r.status !== 'resolved' && r.status !== 'rejected';
+    if (tab === 'resolved') return r.status === 'resolved' || r.status === 'rejected';
     return true;
   });
 
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'active',   label: `Active (${activeCount})`     },
-    { key: 'resolved', label: `Resolved (${resolvedCount})` },
-    { key: 'all',      label: `All (${reports.length})`     },
-  ];
+  const activeCount = reports.filter((r) => r.status !== 'resolved' && r.status !== 'rejected').length;
+  const resolvedCount = reports.filter((r) => r.status === 'resolved' || r.status === 'rejected').length;
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
-      {/* Header */}
+      {/* Header with Back Button */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
+        {/* ✅ Back Button - Goes to Home */}
+        <TouchableOpacity 
+          style={styles.headerBtn}
+          onPress={() => navigation.goBack()}
+        >
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M19 12H5M12 19l-7-7 7-7"
-              stroke={colors.textPrimary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <Path 
+              d="M19 12H5M12 19l-7-7 7-7" 
+              stroke={colors.textPrimary} 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+            />
           </Svg>
         </TouchableOpacity>
-
+        
         <Text variant="h4" color="textPrimary">My Reports</Text>
-
-        <TouchableOpacity style={styles.headerBtn} onPress={loadReports} disabled={loading}>
-          {loading
-            ? <ActivityIndicator size="small" color={colors.primary} />
-            : (
-              <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                <Path d="M1 4v6h6M23 20v-6h-6"
-                  stroke={colors.textPrimary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                <Path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"
-                  stroke={colors.textPrimary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            )
-          }
+        
+        {/* Refresh Button */}
+        <TouchableOpacity style={styles.headerBtn} onPress={loadReports}>
+          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+            <Path 
+              d="M1 4v6h6M23 20v-6h-6" 
+              stroke={colors.textPrimary} 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+            />
+            <Path 
+              d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" 
+              stroke={colors.textPrimary} 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+            />
+          </Svg>
         </TouchableOpacity>
       </View>
 
       {/* Tabs */}
       <View style={styles.tabBar}>
-        {TABS.map(t => (
+        {([
+          { key: 'active' as Tab, label: `Active (${activeCount})` },
+          { key: 'resolved' as Tab, label: `Resolved (${resolvedCount})` },
+          { key: 'all' as Tab, label: `All (${reports.length})` },
+        ]).map((t) => (
           <TouchableOpacity
             key={t.key}
             style={[styles.tab, tab === t.key && styles.tabActive]}
@@ -137,7 +177,7 @@ export const MyReportsScreen: React.FC = () => {
         ))}
       </View>
 
-      {/* Section label */}
+      {/* Section Header */}
       <View style={styles.sectionHeader}>
         <Text variant="labelLarge" color="textSecondary">
           {tab === 'active' ? 'ACTIVE REPORTS' : tab === 'resolved' ? 'RESOLVED REPORTS' : 'ALL REPORTS'}
@@ -146,33 +186,29 @@ export const MyReportsScreen: React.FC = () => {
 
       {/* Content */}
       {loading ? (
-        <View style={styles.center}>
+        <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text variant="bodyMedium" color="textSecondary" style={{ marginTop: spacing.md }}>
             Loading your reports...
           </Text>
         </View>
       ) : error ? (
-        <View style={styles.center}>
-          <Text variant="bodyLarge" color="error" style={{ textAlign: 'center' }}>{error}</Text>
-          <TouchableOpacity onPress={loadReports} style={styles.retryBtn}>
+        <View style={styles.centerContainer}>
+          <Text variant="bodyLarge" color="error">{error}</Text>
+          <TouchableOpacity onPress={loadReports} style={{ marginTop: spacing.md }}>
             <Text variant="bodyMedium" color="primary">Tap to retry</Text>
           </TouchableOpacity>
         </View>
       ) : filtered.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={{ fontSize: 48 }}>📋</Text>
-          <Text variant="bodyLarge" color="textSecondary" style={{ marginTop: spacing.md, textAlign: 'center' }}>
-            No {tab === 'all' ? '' : tab} reports yet
-          </Text>
-          <Text variant="bodyMedium" color="textSecondary" style={{ marginTop: spacing.sm, textAlign: 'center' }}>
-            Reports you submit will appear here
+        <View style={styles.centerContainer}>
+          <Text variant="bodyLarge" color="textSecondary">
+            No {tab === 'active' ? 'active' : tab === 'resolved' ? 'resolved' : ''} reports
           </Text>
         </View>
       ) : (
         <ReportsList
           reports={filtered}
-          onPress={(id) => navigation.navigate('ReportDetail' as any, { reportId: id })}
+          onPress={(id) => (navigation as any).navigate('ReportDetail', { reportId: id })}
         />
       )}
     </SafeAreaView>
@@ -180,31 +216,50 @@ export const MyReportsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.backgroundSecondary },
+  safe: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     backgroundColor: colors.white,
-    borderBottomWidth: 1, borderBottomColor: colors.gray200,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.gray200,
   },
-  headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabBar: {
-    flexDirection: 'row', backgroundColor: colors.white,
+    flexDirection: 'row',
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.gray200,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.gray200,
   },
   tab: {
-    flex: 1, paddingVertical: spacing.md, alignItems: 'center',
-    borderBottomWidth: 2, borderBottomColor: 'transparent',
+    flex: 1,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  tabActive:     { borderBottomColor: colors.primary },
+  tabActive: { borderBottomColor: colors.primary },
   activeTabText: { fontWeight: '600' },
   sectionHeader: {
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.gray100,
   },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.xl },
-  retryBtn: { marginTop: spacing.md, padding: spacing.md },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
 });
 
 export default MyReportsScreen;

@@ -24,6 +24,7 @@ const STORAGE_KEYS = {
   ACCESS_TOKEN:  '@auth/access_token',
   REFRESH_TOKEN: '@auth/refresh_token',
   USER_DATA:     '@auth/user_data',
+  USER_ROLE:     '@auth/user_role',
 };
 
 // ─── Error class ──────────────────────────────────────────────────────────
@@ -51,8 +52,15 @@ async function rawRequest<T>(endpoint: string, options: RequestInit = {}): Promi
       headers: { 'Content-Type': 'application/json', ...(options.headers as any) },
     });
     clearTimeout(tid);
-    const data = await res.json();
-    if (!res.ok) throw new ApiError(data.message || data.detail || 'Request failed', res.status, data);
+    const contentType = res.headers.get('content-type') ?? '';
+    let data: any;
+    if (contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      try { data = JSON.parse(text); } catch { data = { detail: text || 'Request failed' }; }
+    }
+    if (!res.ok) throw new ApiError(data?.message || data?.detail || 'Request failed', res.status, data);
     return data;
   } catch (e: any) {
     clearTimeout(tid);
@@ -139,8 +147,18 @@ export async function authRequest<T>(endpoint: string, options: RequestInit = {}
       res   = await makeCall(token);
     }
 
-    const data = await res.json();
-    if (!res.ok) throw new ApiError(data.message || data.detail || 'Request failed', res.status, data);
+    // Safe JSON parse — server may return plain text on errors
+    const contentType = res.headers.get('content-type') ?? '';
+    let data: any;
+    if (contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      // Try parsing anyway in case content-type header is wrong
+      try { data = JSON.parse(text); } catch { data = { detail: text || 'Request failed' }; }
+    }
+
+    if (!res.ok) throw new ApiError(data?.message || data?.detail || 'Request failed', res.status, data);
     return data;
 
   } catch (e: any) {
@@ -202,10 +220,16 @@ class AuthService {
   }
 
   private async saveTokens(tokens: TokenResponse, user: User) {
+    if (!user?.id) {
+      console.error('[Auth] saveTokens called with invalid user object:', JSON.stringify(user));
+      throw new ApiError('Invalid user data received from server', 500);
+    }
     this.accessToken = tokens.access_token;
     await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN,  tokens.access_token);
     await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh_token);
     await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA,     JSON.stringify(user));
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_ROLE,     'citizen'); // always overwrite responder role
+    console.log('[Auth] Tokens saved for user:', user.id);
   }
 
   // FIXED: multiRemove → individual removeItem (multiRemove not available on this RN version)
@@ -215,6 +239,7 @@ class AuthService {
       await AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.USER_DATA);
+      await AsyncStorage.removeItem(STORAGE_KEYS.USER_ROLE);
     } catch (e) { console.error('Failed to clear tokens:', e); }
   }
 

@@ -43,6 +43,7 @@ export const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
       // Navigate to OTP verification screen
       navigation.navigate('OTPVerification', {
         phoneNumber: formattedPhone,
+        countryCode: countryCode,
         isSignup: true,
         userName: fullName,
         email: email || undefined,

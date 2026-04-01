@@ -4,8 +4,8 @@
 // Enhanced with full ProfileMenu content and all screen navigation
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Alert, Modal, View, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Alert, Modal, View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapHeader }   from '@organisms/MapHeader';
 import { DisasterMap } from '@organisms/DisasterMap';
@@ -14,14 +14,17 @@ import { MapTemplate } from '@templates/MapTemplate';
 import { ProfileMenu } from '@organisms/ProfileMenu';
 import { ResponderProfileMenu } from '@organisms/ResponderProfileMenu';
 import { mapService }  from '@services/mapService';
-import { authService } from '@services/authService';
+import { authService, authRequest } from '@services/authService';
+import { wsService, WSAlert } from '@services/wsService';
+import { notificationStore } from '@services/notificationStore';
 import { colors }      from '@theme/colors';
 import type { Disaster, DisasterFilter } from '../../types/disaster';
+import { useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '@types/navigation';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
-interface HomeScreenProps { navigation: HomeScreenNavigationProp; }
+interface HomeScreenProps { navigation: HomeScreenNavigationProp; route?: any; }
 
 const FILTERS: DisasterFilter[] = [
   { id: 'all',       label: '📍 All',        icon: '📍' },
@@ -42,7 +45,7 @@ const getInitials = (name: string): string => {
     : name.substring(0, 2).toUpperCase();
 };
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => {
   const [disasters, setDisasters]                 = useState<Disaster[]>([]);
   const [filteredDisasters, setFilteredDisasters] = useState<Disaster[]>([]);
   const [selectedFilter, setSelectedFilter]       = useState('all');
@@ -51,17 +54,90 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [userPhone, setUserPhone]                 = useState('');
   const [userInitials, setUserInitials]           = useState('U');
   const [notificationCount]                       = useState(0);
+  const [alertCount, setAlertCount]               = useState(0);
   const [menuVisible, setMenuVisible]             = useState(false);
+  const [wsConnected, setWsConnected]             = useState(false);
+  const [activeAlert, setActiveAlert]             = useState<WSAlert | null>(null);
+  const [pendingReroute, setPendingReroute]       = useState<{
+    disasterId: string; routeId: string;
+    routeMeta: { time: number; dist: number } | null;
+    cachedPts:  [number, number][] | null;
+  } | null>(null);
   const [isResponder, setIsResponder]             = useState(false);
   const [responderData, setResponderData]         = useState<any>(null);
   const [missionCount, setMissionCount]           = useState(0);
-  const mapRef = useRef<any>(null);
+  const mapRef      = useRef<any>(null);
+  const pendingNav  = useRef<{ lat: number; lon: number; label: string } | null>(null);
+
+  // Store params immediately when they arrive (before screen is focused)
+  useEffect(() => {
+    const params = route?.params as any;
+    if (params?.flyToLat && params?.flyToLon) {
+      console.log('[HomeScreen] Storing pending nav params:', params.flyToLat, params.flyToLon);
+      pendingNav.current = {
+        lat:   params.flyToLat,
+        lon:   params.flyToLon,
+        label: params.flyToLabel ?? 'Incident Location',
+      };
+    }
+    // Reroute from AlertsScreen: geometry already fetched, just apply to map
+    if (params?.reroutePts && params.reroutePts.length > 1) {
+      console.log('[HomeScreen] Received reroutePts from AlertsScreen:', params.reroutePts.length);
+      setTimeout(() => {
+        if (mapRef.current?.applyRerouteAlertWithGeometry) {
+          mapRef.current.applyRerouteAlertWithGeometry(
+            params.rerouteDisaster ?? '',
+            params.reroutePts,
+            params.rerouteMeta ?? null,
+          );
+        }
+      }, 800);
+    }
+  }, [route?.params]);
+
+  // Fire navigation when screen comes into focus AND map ref is ready
+  useFocusEffect(useCallback(() => {
+    if (!pendingNav.current) return;
+    const nav = pendingNav.current;
+    pendingNav.current = null;
+    // Longer delay — map needs time after screen transition to be interactive
+    const t = setTimeout(() => {
+      console.log('[HomeScreen] useFocusEffect firing navigateToScene, mapRef:', !!mapRef.current);
+      if (mapRef.current?.navigateToScene) {
+        mapRef.current.navigateToScene(nav.lat, nav.lon, nav.label);
+      } else {
+        console.warn('[HomeScreen] mapRef.current.navigateToScene not available');
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, []));
 
   useEffect(() => {
     loadDisasters();
     loadUserData();
-    const interval = setInterval(loadDisasters, 30000);
-    return () => clearInterval(interval);
+    loadAlertCount();
+    const interval = setInterval(() => { loadDisasters(); loadAlertCount(); }, 30000);
+
+    // Connect WebSocket for real-time alerts
+    const connectWS = async () => {
+      const role = await AsyncStorage.getItem('@auth/user_role');
+      wsService.connect(role === 'responder');
+    };
+    connectWS();
+
+    const unsubAlert   = wsService.onAlert(handleWSAlert);
+    const unsubConnect = wsService.onConnect(setWsConnected);
+    const unsubStore   = notificationStore.subscribe(notifications => {
+      setAlertCount(notifications.filter(n => !n.isRead).length);
+    });
+
+    return () => {
+      clearInterval(interval);
+      unsubAlert();
+      unsubConnect();
+      unsubStore();
+      wsService.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -72,12 +148,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }
   }, [selectedFilter, disasters]);
 
+  const loadAlertCount = async () => {
+    const count = await notificationStore.unreadCount();
+    setAlertCount(count);
+  };
+
   const loadDisasters = async () => {
     try {
-      // Greater Dublin bounds
       const bounds = mapService.formatBounds(53.20, -6.45, 53.45, -6.05);
-      const data   = await mapService.getDisasters(bounds, 100);
+      // ERT doc Section 11: responders use GET /live-map/data (richer combined data)
+      // Citizens use GET /live-map/disasters
+      const data = await mapService.getDisasters(bounds, 100);
       setDisasters(data);
+      console.log('[HomeScreen] Disasters loaded:', data?.length ?? 0);
       setLoading(false);
     } catch (error) {
       console.error('Failed to load disasters:', error);
@@ -98,9 +181,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       if (role === 'responder' && user) {
         setIsResponder(true);
         setResponderData(user);
-        // Load active mission count — need unit UUID not employee_id
+        // ERT-only APIs — only called when role === 'responder', not for citizens
         try {
-          const { authRequest } = require('@services/authService');
           const unitsData = await authRequest('/emergency-units/');
           const units: any[] = unitsData?.units ?? [];
           const userDept = (user.department ?? '').toUpperCase();
@@ -113,6 +195,219 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       }
     } catch (error) {
       console.error('Failed to load user data:', error);
+    }
+  };
+
+  const handleRerouteBannerTap = async () => {
+    if (!pendingReroute) return;
+    const { disasterId, routeId, routeMeta, cachedPts } = pendingReroute;
+    console.log('[Reroute] Banner tapped, cachedPts:', cachedPts?.length ?? 'none');
+    setActiveAlert(null);
+    setPendingReroute(null);
+
+    let pts: [number, number][] | null = cachedPts;
+
+    // If no cached geometry (pre-fetch failed), try fetching now
+    if (!pts || pts.length < 2) {
+      try {
+        console.log('[Reroute] No cache - fetching geometry now:', routeId);
+        const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${routeId}`);
+        pts = (routeData?.points ?? []).map(
+          (p: number[]) => [p[1], p[0]] as [number, number]
+        );
+        console.log('[Reroute] Geometry fetched on tap:', pts?.length, 'points');
+      } catch (e: any) {
+        console.error('[Reroute] Fetch failed on tap:', e.message);
+      }
+    }
+
+    if (pts && pts.length > 1 && mapRef.current?.applyRerouteAlertWithGeometry) {
+      mapRef.current.applyRerouteAlertWithGeometry(disasterId, pts, routeMeta ?? null);
+    } else {
+      console.warn('[Reroute] No route geometry available to draw');
+    }
+  };
+
+  const handleWSAlert = async (alert: WSAlert) => {
+    // Refresh disaster map on relevant events
+    if (['disaster.evaluated', 'disaster.verified', 'disaster.resolved', 'disaster.false_alarm'].includes(alert.event_type)) {
+      loadDisasters();
+    }
+
+    // disaster.cleared — roads reopened, clear reroute overlay and status
+    if (alert.event_type === 'disaster.cleared') {
+      mapRef.current?.clearReroute?.();
+    }
+
+    // Citizen reroute — citizen-integration.md Section 8
+    if (alert.event_type === 'reroute.triggered') {
+      const data = alert.data ?? {};
+      const disasterId = data.disaster_id as string;
+      const routeAssignments: Record<string,string> = data.route_assignments ?? {};
+      // routes[] in the WS payload already has time/dist metadata
+      const routes: any[] = data.routes ?? [];
+
+      // Always store in notification inbox (geometry added below after fetch)
+      await notificationStore.add(alert);
+      setAlertCount(await notificationStore.unreadCount());
+
+      try {
+        const stored = await AsyncStorage.getItem('@auth/user_data');
+        const user = stored ? JSON.parse(stored) : null;
+        const userRouteId = user ? routeAssignments[user.id] : null;
+
+        if (!userRouteId) {
+          // User NOT in route_assignments — general area alert, no route to draw
+          console.log('[Reroute] Not in route_assignments — showing area alert');
+          setActiveAlert({
+            ...alert,
+            title:   'Rerouting in Your Area',
+            message: 'A disaster has affected nearby roads. Check the map for updates.',
+          });
+          return;
+        }
+
+        // User IS in route_assignments — eagerly fetch geometry now (plan is active)
+        // Store geometry in pendingReroute so banner tap has it instantly
+        const routeMeta = routes.find((r: any) => r.route_id === userRouteId);
+        console.log('[Reroute] User in route_assignments, routeId:', userRouteId, 'fetching geometry...');
+
+        // Fetch geometry immediately while plan is still active in the DB
+        let cachedPts: [number, number][] | null = null;
+        try {
+          const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${userRouteId}`);
+          cachedPts = (routeData?.points ?? []).map(
+            (p: number[]) => [p[1], p[0]] as [number, number]
+          );
+          console.log('[Reroute] Geometry pre-fetched:', cachedPts.length, 'points');
+          // Update the stored notification with cached geometry so AlertsScreen can use it
+          const all = await notificationStore.getAll();
+          const idx = all.findIndex(n => n.timestamp === alert.timestamp);
+          if (idx !== -1) {
+            all[idx].cachedRoutePts  = cachedPts ?? undefined;
+            all[idx].cachedRouteMeta = routeMeta
+              ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters }
+              : null;
+            await AsyncStorage.setItem('@notifications/alerts', JSON.stringify(all));
+          }
+        } catch (e) {
+          console.warn('[Reroute] Geometry pre-fetch failed (will retry on tap):', e);
+        }
+
+        setPendingReroute({
+          disasterId,
+          routeId: userRouteId,
+          routeMeta: routeMeta
+            ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters }
+            : null,
+          cachedPts,
+        });
+        setActiveAlert({
+          ...alert,
+          title:   '⚠️ Your Route is Affected',
+          message: 'A disaster is on your route. Tap to see your detour on the map.',
+        });
+      } catch (e) {
+        console.warn('[Reroute] Handler error:', e);
+      }
+      return; // skip generic banner below
+    }
+
+    // Section 8: route.updated — same flow as reroute.triggered, fetch new geometry
+    if (alert.event_type === 'route.updated') {
+      const data = alert.data ?? {};
+      const disasterId = data.disaster_id as string;
+      const routeAssignments: Record<string,string> = data.route_assignments ?? {};
+      const routes: any[] = data.routes ?? [];
+
+      await notificationStore.add(alert);
+      setAlertCount(await notificationStore.unreadCount());
+
+      try {
+        const stored = await AsyncStorage.getItem('@auth/user_data');
+        const user = stored ? JSON.parse(stored) : null;
+        const userRouteId = user ? routeAssignments[user.id] : null;
+        if (!userRouteId) {
+          setActiveAlert({ ...alert, title: 'Route Updated', message: 'Rerouting has been updated in your area.' });
+          return;
+        }
+        const routeMeta = routes.find((r: any) => r.route_id === userRouteId);
+        let cachedPts: [number, number][] | null = null;
+        try {
+          const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${userRouteId}`);
+          cachedPts = (routeData?.points ?? []).map((p: number[]) => [p[1], p[0]] as [number, number]);
+          console.log('[route.updated] New geometry:', cachedPts.length, 'pts');
+          const all = await notificationStore.getAll();
+          const idx = all.findIndex(n => n.timestamp === alert.timestamp);
+          if (idx !== -1) {
+            all[idx].cachedRoutePts  = cachedPts ?? undefined;
+            all[idx].cachedRouteMeta = routeMeta ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters } : null;
+            await AsyncStorage.setItem('@notifications/alerts', JSON.stringify(all));
+          }
+        } catch (e) { console.warn('[route.updated] Geometry fetch failed:', e); }
+
+        setPendingReroute({ disasterId, routeId: userRouteId,
+          routeMeta: routeMeta ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters } : null,
+          cachedPts });
+        setActiveAlert({ ...alert, title: '🔄 Route Recalculated', message: 'Your detour has been updated. Tap to view.' });
+      } catch (e) { console.warn('[route.updated] Handler error:', e); }
+      return;
+    }
+
+    // Section 9: vehicle.location_updated — move my vehicle pin on the map
+    if (alert.event_type === 'vehicle.location_updated') {
+      try {
+        const stored = await AsyncStorage.getItem('@auth/user_data');
+        if (stored) {
+          const user = JSON.parse(stored);
+          const vehicles: any[] = alert.data?.vehicles ?? [];
+          // Filter vehicles array by own user_id per citizen doc Section 9
+          const myVehicle = vehicles.find((v: any) => v.user_id === user.id);
+          if (myVehicle && mapRef.current?.updateMyVehicle) {
+            mapRef.current.updateMyVehicle(
+              myVehicle.lng,
+              myVehicle.lat,
+              myVehicle.progress_pct ?? 0,
+            );
+          }
+        }
+      } catch { /* silent */ }
+    }
+
+    // simulation.complete — clear vehicle pin, show all-clear banner
+    if (alert.event_type === 'simulation.complete') {
+      mapRef.current?.clearVehicle?.();
+    }
+
+    // Store ALL alerts in notification inbox — AlertsScreen reads from here
+    await notificationStore.add(alert);
+    const unread = await notificationStore.unreadCount();
+    setAlertCount(unread);
+
+    // ERT-specific events — refreshMap and show urgent alert if responder
+    if (isResponder) {
+      if (['disaster.dispatched', 'disaster.updated', 'disaster.unit_completed',
+           'coordination.team_assigned'].includes(alert.event_type)) {
+        loadDisasters();
+      }
+      if (alert.event_type === 'coordination.escalation') {
+        // Escalation — always show persistent banner, never auto-dismiss
+        setActiveAlert(alert);
+        return;
+      }
+    }
+
+    // Show banner for important alerts
+    if (['disaster.evaluated', 'reroute.triggered', 'evacuation.triggered', 'disaster.backup_requested',
+         'disaster.verified', 'disaster.resolved', 'disaster.false_alarm', 'disaster.cleared',
+         'route.updated', 'simulation.complete',
+         // ERT extras
+         'disaster.dispatched', 'disaster.updated', 'disaster.unit_completed',
+         'coordination.team_assigned', 'coordination.escalation'].includes(alert.event_type)) {
+      setActiveAlert(alert);
+      if (alert.severity === 'LOW' || alert.severity === 'INFO') {
+        setTimeout(() => setActiveAlert(prev => prev === alert ? null : prev), 5000);
+      }
     }
   };
 
@@ -156,6 +451,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             location="Dublin, Ireland"
             notificationCount={notificationCount}
             userInitials={userInitials}
+            avatarColor={isResponder ? '#DC2626' : undefined}
             onMenuPress={() => setMenuVisible(true)}
             onNotificationPress={() => navigation.navigate('Alerts' as any)}
             onAvatarPress={() => navigation.navigate('Profile' as any)}
@@ -178,6 +474,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           />
         }
       />
+
+      {/* WS Alert Banner */}
+      {activeAlert && (
+        <TouchableOpacity
+          activeOpacity={pendingReroute ? 0.75 : 1}
+          onPress={pendingReroute ? handleRerouteBannerTap : undefined}
+          style={[styles.alertBanner, { backgroundColor: SEVERITY_BG[activeAlert.severity] ?? '#1F2937' }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.alertBannerTitle}>{activeAlert.title}</Text>
+            <Text style={styles.alertBannerMsg} numberOfLines={2}>{activeAlert.message}</Text>
+            {pendingReroute && (
+              <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 3 }}>
+                Tap to view your detour on the map
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity onPress={() => { setActiveAlert(null); setPendingReroute(null); }} style={styles.alertDismiss}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      )}
 
       {/* ── Left slide drawer using original working Modal + fade ── */}
       <Modal
@@ -215,7 +533,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 phone={userPhone}
                 role="Citizen"
                 initials={userInitials}
-                alertCount={5}
+                alertCount={alertCount}
                 onNavigate={handleMenuNavigate}
                 onLogout={handleLogout}
               />
@@ -225,6 +543,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       </Modal>
     </>
   );
+};
+
+const SEVERITY_BG: Record<string, string> = {
+  CRITICAL: '#DC2626', HIGH: '#F97316', MEDIUM: '#D97706', LOW: '#2563EB', INFO: '#16A34A',
 };
 
 const styles = StyleSheet.create({
@@ -245,6 +567,16 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 16,
   },
+  alertBanner: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center',
+    padding: 14, paddingTop: 18,
+    zIndex: 999,
+  },
+  alertBannerTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  alertBannerMsg:   { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
+  alertDismiss:     { paddingLeft: 12, paddingVertical: 4 },
 });
 
 export default HomeScreen;

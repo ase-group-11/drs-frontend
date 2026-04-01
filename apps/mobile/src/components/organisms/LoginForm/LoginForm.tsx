@@ -72,7 +72,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
       {/* Responder login */}
       <TouchableOpacity style={styles.responderBtn} onPress={onResponderPress} activeOpacity={0.85}>
-        <Text style={styles.responderBtnText}>🚒  Login as Emergency Responder</Text>
+        <Text style={styles.responderBtnText}>Login as Emergency Responder</Text>
       </TouchableOpacity>
       <Text variant="bodySmall" color="textSecondary" style={styles.responderHint}>
         For authorised emergency services personnel only
