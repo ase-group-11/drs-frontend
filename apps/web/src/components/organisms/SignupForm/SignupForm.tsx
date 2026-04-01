@@ -9,7 +9,6 @@ import './SignupForm.css';
 const { Option } = Select;
 
 interface SignupFormValues {
-    salutation: string;
     firstName: string;
     lastName: string;
     role: string;
@@ -23,31 +22,13 @@ interface SignupFormValues {
 const SignupForm: React.FC = () => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
-    const [isFormValid, setIsFormValid] = useState(false);
     const [countryCode, setCountryCode] = useState('+353');
     const navigate = useNavigate();
 
     const handleFormChange = () => {
-        const values = form.getFieldsValue();
-
-        const allFieldsFilled =
-            values.salutation &&
-            values.firstName &&
-            values.lastName &&
-            values.role &&
-            values.department &&
-            values.mobileNumber &&
-            values.email &&
-            values.password &&
-            values.confirmPassword;
-
         form.validateFields({ validateOnly: true })
-            .then(() => {
-                setIsFormValid(!!allFieldsFilled);
-            })
-            .catch(() => {
-                setIsFormValid(false);
-            });
+            .then(() => {})
+            .catch(() => {});
     };
 
     const validateMobileNumber = (_: any, value: string) => {
@@ -74,12 +55,11 @@ const SignupForm: React.FC = () => {
             const formattedMobile = `${countryCode}${values.mobileNumber}`;
 
             const result = await requestSignupOTP({
-                salutation: values.salutation,
                 firstName: values.firstName,
                 lastName: values.lastName,
                 role: values.role,
                 department: values.department,
-                phoneNumber: formattedMobile,  // Changed from mobileNumber to phoneNumber
+                phoneNumber: formattedMobile,
                 email: values.email,
                 password: values.password,
             });
@@ -98,7 +78,6 @@ const SignupForm: React.FC = () => {
             }
         } catch (error) {
             message.error('Failed to send OTP. Please try again.');
-            console.error('Signup error:', error);
         } finally {
             setLoading(false);
         }
@@ -128,23 +107,7 @@ const SignupForm: React.FC = () => {
             className="signup-form"
         >
             <Row gutter={16}>
-                <Col xs={24} sm={8}>
-                    <Form.Item
-                        name="salutation"
-                        label="Salutation"
-                        rules={[{ required: true, message: 'Please select salutation' }]}
-                    >
-                        <Select placeholder="Select" size="large" suffixIcon={null}>
-                            <Option value="mr">Mr.</Option>
-                            <Option value="ms">Ms.</Option>
-                            <Option value="mrs">Mrs.</Option>
-                            <Option value="dr">Dr.</Option>
-                            <Option value="prof">Prof.</Option>
-                        </Select>
-                    </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={16}>
+                <Col xs={24}>
                     <Form.Item
                         name="firstName"
                         label="First Name"
@@ -190,8 +153,6 @@ const SignupForm: React.FC = () => {
                             suffixIcon={<SafetyOutlined style={{ color: 'rgba(0, 0, 0, 0.25)' }} />}
                         >
                             <Option value="admin">Admin</Option>
-                            <Option value="manager">Manager</Option>
-                            <Option value="staff">Staff</Option>
                         </Select>
                     </Form.Item>
                 </Col>
@@ -207,10 +168,7 @@ const SignupForm: React.FC = () => {
                             size="large"
                             suffixIcon={<BankOutlined style={{ color: 'rgba(0, 0, 0, 0.25)' }} />}
                         >
-                            <Option value="medical">Medical</Option>
-                            <Option value="police">Police</Option>
                             <Option value="it">IT</Option>
-                            <Option value="fire">Fire</Option>
                         </Select>
                     </Form.Item>
                 </Col>
@@ -275,7 +233,7 @@ const SignupForm: React.FC = () => {
                             { min: 8, message: 'Password must be at least 8 characters' },
                             {
                                 pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
-                                message: 'Password must contain uppercase, lowercase, number, and special character'
+                                message: 'Password must contain uppercase, lowercase, number, and special character (@,$,!,%,*,?,&)'
                             }
                         ]}
                         hasFeedback

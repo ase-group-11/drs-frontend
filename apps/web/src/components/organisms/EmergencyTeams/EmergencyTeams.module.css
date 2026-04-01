@@ -1,0 +1,478 @@
+/* NEW FILE */
+
+.container {
+  padding: 0;
+}
+
+/* ── Header ───────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+  display: block;
+}
+
+.headerMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.metaTotal { color: #6b7280; }
+.metaDivider { width: 1px; height: 14px; background: #e5e7eb; }
+.metaActive { display: flex; align-items: center; gap: 5px; color: #16a34a; font-weight: 500; }
+.metaDeployed { display: flex; align-items: center; gap: 5px; color: #2563eb; font-weight: 500; }
+
+.dotGreen {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a34a;
+  display: inline-block;
+}
+
+.dotBlue {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2563eb;
+  display: inline-block;
+}
+
+.addBtn {
+  background: #7c3aed !important;
+  border-color: #7c3aed !important;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25) !important;
+  font-weight: 500 !important;
+}
+
+.addBtn:hover {
+  background: #6d28d9 !important;
+  border-color: #6d28d9 !important;
+}
+
+/* ── Filter Bar ───────────────────────────────── */
+.filterBar {
+  background: #fff;
+  border: 1px solid #f3f4f6;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.typeFilters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterBtn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  transition: all 0.15s;
+  outline: none;
+}
+
+.filterBtn:hover {
+  background: #f9fafb;
+}
+
+.filterBtnActive {
+  background: #111827 !important;
+  color: #fff !important;
+  border-color: #111827 !important;
+}
+
+.searchWrap {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+.filterRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Status select — match disaster page gray pill style ── */
+.filterRight :global(.ant-select .ant-select-selector) {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: #374151 !important;
+  font-size: 13px !important;
+}
+
+.filterRight :global(.ant-select .ant-select-selection-item) {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: #374151 !important;
+}
+
+.filterRight :global(.ant-select-focused .ant-select-selector),
+.filterRight :global(.ant-select:hover .ant-select-selector),
+.filterRight :global(.ant-select-open .ant-select-selector) {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.filterRight :global(.ant-select-arrow) {
+  color: #6b7280 !important;
+}
+
+/* ── Search input — match disaster page gray pill style ── */
+.filterRight :global(.ant-input-affix-wrapper) {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.filterRight :global(.ant-input-affix-wrapper:hover),
+.filterRight :global(.ant-input-affix-wrapper-focused) {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+.filterRight :global(.ant-input) {
+  background-color: transparent !important;
+}
+
+.searchWrap :global(.ant-input-affix-wrapper) {
+  height: 32px !important;
+}
+
+/* Kill all borders/backgrounds on every possible Ant wrapper */
+.searchInput,
+.searchInput :global(.ant-input-outlined),
+.searchInput :global(.ant-input-affix-wrapper),
+.searchInput :global(.ant-input-affix-wrapper-lg) {
+  background: #f3f4f6 !important;
+  border: 1.5px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  padding: 0 12px !important;
+}
+
+.searchInput :global(.ant-input-affix-wrapper:hover),
+.searchInput :global(.ant-input-affix-wrapper:focus),
+.searchInput :global(.ant-input-affix-wrapper-focused),
+.searchInput :global(.ant-input-affix-wrapper-focused:hover) {
+  border-color: #d1d5db !important;
+  box-shadow: none !important;
+  background: #f3f4f6 !important;
+  outline: none !important;
+}
+
+/* Inner input - same gray, no extra border */
+.searchInput :global(.ant-input) {
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.searchInput :global(.ant-input::placeholder) {
+  color: #9ca3af !important;
+}
+
+.searchInput :global(.ant-input-prefix) {
+  color: #9ca3af !important;
+  margin-right: 8px !important;
+}
+
+/* ── Teams Grid ───────────────────────────────── */
+.teamsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.teamCard {
+  background: #fff;
+  border: 1px solid #f3f4f6;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.2s;
+}
+
+.teamCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Card body */
+.cardBody {
+  padding: 18px 20px;
+  flex: 1;
+}
+
+.cardTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.cardIdentity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.typeIconWrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.unitId {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+  display: block;
+  line-height: 1.2;
+}
+
+.stationName {
+  font-size: 12px !important;
+  color: #6b7280 !important;
+  display: block;
+}
+
+.statusTag {
+  border-radius: 20px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 2px 10px !important;
+  line-height: 20px !important;
+}
+
+/* Stats rows */
+.cardStats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.statRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.statLabel {
+  display: flex;
+  align-items: center;
+  color: #6b7280;
+}
+
+.statValue {
+  font-weight: 500 !important;
+  color: #111827 !important;
+  font-size: 13px !important;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.statValueEta {
+  font-weight: 700 !important;
+  color: #7c3aed !important;
+  font-size: 13px !important;
+}
+
+/* Card footer */
+.cardFooter {
+  background: #f9fafb;
+  border-top: 1px solid #f3f4f6;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footerAction {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 2px;
+  transition: color 0.15s;
+  outline: none;
+}
+
+.footerAction:hover {
+  color: #111827;
+}
+
+.footerActionPurple {
+  color: #7c3aed !important;
+}
+
+.footerActionPurple:hover {
+  color: #5b21b6 !important;
+}
+
+.footerDivider {
+  width: 1px;
+  height: 16px;
+  background: #e5e7eb;
+}
+
+/* ── Loading / Empty ──────────────────────────── */
+.loadingWrap {
+  display: flex;
+  justify-content: center;
+  padding: 80px 0;
+}
+
+.emptyState {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 0;
+}
+/* ═══════════════════════════════════════
+   RESPONSIVE — Mobile
+═══════════════════════════════════════ */
+@media (max-width: 768px) {
+  .teamsGrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .filterBar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    overflow: visible;
+  }
+
+  .typeFilters {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: scroll;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    width: 100%;
+  }
+
+  .typeFilters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filterBtn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .searchWrap {
+    width: 100%;
+  }
+
+  .filterRight {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filterRight :global(.ant-select),
+  .filterRight :global(.ant-input-affix-wrapper) {
+    width: 100% !important;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .addBtn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .cardBody {
+    padding: 14px 16px;
+  }
+
+  .cardFooter {
+    padding: 8px 16px;
+  }
+
+  .unitId {
+    font-size: 16px !important;
+  }
+}
+
+/* ── Status dropdown popup — match disaster page style ── */
+:global(.et-status-dropdown) .ant-select-item {
+  color: #374151 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+:global(.et-status-dropdown) .ant-select-item:hover,
+:global(.et-status-dropdown) .ant-select-item-option-active {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+:global(.et-status-dropdown) .ant-select-item-option-selected {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+:global(.et-status-dropdown) .ant-select-item-option-selected .ant-select-item-option-state {
+  color: #374151 !important;
+}

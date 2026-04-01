@@ -1,0 +1,232 @@
+/* NEW FILE — supplemental styles for DispatchUnitsModal and EscalateSeverityModal */
+
+/* ── Dispatch Modal ──────────────────────────────────────────────────── */
+
+.dispatch-incident-info {
+  display: flex;
+  align-items: center;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.dispatch-units-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.dispatch-unit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dispatch-unit-row:hover {
+  border-color: #c4b5fd;
+  background: #faf5ff;
+}
+
+.dispatch-unit-row.selected {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+}
+
+.dispatch-unit-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dispatch-unit-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.dispatch-unit-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dispatch-unit-eta {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.dispatch-config {
+  padding: 4px 0;
+}
+
+.dispatch-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dispatch-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #f3f4f6;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ── Escalate Modal ──────────────────────────────────────────────────── */
+
+.escalate-steps {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 0 4px;
+}
+
+.escalate-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.escalate-step.active {
+  color: #7c3aed;
+}
+
+.escalate-step-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.escalate-step.active .escalate-step-dot {
+  border-color: #7c3aed;
+  background: #7c3aed;
+  color: #fff;
+}
+
+.escalate-step-line {
+  flex: 1;
+  height: 2px;
+  background: #e5e7eb;
+  margin: 0 8px;
+}
+
+.escalate-current {
+  margin-bottom: 16px;
+}
+
+.escalate-step1 {
+  display: flex;
+  flex-direction: column;
+}
+
+.escalate-radio-option {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 !important;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.escalate-radio-option:hover {
+  border-color: #fca5a5;
+  background: #fff5f5;
+}
+
+.escalate-radio-option.ant-radio-wrapper-checked {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.escalate-radio-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.escalate-step2 {
+  padding-bottom: 4px;
+}
+
+.escalate-summary {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.escalate-summary-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.escalate-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #f3f4f6;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ── Dispatch Priority Select — gray fill, no border ── */
+.dispatch-priority-select .ant-select .ant-select-selector {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  height: 42px !important;
+  align-items: center !important;
+}
+
+.dispatch-priority-select .ant-select:hover .ant-select-selector,
+.dispatch-priority-select .ant-select-focused .ant-select-selector,
+.dispatch-priority-select .ant-select-open .ant-select-selector {
+  background-color: #e9eaec !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.dispatch-priority-select .ant-select-selection-item {
+  display: flex !important;
+  align-items: center !important;
+}

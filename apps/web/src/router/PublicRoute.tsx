@@ -13,7 +13,7 @@ const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
     return <div>Loading...</div>;
   }
 
-  return isAuthenticated ? <Navigate to="/home" replace /> : children;
+  return isAuthenticated ? <Navigate to="/admin/dashboard" replace /> : children;
 };
 
 export default PublicRoute;

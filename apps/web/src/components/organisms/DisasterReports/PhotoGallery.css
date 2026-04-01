@@ -1,0 +1,147 @@
+/* NEW FILE */
+
+.gallery-container {
+  padding: 0;
+}
+
+/* Header */
+.gallery-header {
+  margin-bottom: 24px;
+}
+
+.gallery-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gallery-title-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gallery-back-btn {
+  color: #6b7280;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.gallery-back-btn:hover {
+  color: #7c3aed !important;
+}
+
+.gallery-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 2px;
+}
+
+/* Grid — 3 columns, full bleed */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.gallery-photo-card {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  aspect-ratio: 4 / 3;
+  background: #e5e7eb;
+}
+
+.gallery-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.gallery-photo-card:hover .gallery-photo-img {
+  transform: scale(1.04);
+}
+
+/* Bottom gradient + caption — always visible */
+.gallery-photo-gradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 55%;
+  background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.gallery-photo-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 14px 16px;
+}
+
+.gallery-photo-caption {
+  color: #fff !important;
+  font-size: 13px;
+  line-height: 1.5;
+  display: block;
+}
+
+/* Hover overlay */
+.gallery-photo-hover {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* "View Fullscreen" pill button */
+.gallery-fullscreen-btn {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 20px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s;
+}
+
+.gallery-fullscreen-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Three-dots button */
+.gallery-more-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(30, 30, 30, 0.65);
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+.gallery-more-btn:hover {
+  background: rgba(30, 30, 30, 0.85);
+}

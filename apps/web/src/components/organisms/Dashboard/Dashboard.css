@@ -1,0 +1,396 @@
+/* File: /web/src/components/organisms/Dashboard/Dashboard.css */
+
+.dashboard-container {
+  padding: 0;
+}
+
+.dashboard-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+/* Stat Cards */
+.dashboard-stats {
+  margin-bottom: 16px;
+}
+
+/* ✅ make KPI cols stretch so all cards are equal height */
+.dashboard-stats > .ant-col {
+  display: flex;
+}
+
+.stat-card {
+  width: 100%;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s;
+  overflow: visible;
+}
+
+.stat-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card .ant-card-body {
+  padding: 24px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  min-height: 110px; /* ✅ keeps all KPI bodies consistent */
+}
+
+.stat-icon-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-icon-purple {
+  background: #f3e8ff;
+}
+.stat-icon-purple .stat-icon {
+  color: #7c3aed;
+  font-size: 20px;
+}
+
+.stat-icon-red {
+  background: oklch(0.936 0.032 17.717);
+}
+.stat-icon-red .stat-icon {
+  color: oklch(0.505 0.213 27.518);
+  font-size: 20px;
+}
+
+.stat-icon-blue {
+  background: oklch(0.932 0.032 255.585);
+}
+.stat-icon-blue .stat-icon {
+  color: oklch(0.488 0.243 264.376);
+  font-size: 20px;
+}
+
+.stat-icon-green {
+  background: oklch(0.962 0.044 156.743);
+}
+.stat-icon-green .stat-icon {
+  color: rgb(0, 130, 54);
+  font-size: 20px;
+}
+
+.stat-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.2;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ✅ DO NOT change font-size here; keep same as stat-value */
+.stat-status {
+  text-transform: capitalize;
+  color: #10b981;
+}
+
+.stat-detail {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+.stat-change {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.stat-change-positive {
+  color: #10b981;
+}
+
+/* ── Trend period Select — match Figma gray pill style ── */
+
+/* Default: gray background, no border */
+.chart-card .ant-select .ant-select-selector {
+  background-color: #f3f4f6 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: #374151 !important;
+}
+
+/* Remove blue ring on focus/active */
+.chart-card .ant-select-focused .ant-select-selector,
+.chart-card .ant-select:hover .ant-select-selector,
+.chart-card .ant-select-open .ant-select-selector {
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #e9eaec !important;
+}
+
+/* Arrow color */
+.chart-card .ant-select-arrow {
+  color: #6b7280 !important;
+}
+
+/* Dropdown popup */
+.chart-card-trends-dropdown .ant-select-item {
+  color: #374151 !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+}
+
+/* Hover state — gray, not blue */
+.chart-card-trends-dropdown .ant-select-item:hover,
+.chart-card-trends-dropdown .ant-select-item-option-active {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+/* Selected item — gray bg, dark checkmark */
+.chart-card-trends-dropdown .ant-select-item-option-selected {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+.chart-card-trends-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
+  color: #374151 !important;
+}
+
+/* Charts */
+.dashboard-charts {
+  margin-bottom: 16px;
+}
+
+/* ✅ Make both chart columns stretch so cards align height */
+.dashboard-charts > .ant-col {
+  display: flex;
+}
+
+.dashboard-charts .ant-card {
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-charts .ant-card-head-title {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* ✅ Equal-height chart cards */
+.chart-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card .ant-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ✅ Fill the available body space consistently */
+.chart-fill {
+  flex: 1;
+  min-height: 300px;
+}
+
+/* Keep distribution chart visually close; set to 300 if you want exact match */
+.chart-fill-distribution {
+  min-height: 240px;
+}
+
+/* Total reports */
+.total-reports {
+  text-align: center;
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.total-reports-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.total-reports-label {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+/* Activity Table */
+.dashboard-bottom .ant-card {
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Remove the divider line under the card header */
+.dashboard-bottom .ant-card .ant-card-head {
+  border-bottom: none !important;
+}
+
+/* Card title — lighter weight to match Figma */
+.dashboard-bottom .ant-card .ant-card-head-title {
+  font-weight: 500 !important;
+  color: #111827 !important;
+}
+
+/* View All → purple to match Figma */
+.dashboard-bottom .ant-btn-link {
+  color: #7c3aed !important;
+}
+.dashboard-bottom .ant-btn-link:hover {
+  color: #6d28d9 !important;
+}
+
+/* Table header: no background, medium gray text */
+.activity-table .ant-table-thead > tr > th {
+  background: transparent !important;
+  color: #6b7280 !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  border-bottom: 1px solid #f3f4f6 !important;
+}
+
+/* Remove the default Ant Design header column separator line */
+.activity-table .ant-table-thead > tr > th::before {
+  display: none !important;
+}
+
+/* Activity column — bold dark text */
+.activity-table .ant-table-tbody > tr > td:nth-child(2) {
+  font-weight: 600;
+  color: #111827;
+}
+
+/* User column — muted gray */
+.activity-table .ant-table-tbody > tr > td:nth-child(3) {
+  color: #9ca3af;
+}
+
+/* Row dividers — very subtle */
+.activity-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f9fafb !important;
+}
+
+/* Status tags — pill-shaped, no border, pastel background */
+.activity-table .ant-tag {
+  border-radius: 10px !important;
+  border: none !important;
+  font-weight: 600 !important;
+  padding: 3px 12px !important;
+  font-size: 13px !important;
+}
+
+.activity-table .activity-time {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Responsive */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .stat-value {
+    font-size: 22px;
+  }
+
+  .stat-card .ant-card-body {
+    padding: 16px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .stat-value {
+    font-size: 24px;
+  }
+}
+/* ═══════════════════════════════════════
+   RESPONSIVE — Mobile
+═══════════════════════════════════════ */
+@media (max-width: 768px) {
+  .stat-value {
+    font-size: 22px;
+  }
+
+  .stat-card .ant-card-body {
+    padding: 16px;
+    min-height: auto;
+  }
+
+  .chart-fill {
+    min-height: 220px;
+  }
+
+  .chart-fill-distribution {
+    min-height: 200px;
+  }
+
+  .total-reports-value {
+    font-size: 22px;
+  }
+
+  /* Stack activity table columns better */
+  .activity-table .ant-table-cell {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+
+  /* Hide less important columns on small screens */
+  .activity-table .ant-table-thead > tr > th:nth-child(3),
+  .activity-table .ant-table-tbody > tr > td:nth-child(3) {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-card .ant-card-body {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .stat-icon-wrapper {
+    width: 40px;
+    height: 40px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  /* Hide time column too on very small screens, show activity + status */
+  .activity-table .ant-table-thead > tr > th:nth-child(1),
+  .activity-table .ant-table-tbody > tr > td:nth-child(1) {
+    display: none;
+  }
+}

@@ -15,7 +15,7 @@ export interface User {
 }
 
 export interface SignupFormData {
-  salutation: Salutation;
+  salutation?: Salutation;
   firstName: string;
   lastName: string;
   role: UserRole;
@@ -52,6 +52,7 @@ export interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string, user: User) => void;
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;

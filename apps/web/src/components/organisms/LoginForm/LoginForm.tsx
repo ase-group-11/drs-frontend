@@ -1,101 +1,110 @@
+// MODIFIED FILE — changes: Handle ACCESS_DENIED error from auth to show "Admin only" message
 import React, { useState } from 'react';
-import { Form, Input, Button, Checkbox, message } from 'antd';
-import { MailOutlined, LockOutlined } from '@ant-design/icons';
+import { Form, Input, Button, App } from 'antd';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks';
+import type { LoginFormData } from '../../../types';
 import './LoginForm.css';
 
-interface LoginFormValues {
-  email: string;
-  password: string;
-  rememberMe?: boolean;
-}
-
-const LoginForm: React.FC = () => {
-  const [form] = Form.useForm();
+const LoginFormInner: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const [form] = Form.useForm();
+  const { message } = App.useApp();
 
-  const onFinish = async (values: LoginFormValues) => {
+  const handleSubmit = async (values: LoginFormData) => {
     setLoading(true);
     try {
       await login(values.email, values.password);
-      message.success('Login successful!');
-    } catch (error: any) {
-      message.error(error.message || 'Login failed. Please check your credentials.');
+    } catch (err: any) {
+      const raw = err?.message || 'Login failed. Please check your credentials.';
+      const msg = raw.replace(/^rate_limit:\s*/i, '');
+      message.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Form
-      form={form}
-      name="login"
-      onFinish={onFinish}
-      layout="vertical"
-      autoComplete="off"
-      className="login-form"
-    >
-      <Form.Item
-        name="email"
-        label="Email Address"
-        rules={[
-          { required: true, message: 'Please enter your email' },
-          { type: 'email', message: 'Please enter a valid email address' }
-        ]}
+    <div className="login-form-container">
+      <Form
+        form={form}
+        name="login"
+        onFinish={handleSubmit}
+        layout="vertical"
+        requiredMark={false}
       >
-        <Input
-          prefix={<MailOutlined style={{ color: 'rgba(0, 0, 0, 0.25)' }} />}
-          placeholder="user@company.com"
-          size="large"
-          type="email"
-        />
-      </Form.Item>
-
-      <Form.Item
-        name="password"
-        label="Password"
-        rules={[
-          { required: true, message: 'Please enter your password' }
-        ]}
-      >
-        <Input.Password
-          prefix={<LockOutlined style={{ color: 'rgba(0, 0, 0, 0.25)' }} />}
-          placeholder="Enter password"
-          size="large"
-        />
-      </Form.Item>
-
-      <div className="login-form-options">
-        <Form.Item name="rememberMe" valuePropName="checked" noStyle>
-          <Checkbox>Remember me</Checkbox>
-        </Form.Item>
-        <a href="/forgot-password" className="forgot-password-link">
-          Forgot password?
-        </a>
-      </div>
-
-      <Form.Item>
-        <Button
-          type="primary"
-          htmlType="submit"
-          size="large"
-          loading={loading}
-          block
-          className="login-submit-btn"
+        <Form.Item
+          name="email"
+          label="Email Address"
+          rules={[
+            { required: true, message: 'Please enter your email' },
+            { type: 'email', message: 'Please enter a valid email' },
+          ]}
         >
-          Log In
-        </Button>
-      </Form.Item>
+          <Input
+            prefix={<UserOutlined />}
+            placeholder="admin@example.com"
+            size="large"
+            className="login-input"
+          />
+        </Form.Item>
 
-      <div className="login-footer-text">
-        <span>
+        <Form.Item
+          name="password"
+          label="Password"
+          rules={[{ required: true, message: 'Please enter your password' }]}
+        >
+          <Input.Password
+            prefix={<LockOutlined />}
+            placeholder="Enter your password"
+            size="large"
+            className="login-input"
+          />
+        </Form.Item>
+
+        <Form.Item>
+          <div className="login-options">
+            <button
+              type="button"
+              className="forgot-password-link"
+              onClick={() => {}}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              Forgot password?
+            </button>
+          </div>
+        </Form.Item>
+
+        <Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={loading}
+            block
+            size="large"
+            className="login-submit-btn"
+          >
+            Sign In
+          </Button>
+        </Form.Item>
+
+        <div style={{ textAlign: 'center', marginTop: 12, fontSize: 14, color: '#6b7280' }}>
           Don't have an account?{' '}
-          <a href="/signup">Sign Up</a>
-        </span>
-      </div>
-    </Form>
+          <Link to="/signup" style={{ color: '#7c3aed', fontWeight: 500 }}>
+            Sign up
+          </Link>
+        </div>
+      </Form>
+    </div>
   );
 };
+
+const LoginForm: React.FC = () => (
+  <App>
+    <LoginFormInner />
+  </App>
+);
 
 export default LoginForm;
