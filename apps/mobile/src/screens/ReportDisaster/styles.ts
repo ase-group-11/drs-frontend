@@ -1,5 +1,12 @@
-import { StyleSheet } from "react-native";
-import { colors, spacing, borderRadius, shadows } from '@/theme'; // adjust path as needed
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/screens/ReportDisaster/styles.ts
+// FIXED: @/theme → @theme/colors, @theme/spacing
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { StyleSheet } from 'react-native';
+import { colors } from '@theme/colors';
+import { spacing, borderRadius, shadows } from '@theme/spacing';
+
 export const reportStyles = StyleSheet.create({
   container: {
     flex: 1,
@@ -11,8 +18,15 @@ export const reportStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.gray200,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerCenter: {
     alignItems: 'center',
@@ -31,26 +45,28 @@ export const reportStyles = StyleSheet.create({
   },
   progressDotActive: {
     backgroundColor: colors.primary,
+    width: 24,
   },
   stepText: {
     textAlign: 'center',
     marginBottom: spacing.md,
+    color: colors.textSecondary,
   },
   content: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
   },
   title: {
     marginBottom: spacing.md,
+    marginTop: spacing.md,
   },
   sectionTitle: {
     marginTop: spacing.lg,
     marginBottom: spacing.md,
   },
-  
+
   // Map
   mapContainer: {
-    height: 250,
+    height: 240,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
     marginBottom: spacing.md,
@@ -77,7 +93,7 @@ export const reportStyles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
   },
-  
+
   // Address
   addressContainer: {
     flexDirection: 'row',
@@ -92,7 +108,7 @@ export const reportStyles = StyleSheet.create({
   addressText: {
     flex: 1,
   },
-  
+
   // Action Buttons
   actionButton: {
     flexDirection: 'row',
@@ -112,7 +128,7 @@ export const reportStyles = StyleSheet.create({
   actionButtonText: {
     color: colors.textPrimary,
   },
-  
+
   // Type Grid
   typeGrid: {
     flexDirection: 'row',
@@ -134,10 +150,10 @@ export const reportStyles = StyleSheet.create({
     backgroundColor: colors.primary + '10',
   },
   typeEmoji: {
-    fontSize: 40,
+    fontSize: 36,
     marginBottom: spacing.xs,
   },
-  
+
   // Severity
   severityList: {
     gap: spacing.sm,
@@ -157,7 +173,7 @@ export const reportStyles = StyleSheet.create({
     borderRadius: 4,
     marginRight: spacing.sm,
   },
-  
+
   // Text Area
   textArea: {
     height: 120,
@@ -168,13 +184,14 @@ export const reportStyles = StyleSheet.create({
     backgroundColor: colors.gray100,
     fontSize: 16,
     fontFamily: 'System',
+    color: colors.textPrimary,
   },
   charCount: {
     textAlign: 'right',
     marginTop: spacing.xs,
     marginBottom: spacing.md,
   },
-  
+
   // Photos
   subtitle: {
     marginBottom: spacing.sm,
@@ -189,6 +206,7 @@ export const reportStyles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,
+    gap: spacing.xs,
   },
   photoPlaceholder: {
     width: 100,
@@ -199,8 +217,9 @@ export const reportStyles = StyleSheet.create({
   },
   photoHint: {
     marginTop: spacing.xs,
+    marginBottom: spacing.md,
   },
-  
+
   // Picker
   picker: {
     flexDirection: 'row',
@@ -213,7 +232,7 @@ export const reportStyles = StyleSheet.create({
     backgroundColor: colors.white,
     marginBottom: spacing.md,
   },
-  
+
   // Checkbox
   checkbox: {
     flexDirection: 'row',
@@ -229,6 +248,7 @@ export const reportStyles = StyleSheet.create({
     borderColor: colors.gray300,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   checkboxBoxChecked: {
     backgroundColor: colors.primary,
@@ -237,8 +257,9 @@ export const reportStyles = StyleSheet.create({
   checkboxCheck: {
     color: colors.white,
     fontWeight: 'bold',
+    fontSize: 14,
   },
-  
+
   // Review Cards
   reviewCard: {
     padding: spacing.md,
@@ -268,7 +289,7 @@ export const reportStyles = StyleSheet.create({
   severityText: {
     color: colors.error,
   },
-  
+
   // Alert Box
   alertBox: {
     padding: spacing.md,
@@ -284,7 +305,7 @@ export const reportStyles = StyleSheet.create({
     gap: spacing.xs,
     marginBottom: spacing.sm,
   },
-  
+
   // Action Buttons (Review)
   actionButtons: {
     flexDirection: 'row',
@@ -295,7 +316,7 @@ export const reportStyles = StyleSheet.create({
   submitDisabled: {
     opacity: 0.5,
   },
-  
+
   // Success Screen
   successIcon: {
     alignItems: 'center',
@@ -325,6 +346,7 @@ export const reportStyles = StyleSheet.create({
     backgroundColor: colors.gray300,
     marginTop: 4,
     marginRight: spacing.sm,
+    flexShrink: 0,
   },
   timelineDotComplete: {
     backgroundColor: colors.success,
@@ -348,7 +370,7 @@ export const reportStyles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  
+
   nextButton: {
     marginTop: spacing.xl,
     marginBottom: spacing.xxl,

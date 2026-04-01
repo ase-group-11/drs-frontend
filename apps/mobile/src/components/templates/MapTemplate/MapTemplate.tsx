@@ -1,5 +1,11 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/components/templates/MapTemplate/MapTemplate.tsx
+// FIXED - Using react-native-safe-area-context
+// ═══════════════════════════════════════════════════════════════════════════
+
 import React from 'react';
-import { View, StyleSheet, SafeAreaView, StatusBar } from 'react-native';
+import { View, StyleSheet, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@theme/colors';
 
 export interface MapTemplateProps {
@@ -9,7 +15,7 @@ export interface MapTemplateProps {
 }
 
 export const MapTemplate: React.FC<MapTemplateProps> = ({ header, filterBar, map }) => (
-  <SafeAreaView style={styles.safe}>
+  <SafeAreaView style={styles.safe} edges={['top']}>
     <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
     {header}
     {filterBar}

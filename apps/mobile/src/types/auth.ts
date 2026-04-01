@@ -1,12 +1,15 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/types/auth.ts
+// Authentication Types - COMPLETE & READY TO USE
+// ═══════════════════════════════════════════════════════════════════════════
+
 export interface User {
   id: string;
   phone_number: string;
   full_name: string;
   email?: string;
-  role?: UserRole;
-  status: UserStatus;
+  status: string;
   created_at: string;
-  updated_at: string;
 }
 
 export type UserRole = 'user' | 'admin' | 'responder' | 'coordinator';
@@ -21,55 +24,75 @@ export interface AuthState {
   error: string | null;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Token Response (matches backend)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Register API
+// ═══════════════════════════════════════════════════════════════════════════
+
 export interface RegisterRequest {
-  phone_number: string; // Format: +911234567890
+  phone_number: string;
   full_name: string;
   email?: string;
 }
 
 export interface RegisterResponse {
   message: string;
-  success: boolean;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
 // Verify Registration API
+// ═══════════════════════════════════════════════════════════════════════════
+
 export interface VerifyRegisterRequest {
   phone_number: string;
   otp: string;
 }
 
 export interface VerifyRegisterResponse {
-  message: string;
   user: User;
-  access_token: string;
-  refresh_token?: string;
+  tokens: TokenResponse;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
 // Login API
+// ═══════════════════════════════════════════════════════════════════════════
+
 export interface LoginRequest {
-  phone_number: string; // Format: +911234567890
+  phone_number: string;
 }
 
 export interface LoginResponse {
   message: string;
-  success: boolean;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
 // Verify Login API
+// ═══════════════════════════════════════════════════════════════════════════
+
 export interface VerifyLoginRequest {
   phone_number: string;
   otp: string;
 }
 
 export interface VerifyLoginResponse {
-  message: string;
   user: User;
-  access_token: string;
-  refresh_token?: string;
+  tokens: TokenResponse;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
 // Generic API Response
+// ═══════════════════════════════════════════════════════════════════════════
+
 export interface ApiResponse<T = any> {
   success: boolean;
   message: string;

@@ -1,3 +1,9 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/services/authService.ts
+// FIXED: Auto token refresh on 401, multiRemove → individual removeItem
+// ═══════════════════════════════════════════════════════════════════════════
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   RegisterRequest,
   RegisterResponse,
@@ -7,252 +13,262 @@ import type {
   LoginResponse,
   VerifyLoginRequest,
   VerifyLoginResponse,
-  ApiResponse,
+  User,
+  TokenResponse,
 } from '@types/auth';
 import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
 
-/**
- * API Error class
- */
+// ─── Storage Keys ─────────────────────────────────────────────────────────
+
+const STORAGE_KEYS = {
+  ACCESS_TOKEN:  '@auth/access_token',
+  REFRESH_TOKEN: '@auth/refresh_token',
+  USER_DATA:     '@auth/user_data',
+};
+
+// ─── Error class ──────────────────────────────────────────────────────────
+
 export class ApiError extends Error {
   status: number;
   data: any;
-
   constructor(message: string, status: number, data?: any) {
     super(message);
-    this.name = 'ApiError';
+    this.name   = 'ApiError';
     this.status = status;
-    this.data = data;
+    this.data   = data;
   }
 }
 
-/**
- * Make API request with error handling
- */
-async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+// ─── Raw fetch (no auth — used for login/register/refresh) ────────────────
 
+async function rawRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers: { 'Content-Type': 'application/json', ...(options.headers as any) },
     });
-
-    clearTimeout(timeoutId);
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new ApiError(
-        data.message || data.detail || 'Something went wrong',
-        response.status,
-        data
-      );
-    }
-
+    clearTimeout(tid);
+    const data = await res.json();
+    if (!res.ok) throw new ApiError(data.message || data.detail || 'Request failed', res.status, data);
     return data;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-
-    if (error.name === 'AbortError') {
-      throw new ApiError('Request timed out. Please try again.', 408);
-    }
-
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
-    // Network error
-    if (error.message === 'Network request failed') {
-      throw new ApiError(
-        'Unable to connect to server. Please check your internet connection.',
-        0
-      );
-    }
-
-    throw new ApiError(error.message || 'Something went wrong', 500);
+  } catch (e: any) {
+    clearTimeout(tid);
+    if (e.name === 'AbortError') throw new ApiError('Request timed out.', 408);
+    if (e instanceof ApiError)   throw e;
+    if (e.message === 'Network request failed') throw new ApiError('No internet connection.', 0);
+    throw new ApiError(e.message || 'Something went wrong', 500);
   }
 }
 
-/**
- * Format phone number for API
- * Combines country code and phone number
- * Example: "+353" + "892039542" = "+353892039542"
- */
+// ─── Token refresh logic ──────────────────────────────────────────────────
+
+let _isRefreshing = false;
+let _refreshQueue: Array<(token: string) => void> = [];
+
+async function _doRefresh(): Promise<string> {
+  const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+  if (!refreshToken) throw new ApiError('No refresh token. Please log in again.', 401);
+
+  const data = await rawRequest<{ access_token: string }>('/auth/token/refresh', {
+    method: 'POST',
+    body:   JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, data.access_token);
+  return data.access_token;
+}
+
+async function getRefreshedToken(): Promise<string> {
+  if (_isRefreshing) {
+    // Queue this call — resolve when the in-flight refresh completes
+    return new Promise(resolve => _refreshQueue.push(resolve));
+  }
+  _isRefreshing = true;
+  try {
+    const token = await _doRefresh();
+    _refreshQueue.forEach(r => r(token));
+    _refreshQueue = [];
+    return token;
+  } catch (err) {
+    _refreshQueue = [];
+    // Force clear — user must log in again
+    await authService.clearTokens();
+    throw new ApiError('Session expired. Please log in again.', 401);
+  } finally {
+    _isRefreshing = false;
+  }
+}
+
+// ─── Authenticated request — auto-refreshes on 401 ───────────────────────
+
+export async function authRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const makeCall = async (token: string) => {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
+    try {
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        signal:  controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...(options.headers as any),
+        },
+      });
+      clearTimeout(tid);
+      return res;
+    } catch (e: any) {
+      clearTimeout(tid);
+      throw e;
+    }
+  };
+
+  try {
+    let token = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (!token) throw new ApiError('Not authenticated. Please log in.', 401);
+
+    let res = await makeCall(token);
+
+    // Auto-refresh on 401 and retry once
+    if (res.status === 401) {
+      console.log('Access token expired — refreshing...');
+      token = await getRefreshedToken();
+      res   = await makeCall(token);
+    }
+
+    const data = await res.json();
+    if (!res.ok) throw new ApiError(data.message || data.detail || 'Request failed', res.status, data);
+    return data;
+
+  } catch (e: any) {
+    if (e.name === 'AbortError') throw new ApiError('Request timed out.', 408);
+    if (e instanceof ApiError)   throw e;
+    if (e.message === 'Network request failed') throw new ApiError('No internet connection.', 0);
+    throw new ApiError(e.message || 'Something went wrong', 500);
+  }
+}
+
+// ─── Validation helpers ────────────────────────────────────────────────────
+
 export function formatPhoneForApi(countryCode: string, phoneNumber: string): string {
-  // Ensure country code starts with +
-  const formattedCountryCode = countryCode.startsWith('+') 
-    ? countryCode 
-    : `+${countryCode}`;
-  
-  // Remove any spaces or dashes from phone number
-  const cleanedPhone = phoneNumber.replace(/[\s-]/g, '');
-  
-  return `${formattedCountryCode}${cleanedPhone}`;
+  const code    = countryCode.startsWith('+') ? countryCode : `+${countryCode}`;
+  const cleaned = phoneNumber.replace(/[\s-]/g, '');
+  return `${code}${cleaned}`;
 }
 
-/**
- * Validate phone number
- */
-export function validatePhoneNumber(phoneNumber: string): { valid: boolean; error?: string } {
-  const cleaned = phoneNumber.replace(/\D/g, '');
-  
-  if (!cleaned) {
-    return { valid: false, error: 'Please enter your mobile number' };
-  }
-  
-  if (cleaned.length < 7) {
-    return { valid: false, error: 'Phone number must be at least 7 digits' };
-  }
-  
-  if (cleaned.length > 15) {
-    return { valid: false, error: 'Phone number is too long' };
-  }
-  
+export function validatePhoneNumber(phone: string): { valid: boolean; error?: string } {
+  const cleaned = phone.replace(/\D/g, '');
+  if (!cleaned)            return { valid: false, error: 'Please enter your mobile number' };
+  if (cleaned.length < 7)  return { valid: false, error: 'Phone number must be at least 7 digits' };
+  if (cleaned.length > 15) return { valid: false, error: 'Phone number is too long' };
   return { valid: true };
 }
 
-/**
- * Validate email
- */
 export function validateEmail(email: string): { valid: boolean; error?: string } {
-  if (!email) {
-    return { valid: true }; // Email is optional
-  }
-  
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  
-  if (!emailRegex.test(email)) {
-    return { valid: false, error: 'Please enter a valid email address' };
-  }
-  
+  if (!email) return { valid: true };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { valid: false, error: 'Please enter a valid email address' };
   return { valid: true };
 }
 
-/**
- * Validate full name
- */
 export function validateFullName(name: string): { valid: boolean; error?: string } {
-  const trimmed = name.trim();
-  
-  if (!trimmed) {
-    return { valid: false, error: 'Please enter your name' };
-  }
-  
-  if (trimmed.length < 2) {
-    return { valid: false, error: 'Name must be at least 2 characters' };
-  }
-  
-  if (trimmed.length > 100) {
-    return { valid: false, error: 'Name is too long' };
-  }
-  
-  // Check for valid characters (letters, spaces, hyphens, apostrophes)
-  const nameRegex = /^[a-zA-Z\s'-]+$/;
-  if (!nameRegex.test(trimmed)) {
-    return { valid: false, error: 'Name contains invalid characters' };
-  }
-  
+  const t = name.trim();
+  if (!t)             return { valid: false, error: 'Please enter your name' };
+  if (t.length < 2)   return { valid: false, error: 'Name must be at least 2 characters' };
+  if (t.length > 100) return { valid: false, error: 'Name is too long' };
+  if (!/^[a-zA-Z\s'-]+$/.test(t)) return { valid: false, error: 'Name contains invalid characters' };
   return { valid: true };
 }
 
-/**
- * Validate OTP
- */
-export function validateOTP(otp: string, length: number = 6): { valid: boolean; error?: string } {
-  if (!otp) {
-    return { valid: false, error: 'Please enter the OTP' };
-  }
-  
-  if (otp.length !== length) {
-    return { valid: false, error: `OTP must be ${length} digits` };
-  }
-  
-  if (!/^\d+$/.test(otp)) {
-    return { valid: false, error: 'OTP must contain only numbers' };
-  }
-  
+export function validateOTP(otp: string, length = 6): { valid: boolean; error?: string } {
+  if (!otp)                  return { valid: false, error: 'Please enter the OTP' };
+  if (otp.length !== length) return { valid: false, error: `OTP must be ${length} digits` };
+  if (!/^\d+$/.test(otp))    return { valid: false, error: 'OTP must contain only numbers' };
   return { valid: true };
 }
 
-/**
- * Authentication Service
- */
+// ─── AuthService ──────────────────────────────────────────────────────────
+
 class AuthService {
-  /**
-   * Register new user (sends OTP)
-   */
-  async register(request: RegisterRequest): Promise<RegisterResponse> {
-    return apiRequest<RegisterResponse>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
+  private accessToken: string | null = null;
+
+  constructor() { this.loadToken(); }
+
+  private async loadToken() {
+    try { this.accessToken = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN); }
+    catch (e) { console.error('Failed to load token:', e); }
   }
 
-  /**
-   * Verify registration OTP
-   */
-  async verifyRegistration(request: VerifyRegisterRequest): Promise<VerifyRegisterResponse> {
-    return apiRequest<VerifyRegisterResponse>('/auth/register/verify', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
+  private async saveTokens(tokens: TokenResponse, user: User) {
+    this.accessToken = tokens.access_token;
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN,  tokens.access_token);
+    await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh_token);
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA,     JSON.stringify(user));
   }
 
-  /**
-   * Login user (sends OTP)
-   */
-  async login(request: LoginRequest): Promise<LoginResponse> {
-    return apiRequest<LoginResponse>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
+  // FIXED: multiRemove → individual removeItem (multiRemove not available on this RN version)
+  async clearTokens() {
+    try {
+      this.accessToken = null;
+      await AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+      await AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+      await AsyncStorage.removeItem(STORAGE_KEYS.USER_DATA);
+    } catch (e) { console.error('Failed to clear tokens:', e); }
   }
 
-  /**
-   * Verify login OTP
-   */
-  async verifyLogin(request: VerifyLoginRequest): Promise<VerifyLoginResponse> {
-    return apiRequest<VerifyLoginResponse>('/auth/login/verify', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
+  async getStoredUser(): Promise<User | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.USER_DATA);
+      return data ? JSON.parse(data) : null;
+    } catch { return null; }
   }
 
-  /**
-   * Health check
-   */
+  getAuthHeader(): Record<string, string> {
+    return this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {};
+  }
+
+  isAuthenticated(): boolean { return !!this.accessToken; }
+
+  // Auth endpoints (no Bearer token needed)
+  async register(req: RegisterRequest): Promise<RegisterResponse> {
+    return rawRequest('/auth/register', { method: 'POST', body: JSON.stringify(req) });
+  }
+
+  async verifyRegistration(req: VerifyRegisterRequest): Promise<VerifyRegisterResponse> {
+    const res = await rawRequest<VerifyRegisterResponse>('/auth/register/verify', {
+      method: 'POST', body: JSON.stringify(req),
+    });
+    await this.saveTokens(res.tokens, res.user);
+    return res;
+  }
+
+  async login(req: LoginRequest): Promise<LoginResponse> {
+    return rawRequest('/auth/login', { method: 'POST', body: JSON.stringify(req) });
+  }
+
+  async verifyLogin(req: VerifyLoginRequest): Promise<VerifyLoginResponse> {
+    const res = await rawRequest<VerifyLoginResponse>('/auth/login/verify', {
+      method: 'POST', body: JSON.stringify(req),
+    });
+    await this.saveTokens(res.tokens, res.user);
+    return res;
+  }
+
+  async logout(): Promise<void> { await this.clearTokens(); }
+
   async healthCheck(): Promise<{ status: string }> {
-    return apiRequest<{ status: string }>('/auth/health', {
-      method: 'GET',
-    });
+    return rawRequest('/auth/health', { method: 'GET' });
   }
 
-  /**
-   * Resend OTP (calls login or register again)
-   */
-  async resendOTP(phoneNumber: string, isSignup: boolean, fullName?: string, email?: string): Promise<void> {
-    if (isSignup && fullName) {
-      await this.register({
-        phone_number: phoneNumber,
-        full_name: fullName,
-        email,
-      });
-    } else {
-      await this.login({
-        phone_number: phoneNumber,
-      });
-    }
+  async resendOTP(phone: string, isSignup: boolean, fullName?: string, email?: string): Promise<void> {
+    if (isSignup && fullName) await this.register({ phone_number: phone, full_name: fullName, email });
+    else                       await this.login({ phone_number: phone });
   }
 }
+
+// ─── Exports ──────────────────────────────────────────────────────────────
 
 export const authService = new AuthService();
 export default authService;

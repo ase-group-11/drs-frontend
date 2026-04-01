@@ -18,7 +18,7 @@ import { disasterService } from '@services/disasterService';
 import { EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN } from '@env';
 import Svg, { Path, Circle, Polyline } from 'react-native-svg';
 
-// MapboxGL.setAccessToken('');
+MapboxGL.setAccessToken(EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN);
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface ReportDetail {

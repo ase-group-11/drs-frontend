@@ -1,3 +1,8 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: babel.config.js
+// UPDATED - Added react-native-dotenv plugin
+// ═══════════════════════════════════════════════════════════════════════════
+
 module.exports = {
   presets: ['module:@react-native/babel-preset'],
   plugins: [
@@ -23,6 +28,18 @@ module.exports = {
           '@theme': './src/theme',
           '@assets': './src/assets',
         },
+      },
+    ],
+    // ✅ NEW: Add this plugin to load .env files
+    [
+      'module:react-native-dotenv',
+      {
+        moduleName: '@env',
+        path: '.env',
+        blacklist: null,
+        whitelist: null,
+        safe: false,
+        allowUndefined: true,
       },
     ],
   ],
