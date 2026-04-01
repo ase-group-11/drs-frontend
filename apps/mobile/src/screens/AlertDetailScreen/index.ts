@@ -1,0 +1,1 @@
+export { AlertDetailScreen } from './AlertDetailScreen';

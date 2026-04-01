@@ -14,6 +14,7 @@ import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authService, authRequest } from '@services/authService';
+import { wsService } from '@services/wsService';
 
 const RED = '#DC2626';
 
@@ -36,78 +37,14 @@ interface Mission {
 
 // ─── Static data ──────────────────────────────────────────────────────────
 const now = Date.now();
-const STATIC_ACTIVE: Mission[] = [
-  {
-    id: 'dep-001',
-    disaster_id: 'DR-2025-1234',
-    disaster_type: 'FIRE',
-    severity: 'CRITICAL',
-    location_address: "O'Connell Street, Dublin 1",
-    coordinates: { lat: 53.3498, lon: -6.2603 },
-    status: 'en_route',
-    assigned_at: new Date(now - 15 * 60000).toISOString(),
-    distance_km: '1.2',
-    people_affected: '10-50',
-    eta_minutes: '3',
-    unit_id: 'Unit F-12',
-    unit_members: 4,
-  },
-  {
-    id: 'dep-002',
-    disaster_id: 'DR-2025-1235',
-    disaster_type: 'FLOOD',
-    severity: 'HIGH',
-    location_address: 'Liffey Street Lower, Dublin 1',
-    coordinates: { lat: 53.3470, lon: -6.2650 },
-    status: 'dispatched',
-    assigned_at: new Date(now - 5 * 60000).toISOString(),
-    distance_km: '2.8',
-    people_affected: '50-100',
-    eta_minutes: '8',
-    unit_id: 'Unit F-12',
-    unit_members: 4,
-  },
-];
-
-const STATIC_COMPLETED: Mission[] = [
-  {
-    id: 'dep-003',
-    disaster_id: 'DR-2025-1198',
-    disaster_type: 'STORM',
-    severity: 'MEDIUM',
-    location_address: 'Grafton Street, Dublin 2',
-    coordinates: { lat: 53.3411, lon: -6.2594 },
-    status: 'completed',
-    assigned_at: new Date(now - 4 * 3600000).toISOString(),
-    distance_km: '0.9',
-    people_affected: '5-10',
-    eta_minutes: '0',
-    unit_id: 'Unit F-12',
-    unit_members: 4,
-  },
-  {
-    id: 'dep-004',
-    disaster_id: 'DR-2025-1152',
-    disaster_type: 'EARTHQUAKE',
-    severity: 'HIGH',
-    location_address: 'Temple Bar, Dublin 2',
-    coordinates: { lat: 53.3456, lon: -6.2672 },
-    status: 'completed',
-    assigned_at: new Date(now - 10 * 3600000).toISOString(),
-    distance_km: '1.5',
-    people_affected: '20-50',
-    eta_minutes: '0',
-    unit_id: 'Unit F-12',
-    unit_members: 3,
-  },
-];
+// Static data removed — real API data only
 
 // ─── Lookups ──────────────────────────────────────────────────────────────
 const SEV_COLOR: Record<string, string> = {
   CRITICAL: '#DC2626', HIGH: '#F97316', MEDIUM: '#EAB308', LOW: '#3B82F6',
 };
 const STATUS_COLOR: Record<string, string> = {
-  dispatched: '#3B82F6', en_route: '#F97316', on_scene: '#8B5CF6',
+  dispatched: '#DC2626', en_route: '#F97316', on_scene: '#8B5CF6',
   in_progress: '#EF4444', completed: '#22C55E', cancelled: '#6B7280',
 };
 const TYPE_EMOJI: Record<string, string> = {
@@ -134,9 +71,16 @@ const formatAgo = (iso: string) => {
 export const ActiveMissionsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
 
+  // Connect WS for responder real-time alerts
+  React.useEffect(() => {
+    wsService.connect(true); // responder mode — no location ping
+    return () => wsService.disconnect();
+  }, []);
+
   const [tab, setTab]               = useState<'active' | 'completed'>('active');
-  const [active, setActive]         = useState<Mission[]>(STATIC_ACTIVE);
-  const [completed, setCompleted]   = useState<Mission[]>(STATIC_COMPLETED);
+  const [active, setActive]         = useState<Mission[]>([]);
+  const [completed, setCompleted]   = useState<Mission[]>([]);
+  const [error, setError]           = useState<string | null>(null);
   const [loading, setLoading]       = useState(false);
   const [unitLabel, setUnitLabel]   = useState('Unit F-12');
 
@@ -144,6 +88,13 @@ export const ActiveMissionsScreen: React.FC = () => {
   const [modal, setModal]               = useState<Mission | null>(null);
   const [selStatus, setSelStatus]       = useState('');
   const [sitrep, setSitrep]             = useState('');
+  const [tags, setTags]                 = useState<string[]>([]);
+  const [minorInjuries, setMinorInjuries]   = useState(0);
+  const [seriousInjuries, setSeriousInjuries] = useState(0);
+  const [locationVerified, setLocationVerified] = useState(false);
+  const [requestBackupFlag, setRequestBackupFlag] = useState(false);
+  const [isFalseAlarm, setIsFalseAlarm] = useState(false);
+  const [assessmentNotes, setAssessmentNotes] = useState('');
   const [submitting, setSubmitting]     = useState(false);
 
   useEffect(() => { fetchMissions(); }, []);
@@ -203,7 +154,12 @@ export const ActiveMissionsScreen: React.FC = () => {
 
       if ((a?.active_missions?.length   ?? 0) > 0) setActive(a.active_missions.map(toM));
       if ((c?.completed_missions?.length ?? 0) > 0) setCompleted(c.completed_missions.map(toM));
-    } catch { /* keep static */ }
+    } catch (e: any) {
+      console.error('[ActiveMissions] Failed to load:', e);
+      setError(e.message || 'Could not load missions. Check your connection.');
+      setActive([]);
+      setCompleted([]);
+    }
     setLoading(false);
   };
 
@@ -212,20 +168,51 @@ export const ActiveMissionsScreen: React.FC = () => {
     setModal(m);
     setSelStatus(m.status);
     setSitrep('');
+    setTags([]);
+    setMinorInjuries(0);
+    setSeriousInjuries(0);
+    setLocationVerified(false);
+    setRequestBackupFlag(false);
+    setIsFalseAlarm(false);
+    setAssessmentNotes('');
   };
 
   const submitStatus = async () => {
     if (!selStatus || !modal) return;
     setSubmitting(true);
     try {
-      try {
-        await authRequest(`/deployments/${modal.id}/update-status`, {
-          method: 'POST',
-          body:   JSON.stringify({ new_status: selStatus, situation_report: sitrep }),
-        });
-      } catch { /* local update only */ }
+      await authRequest(`/deployments/${modal.id}/update-status`, {
+        method: 'POST',
+        body: JSON.stringify({
+          new_status:               selStatus.toUpperCase(),
+          situation_report:         sitrep || undefined,
+          tags:                     tags.length > 0 ? tags : undefined,
+          minor_injuries:           minorInjuries,
+          serious_injuries:         seriousInjuries,
+          location_verified:        locationVerified,
+          request_immediate_backup: requestBackupFlag,
+          assessment_notes:         assessmentNotes || undefined,
+          // is_false_alarm triggers disaster.false_alarm WS event
+        }),
+      });
 
-      // Update lists locally
+      if (isFalseAlarm) {
+        Alert.alert('False Alarm Reported', 'The incident has been marked as a false alarm. Emergency services have been notified.');
+      } else {
+        Alert.alert('✅ Status Updated', `Status: ${selStatus.replace(/_/g, ' ').toUpperCase()}`);
+      }
+
+      // Update local state
+      if (selStatus === 'completed' || isFalseAlarm) {
+        const m = active.find(x => x.id === modal.id);
+        setActive(prev => prev.filter(x => x.id !== modal.id));
+        if (m) setCompleted(prev => [{ ...m, status: isFalseAlarm ? 'cancelled' : 'completed' }, ...prev]);
+      } else {
+        setActive(prev => prev.map(x => x.id === modal.id ? { ...x, status: selStatus } : x));
+      }
+      setModal(null);
+    } catch (e: any) {
+      // Fall back to local update if API fails
       if (selStatus === 'completed') {
         const m = active.find(x => x.id === modal.id);
         setActive(prev => prev.filter(x => x.id !== modal.id));
@@ -233,21 +220,22 @@ export const ActiveMissionsScreen: React.FC = () => {
       } else {
         setActive(prev => prev.map(x => x.id === modal.id ? { ...x, status: selStatus } : x));
       }
-
-      Alert.alert('✅ Updated', `Status: ${selStatus.replace(/_/g, ' ').toUpperCase()}`);
+      Alert.alert('✅ Updated (Offline)', `Status: ${selStatus.replace(/_/g, ' ').toUpperCase()}`);
       setModal(null);
-    } catch { Alert.alert('Error', 'Could not update status'); }
+    }
     setSubmitting(false);
   };
 
   const navigate = (m: Mission) => {
-    Alert.alert('🧭 Navigate to Scene', m.location_address, [
+    Alert.alert('Navigate to Scene', m.location_address, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Open Maps',
-        onPress: () =>
-          Linking.openURL(`maps://app?daddr=${m.coordinates.lat},${m.coordinates.lon}&dirflg=d`)
-            .catch(() => Linking.openURL(`https://maps.google.com/?q=${m.coordinates.lat},${m.coordinates.lon}`)),
+        text: 'Open in Map',
+        onPress: () => navigation.navigate('Home' as any, {
+          flyToLat:   m.coordinates.lat,
+          flyToLon:   m.coordinates.lon,
+          flyToLabel: m.location_address,
+        }),
       },
     ]);
   };
@@ -265,12 +253,6 @@ export const ActiveMissionsScreen: React.FC = () => {
         text: 'Send Request', style: 'destructive',
         onPress: () => Alert.alert('✅ Backup Requested', 'Command notified. Additional units en route.'),
       },
-    ]);
-
-  const endShift = () =>
-    Alert.alert('End Shift', 'Are you sure you want to end your shift?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'End Shift', style: 'destructive', onPress: () => navigation.goBack() },
     ]);
 
   const list = tab === 'active' ? active : completed;
@@ -316,14 +298,7 @@ export const ActiveMissionsScreen: React.FC = () => {
         ))}
       </View>
 
-      {/* Duty bar */}
-      <View style={S.dutyBar}>
-        <View style={S.dutyDot} />
-        <Text style={S.dutyTxt}>Status: On Duty  ·  Shift: 2.5 hrs remaining</Text>
-        <TouchableOpacity style={S.endBtn} onPress={endShift}>
-          <Text style={S.endTxt}>End Shift</Text>
-        </TouchableOpacity>
-      </View>
+
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.md }}>
 
@@ -408,13 +383,6 @@ export const ActiveMissionsScreen: React.FC = () => {
                 </View>
               )}
 
-              {/* View progress */}
-              <TouchableOpacity
-                style={S.progressBtn}
-                onPress={() => navigation.navigate('MissionProgress', { missionId: m.id, mission: m })}
-              >
-                <Text style={S.progressTxt}>View Mission Progress →</Text>
-              </TouchableOpacity>
             </View>
           );
         })}
@@ -465,12 +433,13 @@ export const ActiveMissionsScreen: React.FC = () => {
                 </TouchableOpacity>
               ))}
 
+              {/* Situation Report */}
               <Text variant="h5" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
                 Situation Report
               </Text>
               <TextInput
                 style={S.sitrep}
-                placeholder="Describe current situation, actions taken..."
+                placeholder="Describe current situation, actions taken, and any observations..."
                 placeholderTextColor="#9CA3AF"
                 value={sitrep}
                 onChangeText={setSitrep}
@@ -482,6 +451,94 @@ export const ActiveMissionsScreen: React.FC = () => {
                 {sitrep.length}/500
               </Text>
 
+              {/* Casualties */}
+              <Text variant="h5" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>Casualties</Text>
+              <View style={S.casualtyRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.casualtyLabel}>Minor Injuries</Text>
+                  <View style={S.counterRow}>
+                    <TouchableOpacity style={S.counterBtn} onPress={() => setMinorInjuries(Math.max(0, minorInjuries - 1))}>
+                      <Text style={S.counterBtnTxt}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={S.counterVal}>{minorInjuries}</Text>
+                    <TouchableOpacity style={[S.counterBtn, { backgroundColor: '#DC2626' }]} onPress={() => setMinorInjuries(minorInjuries + 1)}>
+                      <Text style={[S.counterBtnTxt, { color: '#fff' }]}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={{ flex: 1, marginLeft: spacing.md }}>
+                  <Text style={S.casualtyLabel}>Serious Injuries</Text>
+                  <View style={S.counterRow}>
+                    <TouchableOpacity style={S.counterBtn} onPress={() => setSeriousInjuries(Math.max(0, seriousInjuries - 1))}>
+                      <Text style={S.counterBtnTxt}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={S.counterVal}>{seriousInjuries}</Text>
+                    <TouchableOpacity style={[S.counterBtn, { backgroundColor: '#DC2626' }]} onPress={() => setSeriousInjuries(seriousInjuries + 1)}>
+                      <Text style={[S.counterBtnTxt, { color: '#fff' }]}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Checkboxes */}
+              <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+                <TouchableOpacity style={S.checkRow} onPress={() => setLocationVerified(v => !v)}>
+                  <View style={[S.checkbox, locationVerified && S.checkboxOn]}>
+                    {locationVerified && <Text style={{ color: '#fff', fontSize: 10 }}>✓</Text>}
+                  </View>
+                  <Text style={S.checkLabel}>Location verified — I am on scene</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={S.checkRow} onPress={() => setRequestBackupFlag(v => !v)}>
+                  <View style={[S.checkbox, requestBackupFlag && { backgroundColor: '#F97316', borderColor: '#F97316' }]}>
+                    {requestBackupFlag && <Text style={{ color: '#fff', fontSize: 10 }}>✓</Text>}
+                  </View>
+                  <Text style={S.checkLabel}>Request immediate backup</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* False Alarm — only show on ON_SCENE */}
+              {selStatus === 'on_scene' && (
+                <View style={[S.falseAlarmBox, isFalseAlarm && { borderColor: '#DC2626', backgroundColor: '#FEF2F2' }]}>
+                  <TouchableOpacity style={S.checkRow} onPress={() => setIsFalseAlarm(v => !v)}>
+                    <View style={[S.checkbox, isFalseAlarm && { backgroundColor: '#DC2626', borderColor: '#DC2626' }]}>
+                      {isFalseAlarm && <Text style={{ color: '#fff', fontSize: 10 }}>✓</Text>}
+                    </View>
+                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                      <Text style={[S.checkLabel, { fontWeight: '700', color: '#DC2626' }]}>Mark as False Alarm</Text>
+                      <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                        No emergency found. This will notify all users and close the disaster.
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Assessment notes */}
+              <Text variant="h5" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>Assessment Notes</Text>
+              <TextInput
+                style={[S.sitrep, { minHeight: 60 }]}
+                placeholder="Additional observations, resource needs..."
+                placeholderTextColor="#9CA3AF"
+                value={assessmentNotes}
+                onChangeText={setAssessmentNotes}
+                multiline
+                maxLength={300}
+                textAlignVertical="top"
+              />
+
+              {/* Timeline link */}
+              {modal?.disaster_id && (
+                <TouchableOpacity
+                  style={S.timelineLink}
+                  onPress={() => {
+                    setModal(null);
+                    navigation.navigate('DisasterTimeline' as any, { disasterId: modal?.disaster_id });
+                  }}
+                >
+                  <Text style={S.timelineLinkTxt}>📋  View Incident Timeline</Text>
+                </TouchableOpacity>
+              )}
+
               <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.xxxl }}>
                 <TouchableOpacity
                   style={[S.modalBtn, { flex: 1, backgroundColor: '#F3F4F6' }]}
@@ -490,13 +547,15 @@ export const ActiveMissionsScreen: React.FC = () => {
                   <Text style={{ color: '#6B7280', fontWeight: '600' }}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[S.modalBtn, { flex: 2, backgroundColor: selStatus ? RED : '#D1D5DB' }]}
+                  style={[S.modalBtn, { flex: 2, backgroundColor: selStatus ? (isFalseAlarm ? '#DC2626' : RED) : '#D1D5DB' }]}
                   onPress={submitStatus}
                   disabled={!selStatus || submitting}
                 >
                   {submitting
                     ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ color: '#fff', fontWeight: '700' }}>Submit Update</Text>
+                    : <Text style={{ color: '#fff', fontWeight: '700' }}>
+                        {isFalseAlarm ? '⚠️ Report False Alarm' : 'Submit Update'}
+                      </Text>
                   }
                 </TouchableOpacity>
               </View>
@@ -579,13 +638,13 @@ const S = StyleSheet.create({
   statLbl:    { fontSize: 10, color: '#9CA3AF', marginTop: 1 },
 
   actions:      { gap: spacing.sm, marginBottom: spacing.sm },
-  btnBlue:      { backgroundColor: '#3B82F6', borderRadius: borderRadius.md, paddingVertical: spacing.md, alignItems: 'center' },
+  btnBlue:      { backgroundColor: '#DC2626', borderRadius: borderRadius.md, paddingVertical: spacing.md, alignItems: 'center' },
   btnBlueTxt:   { color: '#fff', fontWeight: '700', fontSize: 14 },
   btnOutline:   { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: borderRadius.md, paddingVertical: spacing.md, alignItems: 'center', backgroundColor: '#fff' },
   btnOutTxt:    { color: '#374151', fontWeight: '600', fontSize: 14 },
 
   progressBtn:  { paddingVertical: spacing.sm, alignItems: 'center' },
-  progressTxt:  { color: '#3B82F6', fontSize: 13, fontWeight: '600' },
+  progressTxt:  { color: '#DC2626', fontSize: 13, fontWeight: '600' },
 
   // Modal
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
@@ -596,6 +655,27 @@ const S = StyleSheet.create({
   check:      { width: 22, height: 22, borderRadius: 11, backgroundColor: RED, justifyContent: 'center', alignItems: 'center' },
   sitrep:     { minHeight: 100, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: borderRadius.md, padding: spacing.md, fontSize: 14, color: '#1F2937', backgroundColor: '#F9FAFB' },
   modalBtn:   { paddingVertical: spacing.md, borderRadius: borderRadius.md, alignItems: 'center' },
+
+  // Casualties
+  casualtyRow:   { flexDirection: 'row', gap: spacing.sm },
+  casualtyLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: spacing.xs },
+  counterRow:    { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  counterBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
+  counterBtnTxt: { fontSize: 18, fontWeight: '700', color: '#374151' },
+  counterVal:    { fontSize: 18, fontWeight: '800', color: '#1F2937', minWidth: 32, textAlign: 'center' },
+
+  // Checkboxes
+  checkRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  checkbox:   { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB', justifyContent: 'center', alignItems: 'center', marginTop: 1 },
+  checkboxOn: { backgroundColor: '#22C55E', borderColor: '#22C55E' },
+  checkLabel: { fontSize: 14, color: '#374151', flex: 1 },
+
+  // False alarm
+  falseAlarmBox: { marginTop: spacing.md, padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+
+  // Timeline
+  timelineLink:    { marginTop: spacing.md, paddingVertical: spacing.sm, alignItems: 'center' },
+  timelineLinkTxt: { color: '#DC2626', fontSize: 13, fontWeight: '600' },
 });
 
 export default ActiveMissionsScreen;

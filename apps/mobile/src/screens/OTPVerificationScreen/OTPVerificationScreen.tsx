@@ -15,20 +15,32 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
   navigation,
   route,
 }) => {
-  const { phoneNumber, isSignup, userName, email } = route.params;
+  const { phoneNumber, countryCode: paramCountryCode, isSignup, userName, email } = route.params;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const getDisplayPhone = (fullPhone: string): string => {
-    if (fullPhone.length > 6) {
-      return fullPhone.slice(-9);
+  // Use country code passed from login/signup screen directly (no regex splitting needed)
+  // Falls back to extracting from E.164 if not provided
+  const resolveDisplayParts = (fullPhone: string, passedCode?: string) => {
+    if (passedCode) {
+      const cleanCode = passedCode.startsWith('+') ? passedCode : `+${passedCode}`;
+      const localNum  = fullPhone.startsWith(cleanCode)
+        ? fullPhone.slice(cleanCode.length)
+        : fullPhone;
+      return { code: cleanCode, local: localNum };
     }
-    return fullPhone;
-  };
-
-  const getCountryCode = (fullPhone: string): string => {
-    const match = fullPhone.match(/^(\+\d{1,4})/);
-    return match ? match[1] : '+353';
+    // Fallback: try common codes (+1, +44, +353, +91, etc.) longest-first
+    const knownCodes = ['+353', '+358', '+420', '+421', '+961', '+44', '+91', '+1'];
+    for (const code of knownCodes) {
+      if (fullPhone.startsWith(code)) {
+        return { code, local: fullPhone.slice(code.length) };
+      }
+    }
+    // Last resort: match +XX or +XXX
+    const match = fullPhone.match(/^(\+\d{1,3})(\d+)$/);
+    return match
+      ? { code: match[1], local: match[2] }
+      : { code: '+353', local: fullPhone };
   };
 
   const handleVerify = async (otp: string) => {
@@ -99,9 +111,8 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
     setError('');
   };
 
-  const title = isSignup ? 'Verify Your Number' : "Verify It's You";
-  const displayPhone = getDisplayPhone(phoneNumber);
-  const countryCode = getCountryCode(phoneNumber);
+  const { code: countryCode, local: displayPhone } = resolveDisplayParts(phoneNumber, paramCountryCode);
+  const title    = isSignup ? 'Verify Your Number' : "Verify It's You";
   const subtitle = `Enter the code sent to ${countryCode} ${displayPhone}`;
 
   return (

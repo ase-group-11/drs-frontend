@@ -339,7 +339,7 @@ export const ReportDetailScreen: React.FC = () => {
           />
         </View>
 
-        {/* Disaster ID link */}
+        {/* Linked disaster ID — shown only when report is verified */}
         {report.disaster_id && (
           <View style={styles.card}>
             <Text variant="labelLarge" color="textSecondary" style={styles.cardLabel}>LINKED DISASTER</Text>
@@ -351,6 +351,15 @@ export const ReportDetailScreen: React.FC = () => {
             </Text>
           </View>
         )}
+
+        {/* Track Report Status — always visible */}
+        <TouchableOpacity
+          style={styles.trackBtn}
+          onPress={() => navigation.navigate('DisasterTimeline' as any, { reportId: report.id })}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.trackBtnTxt}>📋  Track Report Status</Text>
+        </TouchableOpacity>
 
         {/* Bottom padding */}
         <View style={{ height: spacing.xxxl }} />
@@ -485,6 +494,15 @@ const styles = StyleSheet.create({
   },
 
   // Timeline
+  timelineBtn:    {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primary + '12',
+    borderRadius: borderRadius.sm,
+    alignItems: 'center',
+  },
+  timelineBtnTxt: { color: colors.primary, fontWeight: '600', fontSize: 14 },
   timelineRow:     { flexDirection: 'row', marginBottom: spacing.md },
   timelineLeft:    { alignItems: 'center', marginRight: spacing.md, width: 24 },
   timelineDot:     {
@@ -498,6 +516,15 @@ const styles = StyleSheet.create({
   timelineLine:    { width: 2, flex: 1, backgroundColor: colors.gray200, marginTop: 4 },
   timelineLineDone: { backgroundColor: colors.success },
   timelineContent: { flex: 1, paddingBottom: spacing.md },
+
+  trackBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  trackBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
 export default ReportDetailScreen;

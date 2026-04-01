@@ -14,6 +14,7 @@ interface MapHeaderProps {
   location: string;
   notificationCount?: number;
   userInitials?: string;
+  avatarColor?: string;   // defaults to colors.primary (blue), pass '#DC2626' for responder
   onMenuPress: () => void;
   onNotificationPress: () => void;
   onAvatarPress: () => void;
@@ -23,6 +24,7 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
   location,
   notificationCount = 0,
   userInitials = 'JD',
+  avatarColor,
   onMenuPress,
   onNotificationPress,
   onAvatarPress,
@@ -47,14 +49,14 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
             <Path
               d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"
-              stroke={colors.primary}
+              stroke={avatarColor ?? colors.primary}
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
             <Path
               d="M12 13a3 3 0 100-6 3 3 0 000 6z"
-              stroke={colors.primary}
+              stroke={avatarColor ?? colors.primary}
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -88,7 +90,7 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
           </TouchableOpacity>
 
           {/* Profile Avatar */}
-          <TouchableOpacity style={styles.avatar} onPress={onAvatarPress}>
+          <TouchableOpacity style={[styles.avatar, avatarColor ? { backgroundColor: avatarColor } : {}]} onPress={onAvatarPress}>
             <Text variant="bodyMedium" color="white" style={styles.avatarText}>
               {userInitials}
             </Text>

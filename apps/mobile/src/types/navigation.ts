@@ -15,6 +15,7 @@ export type AuthStackParamList = {
   Signup: undefined;
   OTPVerification: {
     phoneNumber: string;
+    countryCode?: string;   // passed from login/signup so display is correct
     isSignup: boolean;
     userName?: string;
     email?: string;
