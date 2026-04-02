@@ -177,9 +177,18 @@ const StatCard: React.FC<{ label: string; value: string | number; sub?: string; 
 
 // ─── Evacuation Routes Map ─────────────────────────────────────────────────────
 
+const STYLE_URLS: Record<string, string> = {
+  dark:      'mapbox://styles/mapbox/dark-v11',
+  streets:   'mapbox://styles/mapbox/streets-v12',
+  satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+};
+
 const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const [styleMode, setStyleMode] = useState<'dark' | 'streets' | 'satellite'>('dark');
+  const [is3D, setIs3D] = useState(false);
+  const [ctrlOpen, setCtrlOpen] = useState(false);
 
   const allRoutes = Object.values(plan.best_routes_per_zone ?? {}).flat();
 
@@ -195,9 +204,15 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
     if (!containerRef.current || mapRef.current) return;
     if (!mapboxgl.accessToken) return;
 
-    const centerLon = plan.impact_zones[0]?.center_lon ?? -6.26;
-    const centerLat = plan.impact_zones[0]?.center_lat ?? 53.34;
-    const m = new mapboxgl.Map({ container: containerRef.current, style: 'mapbox://styles/mapbox/dark-v11', center: [centerLon, centerLat], zoom: 11 });
+    const container = containerRef.current;
+
+    const initMap = () => {
+      if (mapRef.current) return; // already initialized
+      if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
+
+      const centerLon = plan.impact_zones[0]?.center_lon ?? -6.26;
+      const centerLat = plan.impact_zones[0]?.center_lat ?? 53.34;
+    const m = new mapboxgl.Map({ container: container, style: 'mapbox://styles/mapbox/dark-v11', center: [centerLon, centerLat], zoom: 11 });
     mapRef.current = m;
     m.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
@@ -205,56 +220,90 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
       // Draw routes
       allRoutes.forEach((route, idx) => {
         const color = shelterColorMap[route.shelter_name] ?? ROUTE_COLORS[idx % ROUTE_COLORS.length];
-        let coords: [number, number][];
+
+        // Find this route's shelter to get its actual coordinates
+        const shelter = plan.shelters_with_capacity.find(s => s.shelter_id === route.destination_shelter_id);
+
+        // Check if geojson/points are valid and start near the route origin (within ~0.1 degrees)
+        const isNearOrigin = (lon: number, lat: number) =>
+          Math.abs(lat - route.origin_lat) < 0.1 && Math.abs(lon - route.origin_lon) < 0.1;
+
+        let coords: [number, number][] | null = null;
+
+        // Try geojson first
         if (route.geojson?.geometry?.coordinates?.length > 1) {
-          coords = route.geojson.geometry.coordinates as [number, number][];
-        } else if (route.points?.length > 1) {
-          coords = route.points.map(([lat, lon]) => [lon, lat] as [number, number]);
-        } else return;
+          const first = route.geojson.geometry.coordinates[0] as [number, number];
+          if (isNearOrigin(first[0], first[1])) {
+            coords = route.geojson.geometry.coordinates as [number, number][];
+          }
+        }
+
+        // Try points
+        if (!coords && route.points?.length > 1) {
+          // points are [lat, lon] pairs
+          const first = route.points[0];
+          if (isNearOrigin(first[1], first[0])) {
+            coords = route.points.map(([lat, lon]) => [lon, lat] as [number, number]);
+          }
+        }
+
+        // Fallback: draw straight line from origin to shelter
+        if (!coords && shelter) {
+          coords = [
+            [route.origin_lon, route.origin_lat],
+            [shelter.lon, shelter.lat],
+          ];
+        } else if (!coords) {
+          return; // can't draw without shelter coords
+        }
 
         const sid = `route-${route.route_id}`;
         const lid = `line-${route.route_id}`;
         m.addSource(sid, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} } });
-        m.addLayer({ id: lid, type: 'line', source: sid, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': color, 'line-width': 3, 'line-opacity': 0.85 } });
-        m.on('click', lid, () => {
-          new mapboxgl.Popup({ closeButton: true, maxWidth: '220px', offset: 10 })
-            .setLngLat(coords[Math.floor(coords.length / 2)])
-            .setHTML(`<div style="font-family:sans-serif;font-size:12px;padding:4px 0">
-              <div style="font-weight:700;color:#111827;margin-bottom:4px">${route.origin_label} → ${route.shelter_name}</div>
-              <div style="color:#6b7280">Distance: ${route.distance_km} km · ETA: ${route.estimated_time_min} min</div>
-              ${route.traffic_delay_seconds > 0 ? `<div style="color:#f97316">Traffic delay: +${Math.round(route.traffic_delay_seconds / 60)} min</div>` : ''}
-              <div style="color:#6b7280">Shelter capacity: ${route.shelter_capacity.toLocaleString()}</div>
-              ${route.fallback ? '<div style="color:#9ca3af;font-style:italic;margin-top:4px">⚠ Fallback route</div>' : ''}
-            </div>`)
-            .addTo(m);
+        m.addLayer({
+          id: lid, type: 'line', source: sid,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': color, 'line-width': 3, 'line-opacity': 0.85,
+            'line-dasharray': (coords.length <= 2) ? [2, 2] : [1], // dashed if straight line fallback
+          },
         });
-        m.on('mouseenter', lid, () => { m.getCanvas().style.cursor = 'pointer'; });
-        m.on('mouseleave', lid, () => { m.getCanvas().style.cursor = ''; });
       });
 
       // Impact zone markers (red)
       plan.impact_zones.forEach(zone => {
         const el = document.createElement('div');
-        el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#ef4444;border:2px solid white;box-shadow:0 0 0 3px rgba(239,68,68,0.3);cursor:pointer;';
+        el.style.cssText = 'width:16px;height:16px;border-radius:50%;background:#ef4444;border:2px solid white;box-shadow:0 0 0 3px rgba(239,68,68,0.3);cursor:pointer;';
         new mapboxgl.Marker({ element: el }).setLngLat([zone.center_lon, zone.center_lat])
-          .setPopup(new mapboxgl.Popup({ offset: 12 }).setHTML(`<div style="font-family:sans-serif;font-size:12px">
-            <div style="font-weight:700;color:#dc2626;margin-bottom:4px">${zone.area_name}</div>
-            <div style="color:#6b7280">${zone.severity} severity · Radius: ${zone.radius_km} km</div>
-            <div style="color:#6b7280">👥 ${zone.population} residents · ⚠️ ${zone.vulnerable_count} vulnerable</div>
-          </div>`)).addTo(m);
+          .setPopup(new mapboxgl.Popup({ offset: 14, maxWidth: '220px' }).setHTML(`
+            <div style="font-family:-apple-system,sans-serif;padding:4px 0">
+              <div style="font-weight:700;font-size:13px;color:#dc2626;margin-bottom:6px">⚠ ${zone.area_name}</div>
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:12px;color:#374151">Severity: <strong>${zone.severity}</strong></div>
+                <div style="font-size:12px;color:#374151">Radius: <strong>${zone.radius_km} km</strong></div>
+                <div style="font-size:12px;color:#374151">👥 <strong>${zone.population}</strong> residents</div>
+                <div style="font-size:12px;color:#dc2626">⚠️ <strong>${zone.vulnerable_count}</strong> vulnerable</div>
+              </div>
+            </div>`)).addTo(m);
       });
 
       // Shelter markers (blue)
       plan.shelters_with_capacity.forEach(shelter => {
+        // Find the route to this shelter to get the actual route distance
+        const route = allRoutes.find(r => r.destination_shelter_id === shelter.shelter_id);
         const el = document.createElement('div');
-        el.style.cssText = 'width:28px;height:28px;border-radius:6px;background:#1d4ed8;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.3);';
+        el.style.cssText = 'width:32px;height:32px;border-radius:8px;background:#1d4ed8;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);';
         el.textContent = '🏟';
         new mapboxgl.Marker({ element: el }).setLngLat([shelter.lon, shelter.lat])
-          .setPopup(new mapboxgl.Popup({ offset: 16 }).setHTML(`<div style="font-family:sans-serif;font-size:12px">
-            <div style="font-weight:700;color:#1d4ed8;margin-bottom:4px">${shelter.name}</div>
-            <div style="color:#6b7280">Capacity: ${shelter.capacity.toLocaleString()}</div>
-            ${shelter._dist_km != null ? `<div style="color:#6b7280">Distance: ${shelter._dist_km.toFixed(1)} km</div>` : ''}
-          </div>`)).addTo(m);
+          .setPopup(new mapboxgl.Popup({ offset: 18, maxWidth: '220px' }).setHTML(`
+            <div style="font-family:-apple-system,sans-serif;padding:4px 0">
+              <div style="font-weight:700;font-size:13px;color:#1d4ed8;margin-bottom:6px">${shelter.name}</div>
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:12px;color:#374151">Capacity: <strong>${shelter.capacity.toLocaleString()}</strong></div>
+                ${route ? `<div style="font-size:12px;color:#374151">Distance: <strong>${route.distance_km} km</strong></div>` : ''}
+                ${route ? `<div style="font-size:12px;color:#374151">ETA: <strong>${route.estimated_time_min} min</strong></div>` : ''}
+              </div>
+            </div>`)).addTo(m);
       });
 
       // Fit bounds
@@ -267,10 +316,49 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
         m.fitBounds(bounds, { padding: 60, maxZoom: 14 });
       }
     });
+    }; // end initMap
 
-    return () => { m.remove(); mapRef.current = null; };
+    // Try immediately, then use ResizeObserver as fallback
+    initMap();
+
+    const ro = new ResizeObserver(() => { initMap(); });
+    ro.observe(container);
+
+    const timer = setTimeout(initMap, 100);
+
+    return () => {
+      ro.disconnect();
+      clearTimeout(timer);
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Style switcher
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    m.setStyle(STYLE_URLS[styleMode]);
+  }, [styleMode]);
+
+  // 3D toggle
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    if (is3D) {
+      m.easeTo({ pitch: 45, bearing: -10, duration: 600 });
+    } else {
+      m.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+    }
+  }, [is3D]);
+
+  const styleMeta = [
+    { mode: 'streets', icon: '☀️', label: 'Light' },
+    { mode: 'dark',    icon: '🌙', label: 'Dark' },
+    { mode: 'satellite', icon: '🛰️', label: 'Satellite' },
+  ] as const;
+
+  const curStyle = styleMeta.find(s => s.mode === styleMode)!;
 
   return (
     <div>
@@ -290,9 +378,77 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
           </div>
         ))}
       </div>
-      <div ref={containerRef} style={{ width: '100%', height: 440, borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb' }} />
+      <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+        <div ref={containerRef} style={{ width: '100%', height: 440 }} />
+
+        {/* Style Controls Overlay */}
+        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10 }}>
+          <button
+            onClick={() => setCtrlOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '6px 12px', borderRadius: 10, cursor: 'pointer',
+              background: 'rgba(10,15,30,0.88)', backdropFilter: 'blur(12px)',
+              border: `1px solid ${ctrlOpen ? 'rgba(34,211,238,0.5)' : 'rgba(34,211,238,0.2)'}`,
+              color: '#f1f5f9', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em',
+              boxShadow: ctrlOpen ? '0 0 16px rgba(34,211,238,0.2)' : '0 2px 10px rgba(0,0,0,0.4)',
+            }}
+          >
+            <span>{curStyle.icon}</span>
+            <span>{curStyle.label}</span>
+            {is3D && <span style={{ background: 'rgba(34,211,238,0.15)', color: '#22d3ee', border: '1px solid rgba(34,211,238,0.3)', borderRadius: 6, padding: '1px 6px', fontSize: 9, fontWeight: 800 }}>3D</span>}
+            <span style={{ color: 'rgba(34,211,238,0.6)', fontSize: 10 }}>{ctrlOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {ctrlOpen && (
+            <div style={{
+              marginTop: 6, background: 'rgba(10,15,30,0.95)', backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(34,211,238,0.15)', borderRadius: 12,
+              padding: '8px', minWidth: 170, boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(34,211,238,0.5)', letterSpacing: '0.1em', padding: '4px 8px 6px' }}>MAP STYLE</div>
+              {styleMeta.map(({ mode, icon, label }) => {
+                const active = styleMode === mode;
+                return (
+                  <button key={mode} onClick={() => { setStyleMode(mode); setCtrlOpen(false); }} style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                    background: active ? 'rgba(34,211,238,0.12)' : 'transparent',
+                    color: active ? '#22d3ee' : '#cbd5e1', fontSize: 13, fontWeight: active ? 700 : 400,
+                  }}>
+                    <span style={{ fontSize: 16 }}>{icon}</span>
+                    <span style={{ flex: 1, textAlign: 'left' }}>{label}</span>
+                    {active && <span style={{ color: '#22d3ee', fontSize: 12 }}>✓</span>}
+                  </button>
+                );
+              })}
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(34,211,238,0.5)', letterSpacing: '0.1em', padding: '4px 8px 6px' }}>VIEW</div>
+              <button onClick={() => { setIs3D(v => !v); setCtrlOpen(false); }} style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                background: is3D ? 'rgba(34,211,238,0.12)' : 'transparent', color: is3D ? '#22d3ee' : '#cbd5e1', fontSize: 13,
+              }}>
+                <span style={{ fontSize: 16 }}>🏙️</span>
+                <span style={{ flex: 1, textAlign: 'left' }}>3D Buildings</span>
+                {is3D && <span style={{ color: '#22d3ee', fontSize: 12 }}>✓</span>}
+              </button>
+              <button onClick={() => {
+                mapRef.current?.flyTo({ center: [plan.impact_zones[0]?.center_lon ?? -6.26, plan.impact_zones[0]?.center_lat ?? 53.34], zoom: 11, pitch: 0, bearing: 0, duration: 1000 });
+                setCtrlOpen(false);
+              }} style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                background: 'transparent', color: '#cbd5e1', fontSize: 13,
+              }}>
+                <span style={{ fontSize: 16 }}>🎯</span>
+                <span>Reset View</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
       <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 6, display: 'block' }}>
-        Click routes or markers for details · Red = evacuation zones · Blue = shelters
       </Text>
     </div>
   );
@@ -572,24 +728,21 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         </div>
       </div>
 
-      {/* Traffic Info */}
+      {/* Traffic Info — only shown when live data is available */}
+      {plan.traffic_snapshot?.available && (
       <div style={section}>
         <SectionTitle icon={<CarOutlined />} title="Traffic Information" />
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Tag style={{
-            fontSize: 12, padding: '4px 12px', borderRadius: 20,
-            color: plan.traffic_snapshot?.available ? '#16a34a' : '#6b7280',
-            background: plan.traffic_snapshot?.available ? '#dcfce7' : '#f3f4f6',
-            border: plan.traffic_snapshot?.available ? '1px solid #bbf7d0' : '1px solid #e5e7eb',
-          }}>
-            {plan.traffic_snapshot?.available ? '🟢 Live traffic data used' : '⚪ Fallback routing (no live traffic)'}
+          <Tag style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0' }}>
+            🟢 Live traffic data used
           </Tag>
-          <Text style={{ fontSize: 12, color: '#9ca3af' }}>Source: {plan.traffic_snapshot?.source ?? 'unknown'}</Text>
-          {(plan.traffic_snapshot?.segments?.length ?? 0) > 0 && (
+          <Text style={{ fontSize: 12, color: '#9ca3af' }}>Source: {plan.traffic_snapshot.source}</Text>
+          {plan.traffic_snapshot.segments?.length > 0 && (
             <Text style={{ fontSize: 12, color: '#6b7280' }}>{plan.traffic_snapshot.segments.length} segments monitored</Text>
           )}
         </div>
       </div>
+      )}
 
       {/* Allocations */}
       <div style={section}>
@@ -617,7 +770,7 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
             { label: 'Plan Reference',   value: plan.plan_ref },
             { label: 'Status',           value: plan.plan_status },
             { label: 'Auto Approved',    value: plan.auto_approved ? 'Yes' : 'No' },
-            { label: 'Approved By',      value: plan.approved_by ?? 'System (auto)' },
+            { label: 'Approved By',      value: plan.approved_by ?? (plan.auto_approved ? 'System (auto)' : '—') },
             { label: 'Approved At',      value: fmtDate(plan.approved_at) },
             { label: 'Activated At',     value: fmtDate(plan.activated_at) },
             { label: 'Completed At',     value: fmtDate(plan.completed_at) },
