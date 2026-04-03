@@ -9,6 +9,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import apiClient from '../../../lib/axios';
 import { API_ENDPOINTS } from '../../../config';
+import { useAuth } from '../../../context';
 import type { DisasterReport } from '../../../types';
 
 const { Text } = Typography;
@@ -449,6 +450,7 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
         </div>
       </div>
       <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 6, display: 'block' }}>
+        Click routes or markers for details · Red = evacuation zones · Blue = shelters
       </Text>
     </div>
   );
@@ -457,17 +459,50 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
+  const { user } = useAuth();
   const [plan, setPlan] = useState<EvacuationPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'auto' });
-    setLoading(true);
+  const fetchPlan = () => {
     apiClient.get<EvacuationPlan>(API_ENDPOINTS.EVACUATIONS.BY_ID(planId))
       .then(res => setPlan(res.data))
       .catch(() => setError('Failed to load evacuation plan details.'))
       .finally(() => setLoading(false));
+  };
+
+  const handleApprove = async () => {
+    setActionLoading(true);
+    try {
+      await apiClient.post(API_ENDPOINTS.EVACUATIONS.APPROVE(planId), {
+        approved_by: user?.fullName ?? 'Admin',
+        notes: 'Approved via DRS dashboard.',
+      });
+      fetchPlan();
+    } catch {
+      // error silently — could add notification here
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleActivate = async () => {
+    setActionLoading(true);
+    try {
+      await apiClient.post(API_ENDPOINTS.EVACUATIONS.ACTIVATE(planId));
+      fetchPlan();
+    } catch {
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    setLoading(true);
+    fetchPlan();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planId]);
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}><Spin size="large" /></div>;
@@ -490,24 +525,48 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
 
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Button icon={<ArrowLeftOutlined />} type="text" onClick={onBack}
-            style={{ color: '#6b7280', flexShrink: 0 }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#7c3aed')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#6b7280')}
-          />
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: '0 0 2px' }}>Evacuation Plan</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: 13, color: '#7c3aed', fontWeight: 600 }}>{plan.plan_ref}</Text>
-              <Tag style={{ fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 20, color: statusCfg.color, background: statusCfg.bg, border: `1px solid ${statusCfg.border}`, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                {statusCfg.icon} {plan.plan_status}
-              </Tag>
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                <EnvironmentOutlined style={{ marginRight: 4 }} />{report.title} — {report.location}
-              </Text>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Button icon={<ArrowLeftOutlined />} type="text" onClick={onBack}
+              style={{ color: '#6b7280', flexShrink: 0 }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#7c3aed')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#6b7280')}
+            />
+            <div>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: '0 0 2px' }}>Evacuation Plan</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <Text style={{ fontSize: 13, color: '#7c3aed', fontWeight: 600 }}>{plan.plan_ref}</Text>
+                <Tag style={{ fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 20, color: statusCfg.color, background: statusCfg.bg, border: `1px solid ${statusCfg.border}`, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  {statusCfg.icon} {plan.plan_status}
+                </Tag>
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  <EnvironmentOutlined style={{ marginRight: 4 }} />{report.title} — {report.location}
+                </Text>
+              </div>
             </div>
           </div>
+
+          {/* Action button — only for PENDING and APPROVED */}
+          {plan.plan_status === 'PENDING' && (
+            <Button
+              type="primary"
+              loading={actionLoading}
+              onClick={handleApprove}
+              style={{ background: '#2563eb', borderColor: '#2563eb', fontWeight: 600, flexShrink: 0 }}
+            >
+              ✓ Approve Plan
+            </Button>
+          )}
+          {plan.plan_status === 'APPROVED' && (
+            <Button
+              type="primary"
+              loading={actionLoading}
+              onClick={handleActivate}
+              style={{ background: '#16a34a', borderColor: '#16a34a', fontWeight: 600, flexShrink: 0 }}
+            >
+              ▶ Activate Plan
+            </Button>
+          )}
         </div>
       </div>
 

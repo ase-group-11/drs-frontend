@@ -18,7 +18,6 @@ import {
   EnvironmentOutlined,
   ClockCircleOutlined,
   PhoneOutlined,
-  MessageOutlined,
   RightOutlined,
   FireOutlined,
   MedicineBoxOutlined,
@@ -27,7 +26,6 @@ import {
 import { getTeams } from '../../../services';
 import type { EmergencyTeam } from '../../../types';
 import ContactModal from './modals/ContactModal';
-import MessageModal from './modals/MessageModal';
 import CreateTeamModal from './modals/CreateTeamModal';
 import TeamDetailsPage from './TeamDetailsPage';
 import styles from './EmergencyTeams.module.css';
@@ -74,7 +72,6 @@ const EmergencyTeams: React.FC = () => {
 
   // Modal states
   const [contactOpen, setContactOpen] = useState(false);
-  const [messageOpen, setMessageOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<EmergencyTeam | null>(null);
 
@@ -133,11 +130,6 @@ const EmergencyTeams: React.FC = () => {
   const handleContact = (team: EmergencyTeam) => {
     setSelectedTeam(team);
     setContactOpen(true);
-  };
-
-  const handleMessage = (team: EmergencyTeam) => {
-    setSelectedTeam(team);
-    setMessageOpen(true);
   };
 
   const handleViewDetails = (team: EmergencyTeam) => {
@@ -374,14 +366,6 @@ const EmergencyTeams: React.FC = () => {
                   </button>
                   <span className={styles.footerDivider} />
                   <button
-                    className={styles.footerAction}
-                    onClick={() => handleMessage(team)}
-                  >
-                    <MessageOutlined style={{ fontSize: 13 }} />
-                    <span>Message</span>
-                  </button>
-                  <span className={styles.footerDivider} />
-                  <button
                     className={`${styles.footerAction} ${styles.footerActionPurple}`}
                     onClick={() => handleViewDetails(team)}
                   >
@@ -412,11 +396,6 @@ const EmergencyTeams: React.FC = () => {
         open={contactOpen}
         team={selectedTeam}
         onClose={() => setContactOpen(false)}
-      />
-      <MessageModal
-        open={messageOpen}
-        team={selectedTeam}
-        onClose={() => setMessageOpen(false)}
       />
     </div>
   );

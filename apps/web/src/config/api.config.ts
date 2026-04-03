@@ -115,8 +115,10 @@ export const API_ENDPOINTS = {
 
   // ── Evacuations ──────────────────────────────────────────────────────────────
   EVACUATIONS: {
-    LIST:  '/evacuations',
-    BY_ID: (id: string) => `/evacuations/${id}`,
+    LIST:     '/evacuations',
+    BY_ID:    (id: string) => `/evacuations/${id}`,
+    APPROVE:  (id: string) => `/evacuations/${id}/approve`,
+    ACTIVATE: (id: string) => `/evacuations/${id}/activate`,
   },
 
   // ── Settings ─────────────────────────────────────────────────────────────────
