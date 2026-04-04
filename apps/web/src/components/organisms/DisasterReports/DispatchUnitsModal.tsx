@@ -111,7 +111,7 @@ const DispatchUnitsModal: React.FC<DispatchUnitsModalProps> = ({ open, report, o
     finally { setSubmitting(false); }
   };
 
-  const selectedUnits = units.filter((u) => selectedIds.includes(u.id));
+
 
   return (
     <Modal

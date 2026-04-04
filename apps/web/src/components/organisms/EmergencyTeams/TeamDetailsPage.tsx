@@ -19,6 +19,7 @@ import { getTeamById } from '../../../services';
 import DeployUnitModal from './modals/DeployUnitModal';
 import EditConfigModal from './modals/EditConfigModal';
 import DecommissionModal from './modals/DecommissionModal';
+import { getInitials } from '../../atoms/UserInitials';
 
 const { Text } = Typography;
 
@@ -77,13 +78,6 @@ const TeamDetailsPage: React.FC<TeamDetailsPageProps> = ({ team, onBack, onRefre
   const liveStatus = detail?.unit_status?.toLowerCase() ?? team.statusType;
   const statusColor = STATUS_COLORS[liveStatus] || '#6b7280';
   const emoji = TEAM_EMOJIS[team.type] || '🚒';
-
-  const getInitials = (name: string | null) => {
-    if (!name) return '?';
-    return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-  };
-
-
 
   const formatLastDeployed = (iso: string | null) => {
     if (!iso) return 'Never';

@@ -4,6 +4,8 @@ import { ArrowLeftOutlined, PhoneOutlined, MailOutlined, UserOutlined, Environme
 import { getEmergencyUnitById } from '../../../services';
 import type { DisasterReport } from '../../../types';
 import type { EmergencyUnitDetail } from '../../../types/emergency-teams.types';
+import DetailRow from '../../atoms/DetailRow';
+import SectionTitle from '../../atoms/SectionTitle';
 import './LogUpdates.css';
 
 const { Text } = Typography;
@@ -34,19 +36,7 @@ const STATUS_CFG: Record<string, { color: string; bg: string }> = {
   DECOMMISSIONED: { color: '#dc2626', bg: '#fee2e2' },
 };
 
-const DetailRow: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #f3f4f6' }}>
-    <Text type="secondary" style={{ fontSize: 12, flexShrink: 0, marginRight: 12 }}>{label}</Text>
-    <span style={{ fontSize: 12, fontWeight: 600, color: '#374151', textAlign: 'right', wordBreak: 'break-word', maxWidth: '65%' }}>{value}</span>
-  </div>
-);
-
-const SectionHeader: React.FC<{ icon: React.ReactNode; title: string }> = ({ icon, title }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 0 6px', marginTop: 4 }}>
-    <span style={{ fontSize: 13, color: '#9ca3af' }}>{icon}</span>
-    <span style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</span>
-  </div>
-);
+// DetailRow and SectionTitle imported from atoms
 
 const UnitCard: React.FC<{ unit: EmergencyUnitDetail }> = ({ unit }) => {
   const cfg = UNIT_TYPE_CONFIG[unit.unit_type] ?? { emoji: '🚨', label: unit.unit_type, color: '#374151', bg: '#f9fafb', border: '#e5e7eb' };
@@ -99,7 +89,7 @@ const UnitCard: React.FC<{ unit: EmergencyUnitDetail }> = ({ unit }) => {
         {/* ── Commander ── */}
         {unit.commander?.id && unit.commander?.name && (
           <>
-            <SectionHeader icon={<UserOutlined />} title="Commander" />
+            <SectionTitle icon={<UserOutlined />} title="Commander" />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f9fafb', borderRadius: 10, padding: '10px 12px' }}>
               <Avatar size={34} style={{ background: '#7c3aed', flexShrink: 0, fontSize: 14 }}>
                 {unit.commander.name.charAt(0).toUpperCase()}
@@ -126,7 +116,7 @@ const UnitCard: React.FC<{ unit: EmergencyUnitDetail }> = ({ unit }) => {
         {/* ── Station ── */}
         {unit.station && (
           <>
-            <SectionHeader icon={<EnvironmentOutlined />} title="Station" />
+            <SectionTitle icon={<EnvironmentOutlined />} title="Station" />
             <div style={{ background: '#f9fafb', borderRadius: 10, padding: '4px 12px' }}>
               <DetailRow label="Name" value={unit.station.name} />
               {unit.station.address && <DetailRow label="Address" value={unit.station.address} />}
@@ -137,7 +127,7 @@ const UnitCard: React.FC<{ unit: EmergencyUnitDetail }> = ({ unit }) => {
         {/* ── Vehicle ── */}
         {unit.vehicle && (
           <>
-            <SectionHeader icon={<CarOutlined />} title="Vehicle" />
+            <SectionTitle icon={<CarOutlined />} title="Vehicle" />
             <div style={{ background: '#f9fafb', borderRadius: 10, padding: '4px 12px' }}>
               <DetailRow label="Model" value={unit.vehicle.model} />
               <DetailRow label="Plate" value={<span style={{ fontFamily: 'monospace', letterSpacing: '0.05em' }}>{unit.vehicle.license_plate}</span>} />
@@ -149,7 +139,7 @@ const UnitCard: React.FC<{ unit: EmergencyUnitDetail }> = ({ unit }) => {
         {/* ── Crew Roster ── */}
         {unit.crew_roster?.length > 0 && (
           <>
-            <SectionHeader icon={<UserOutlined />} title={`Crew Roster (${unit.crew_roster.length})`} />
+            <SectionTitle icon={<UserOutlined />} title={`Crew Roster (${unit.crew_roster.length})`} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {unit.crew_roster.map(member => (
                 <div key={member.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: '#f9fafb', borderRadius: 8 }}>

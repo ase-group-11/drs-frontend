@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons';
 import apiClient from '../../../../lib/axios';
 import { friendlyApiError } from '../../../../utils';
+import SectionTitle from '../../../atoms/SectionTitle';
 
 const { Text } = Typography;
 
@@ -191,13 +192,6 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ open, onClose, onSucc
       setSubmitting(false);
     }
   };
-
-  const SectionTitle = ({ icon, title }: { icon: React.ReactNode; title: string }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, marginTop: 14 }}>
-      <span style={{ color: '#7c3aed', fontSize: 13 }}>{icon}</span>
-      <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{title}</Text>
-    </div>
-  );
 
   const totalSlots   = Number(form.capacity) || 0;
   const crewFull     = form.crewIds.length >= totalSlots;

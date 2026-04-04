@@ -3,16 +3,7 @@ import { Button, Empty, Tag } from 'antd';
 import { ArrowLeftOutlined, WifiOutlined } from '@ant-design/icons';
 import mapboxgl from 'mapbox-gl';
 import type { AppNotification } from '../../../hooks/useWebSocket';
-
-// ─── Severity config ──────────────────────────────────────────────────────────
-
-const SEV: Record<AppNotification['severity'], { color: string; bg: string; border: string; label: string }> = {
-  critical: { color: '#ef4444', bg: '#fef2f2', border: '#fecaca', label: 'Critical' },
-  high:     { color: '#f97316', bg: '#fff7ed', border: '#fed7aa', label: 'High'     },
-  medium:   { color: '#eab308', bg: '#fefce8', border: '#fde68a', label: 'Medium'   },
-  low:      { color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', label: 'Low'      },
-  info:     { color: '#22c55e', bg: '#f0fdf4', border: '#bbf7d0', label: 'Info'     },
-};
+import { SEVERITY_CONFIG as SEV } from '../../atoms';
 
 // ─── Time formatting ──────────────────────────────────────────────────────────
 

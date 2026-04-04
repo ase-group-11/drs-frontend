@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1',
+  BASE_URL: process.env.REACT_APP_API_URL,
   TIMEOUT: 10000,
   HEADERS: {
     'Content-Type': 'application/json',
@@ -14,6 +14,8 @@ export const API_ENDPOINTS = {
     LOGIN:             '/emergency-team/login',
     LOGIN_VERIFY:      '/emergency-team/login/verify',
     CHANGE_PASSWORD:   '/emergency-team/change-password',
+    FORGOT_PASSWORD:   '/emergency-team/forgot-password',
+    RESET_PASSWORD:    '/emergency-team/reset-password',
     DEACTIVATE:        (id: string) => `/emergency-team/deactivate/${id}`,
     HEALTH:            '/emergency-team/health',
   },
@@ -113,8 +115,10 @@ export const API_ENDPOINTS = {
 
   // ── Evacuations ──────────────────────────────────────────────────────────────
   EVACUATIONS: {
-    LIST:  '/evacuations',
-    BY_ID: (id: string) => `/evacuations/${id}`,
+    LIST:     '/evacuations',
+    BY_ID:    (id: string) => `/evacuations/${id}`,
+    APPROVE:  (id: string) => `/evacuations/${id}/approve`,
+    ACTIVATE: (id: string) => `/evacuations/${id}/activate`,
   },
 
   // ── Settings ─────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Form, Input, Button, App } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../hooks';
 import type { LoginFormData } from '../../../types';
 import './LoginForm.css';
@@ -12,6 +12,7 @@ const LoginFormInner: React.FC = () => {
   const { login } = useAuth();
   const [form] = Form.useForm();
   const { message } = App.useApp();
+  const navigate = useNavigate();
 
   const handleSubmit = async (values: LoginFormData) => {
     setLoading(true);
@@ -69,8 +70,8 @@ const LoginFormInner: React.FC = () => {
             <button
               type="button"
               className="forgot-password-link"
-              onClick={() => {}}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              onClick={() => navigate('/forgot-password')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#7c3aed' }}
             >
               Forgot password?
             </button>

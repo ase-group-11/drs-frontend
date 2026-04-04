@@ -4,7 +4,6 @@ import {
   App,
   Button,
   Input,
-  Switch,
   Form,
   Typography,
   Card,
@@ -20,6 +19,7 @@ import {
 import { changeAdminPassword, getSystemStatus } from '../../../services';
 import { useNotifications } from '../../../context/NotificationContext';
 import type { SystemStatus } from '../../../types';
+import { ToggleRow } from '../../molecules';
 import styles from './Settings.module.css';
 
 const { Text } = Typography;
@@ -76,40 +76,25 @@ const NotificationsTab: React.FC = () => {
         </Text>
 
         {/* WebSocket toggle */}
-        <div className={`${styles.toggleRow}`}>
-          <div>
-            <Text strong style={{ fontSize: 14, display: 'block', color: '#111827' }}>
-              Live Notifications
-            </Text>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {socketEnabled
-                ? connected ? 'Connected — receiving live events' : 'Connecting...'
-                : 'Disconnected — no live events will be received'}
-            </Text>
-          </div>
-          <Switch
-            checked={socketEnabled}
-            onChange={toggleSocket}
-            style={socketEnabled ? { background: '#7c3aed' } : {}}
-          />
-        </div>
+        <ToggleRow
+          title="Live Notifications"
+          description={
+            socketEnabled
+              ? connected ? 'Connected — receiving live events' : 'Connecting...'
+              : 'Disconnected — no live events will be received'
+          }
+          checked={socketEnabled}
+          onChange={toggleSocket}
+        />
 
         {/* Sound toggle */}
-        <div className={`${styles.toggleRow} ${styles.toggleRowLast}`}>
-          <div>
-            <Text strong style={{ fontSize: 14, display: 'block', color: '#111827' }}>
-              Notification Sound
-            </Text>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {soundEnabled ? 'Audio alert plays on new notifications' : 'Silent — no sound on notifications'}
-            </Text>
-          </div>
-          <Switch
-            checked={soundEnabled}
-            onChange={toggleSound}
-            style={soundEnabled ? { background: '#7c3aed' } : {}}
-          />
-        </div>
+        <ToggleRow
+          title="Notification Sound"
+          description={soundEnabled ? 'Audio alert plays on new notifications' : 'Silent — no sound on notifications'}
+          checked={soundEnabled}
+          onChange={toggleSound}
+          isLast
+        />
       </Card>
     </div>
   );

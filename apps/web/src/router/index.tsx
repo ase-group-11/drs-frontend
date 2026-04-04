@@ -12,6 +12,7 @@ import {
   EmergencyTeamsPage,
   SettingsPage,
 } from '../components/pages';
+import ForgotPasswordPage from '../components/pages/ForgotPasswordPage/ForgotPasswordPage';
 import { useAuth } from '../hooks';
 
 const ScrollToTop: React.FC = () => {
@@ -39,6 +40,7 @@ const AppRouter: React.FC = () => {
         <Route path="/signup" element={<PublicRoute><SignupPage /></PublicRoute>} />
         <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/otp" element={<OtpPage />} />
+        <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
 
         <Route path="/admin/dashboard"       element={<AdminRoute><DashboardPage /></AdminRoute>} />
         <Route path="/admin/users"           element={<AdminRoute><UserManagementPage /></AdminRoute>} />
