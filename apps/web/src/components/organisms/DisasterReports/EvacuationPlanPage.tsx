@@ -10,6 +10,8 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import apiClient from '../../../lib/axios';
 import { API_ENDPOINTS } from '../../../config';
 import { useAuth } from '../../../context';
+import { SectionTitle } from '../../atoms';
+import { StatCard } from '../../molecules';
 import type { DisasterReport } from '../../../types';
 
 const { Text } = Typography;
@@ -157,24 +159,6 @@ const STATUS_CFG: Record<string, { color: string; bg: string; border: string; ic
   COMPLETED: { color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: <CheckCircleOutlined /> },
   APPROVED:  { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe', icon: <CheckCircleOutlined /> },
 };
-
-const SectionTitle: React.FC<{ icon: React.ReactNode; title: string; sub?: string }> = ({ icon, title, sub }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-    <span style={{ fontSize: 16, color: '#7c3aed' }}>{icon}</span>
-    <div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{title}</div>
-      {sub && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{sub}</div>}
-    </div>
-  </div>
-);
-
-const StatCard: React.FC<{ label: string; value: string | number; sub?: string; color?: string }> = ({ label, value, sub, color = '#7c3aed' }) => (
-  <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', borderLeft: `4px solid ${color}`, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', flex: '1 1 140px', minWidth: 0 }}>
-    <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-    <div style={{ fontSize: 24, fontWeight: 700, color, lineHeight: 1.2 }}>{fmt(Number(value))}</div>
-    {sub && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{sub}</div>}
-  </div>
-);
 
 // ─── Evacuation Routes Map ─────────────────────────────────────────────────────
 

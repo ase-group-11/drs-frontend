@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Select, Input, Typography, message, Divider } from 'antd';
-import { EditOutlined, UserOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
+import { EditOutlined, UserOutlined, MailOutlined, PhoneOutlined, LogoutOutlined } from '@ant-design/icons';
 import apiClient from '../../../lib/axios';
 import { API_ENDPOINTS } from '../../../config';
+import { useAuth } from '../../../context';
 import type { AdminUser, ApiUserStatus } from '../../../types';
 import { friendlyApiError } from '../../../utils';
 
@@ -41,12 +42,14 @@ const labelStyle: React.CSSProperties = {
 const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
   open, user, onClose, onSuccess, activelyDeployed = false,
 }) => {
+  const { user: currentUser, logout } = useAuth();
   const [selectedStatus, setSelectedStatus] = useState<ApiUserStatus>('ACTIVE');
   const [fullName,    setFullName]    = useState('');
   const [email,       setEmail]       = useState('');
   const [phone,       setPhone]       = useState('');
   const [submitting,  setSubmitting]  = useState(false);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string; phone?: string }>({});
+  const [selfEditDone, setSelfEditDone] = useState(false);
 
   useEffect(() => {
     if (open && user) {
@@ -100,15 +103,63 @@ const EditUserStatusModal: React.FC<EditUserStatusModalProps> = ({
       };
 
       await apiClient.put(API_ENDPOINTS.USER_MANAGEMENT.UPDATE(user.id), payload);
-      message.success(`${fullName.trim()} updated successfully`);
-      onSuccess();
-      onClose();
+
+      // Check if the admin just edited their own account
+      const isSelfEdit = currentUser?.userId === user.id || currentUser?.email === user.email;
+      if (isSelfEdit) {
+        setSelfEditDone(true); // show logout prompt — don't close modal yet
+      } else {
+        message.success(`${fullName.trim()} updated successfully`);
+        onSuccess();
+        onClose();
+      }
     } catch (err: any) {
       message.error(friendlyApiError(err, 'Failed to update user'));
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Self-edit: show logout prompt after successful save
+  if (selfEditDone) {
+    return (
+      <Modal
+        open={true}
+        closable={false}
+        footer={null}
+        centered
+        width={420}
+      >
+        <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: '50%',
+            background: '#fef3c7', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', margin: '0 auto 16px',
+          }}>
+            <LogoutOutlined style={{ fontSize: 28, color: '#d97706' }} />
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#111827', marginBottom: 8 }}>
+            Your details were updated
+          </div>
+          <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 24, lineHeight: 1.6 }}>
+            Since you edited your own account, you need to sign in again for the changes to take effect across the portal.
+          </div>
+          <Button
+            type="primary"
+            size="large"
+            block
+            icon={<LogoutOutlined />}
+            onClick={() => {
+              logout();
+            }}
+            style={{ background: '#d97706', borderColor: '#d97706', fontWeight: 600 }}
+          >
+            Sign out now
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal

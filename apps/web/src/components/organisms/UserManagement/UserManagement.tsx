@@ -7,7 +7,6 @@ import {
   Input,
   Select,
   Tag,
-  Avatar,
   Space,
   Tooltip,
   message,
@@ -39,6 +38,7 @@ import type {
 import EditUserStatusModal from './EditUserStatusModal';
 import DeleteUserModal from './DeleteUserModal';
 import AddUserModal from './AddUserModal';
+import UserInitials from '../../atoms/UserInitials';
 import './UserManagement.css';
 
 const { Search } = Input;
@@ -67,13 +67,6 @@ const DEPT_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
   POLICE:  { color: '#3b82f6', icon: <SafetyOutlined /> },
   IT:      { color: '#f59e0b', icon: <ToolOutlined /> },
 };
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-const getInitials = (name: string) =>
-  name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-
-const avatarColor = (role: string) => ROLE_COLORS[role] ?? '#6b7280';
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -206,9 +199,7 @@ const UserManagement: React.FC = () => {
       width: 200,
       render: (_, r) => (
         <div className="um-user-cell">
-          <Avatar size={36} style={{ background: avatarColor(r.role), flexShrink: 0 }}>
-            {getInitials(r.fullName)}
-          </Avatar>
+          <UserInitials name={r.fullName} color={ROLE_COLORS[r.role] ?? '#6b7280'} size={36} />
           <div className="um-user-info">
             <Text strong className="um-user-name">{r.fullName}</Text>
             <Text type="secondary" className="um-user-id">
@@ -225,9 +216,9 @@ const UserManagement: React.FC = () => {
       render: (_, r) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <Tag style={{
-            background: `${avatarColor(r.role)}18`,
-            color: avatarColor(r.role),
-            border: `1px solid ${avatarColor(r.role)}40`,
+            background: `${ROLE_COLORS[r.role] ?? '#6b7280'}18`,
+            color: ROLE_COLORS[r.role] ?? '#6b7280',
+            border: `1px solid ${ROLE_COLORS[r.role] ?? '#6b7280'}40`,
             borderRadius: 10, fontWeight: 500, fontSize: 11,
             textTransform: 'capitalize', width: 'fit-content',
           }}>
