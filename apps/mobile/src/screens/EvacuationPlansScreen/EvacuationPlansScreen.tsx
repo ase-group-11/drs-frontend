@@ -19,6 +19,7 @@ import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { authRequest, authService } from '@services/authService';
+import { wsService } from '@services/wsService';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface ActiveDisaster {
@@ -169,6 +170,14 @@ export const EvacuationPlansScreen: React.FC = () => {
       setIsManager(role === 'ADMIN' || role === 'MANAGER');
       console.log('[EvacuationPlans] User role:', role, 'isManager:', role === 'ADMIN' || role === 'MANAGER');
     }).catch(() => {});
+
+    // WS: auto-refresh on evacuation events
+    const unsub = wsService.onAlert((alert) => {
+      if (alert.event_type === 'evacuation.triggered') {
+        loadAll();
+      }
+    });
+    return () => unsub();
   }, []);
 
   const loadAll = async () => {
@@ -242,8 +251,11 @@ export const EvacuationPlansScreen: React.FC = () => {
   };
 
   const openMaps = (lat: number, lon: number, name: string) => {
-    // Navigate to in-app map (HomeScreen with Mapbox) - the map can show the location
-    navigation.navigate('Home' as any);
+    navigation.navigate('Home' as any, {
+      flyToLat: lat,
+      flyToLon: lon,
+      flyToLabel: name,
+    });
   };
 
   // ── ERT Actions — ERT-integration.md Section 10 ────────────────────
@@ -560,16 +572,16 @@ const DetailView: React.FC<{
         {zones.length > 0 && (
           <View style={S.card}>
             <Text style={S.cardTitle}>Impact Zones ({zones.length})</Text>
-            {zones.map(z => {
-              const bestRoute = (routes[z.zone_id] ?? [])[0];
-              const m = metrics[z.zone_id];
+            {zones.map((z: any, zi: number) => {
+              const bestRoute = (routes[z.zone_id] ?? routes[z.disaster_id] ?? [])[0];
+              const m = metrics[z.zone_id] ?? metrics[z.disaster_id];
               return (
-                <View key={z.zone_id} style={S.zoneRow}>
+                <View key={z.zone_id ?? z.area_name ?? `zone-${zi}`} style={S.zoneRow}>
                   <View style={[S.zonePriBadge, { backgroundColor: z.priority === 1 ? '#DC2626' : z.priority === 2 ? '#F97316' : '#EAB308' }]}>
                     <Text style={S.zonePriTxt}>{z.priority ?? '—'}</Text>
                   </View>
                   <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                    <Text style={S.zoneName}>{z.name}</Text>
+                    <Text style={S.zoneName}>{z.name || z.area_name || `Zone ${zi + 1}`}</Text>
                     <Text style={S.zoneMeta}>
                       {(z.population ?? 0).toLocaleString()} residents
                       {z.distance_from_disaster_km != null ? ` · ${z.distance_from_disaster_km.toFixed(1)} km` : ''}
@@ -589,29 +601,37 @@ const DetailView: React.FC<{
         {shelters.length > 0 && (
           <View style={S.card}>
             <Text style={S.cardTitle}>Assigned Shelters ({shelters.length})</Text>
-            {shelters.map(sh => (
-              <View key={sh.shelter_id} style={S.shelterRow}>
-                <Text style={{ fontSize: 22, marginRight: spacing.sm }}>🏛️</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={S.shelterName}>{sh.name}</Text>
-                  <View style={S.shelterMeta}>
-                    <View style={S.availablePill}>
-                      <View style={S.greenDot} />
-                      <Text style={S.availableTxt}>Available</Text>
+            {shelters.map((sh: any, si: number) => {
+              // Find the route to this shelter from best_routes_per_zone
+              const allRoutes = Object.values(routes).flat() as any[];
+              const routeToShelter = allRoutes.find((r: any) => r.destination_shelter_id === sh.shelter_id);
+              return (
+                <View key={sh.shelter_id ?? `sh-${si}`} style={S.shelterRow}>
+                  <Text style={{ fontSize: 22, lineHeight: 28, marginRight: spacing.sm }}>🏛️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={S.shelterName}>{sh.name}</Text>
+                    <View style={S.shelterMeta}>
+                      <View style={S.availablePill}>
+                        <View style={S.greenDot} />
+                        <Text style={S.availableTxt}>Available</Text>
+                      </View>
+                      <Text style={S.shelterCap}>Capacity: {(sh.capacity ?? 0).toLocaleString()}</Text>
                     </View>
-                    <Text style={S.shelterCap}>Capacity: {(sh.capacity ?? 0).toLocaleString()}</Text>
+                    {routeToShelter && (
+                      <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 4 }}>
+                        📏 {routeToShelter.distance_km ?? '—'} km · ⏱ {routeToShelter.estimated_time_min ?? '—'} min
+                        {routeToShelter.origin_label ? ` · from ${routeToShelter.origin_label}` : ''}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={S.shelterBtns}>
+                    <TouchableOpacity style={S.dirBtn} onPress={() => onNavigate(sh.lat, sh.lon, sh.name)}>
+                      <Text style={S.dirBtnTxt}>📍 View on Map</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
-                <View style={S.shelterBtns}>
-                  <TouchableOpacity style={S.mapBtn} onPress={() => onNavigate(sh.lat, sh.lon, sh.name)}>
-                    <Text style={S.mapBtnTxt}>Map</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={S.dirBtn} onPress={() => onNavigate(sh.lat, sh.lon, sh.name)}>
-                    <Text style={S.dirBtnTxt}>↗ Directions</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 

@@ -8,9 +8,10 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar,
+  View, ScrollView, StyleSheet, StatusBar,
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
@@ -69,7 +70,7 @@ export const DisasterTimelineScreen: React.FC = () => {
   const statusCfg = STATUS_LABEL[status] ?? STATUS_LABEL.pending;
 
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       <View style={S.header}>
@@ -99,7 +100,7 @@ export const DisasterTimelineScreen: React.FC = () => {
         </View>
       ) : error ? (
         <View style={S.center}>
-          <Text style={{ fontSize: 40 }}>⚠️</Text>
+          <Text style={{ fontSize: 40, lineHeight: 52 }}>⚠️</Text>
           <Text variant="bodyMedium" color="textSecondary" style={{ marginTop: spacing.md, textAlign: 'center' }}>
             {error}
           </Text>

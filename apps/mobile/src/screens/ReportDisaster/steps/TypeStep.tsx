@@ -65,7 +65,7 @@ export const TypeStep: React.FC<TypeStepProps> = ({
         onPress={() => setTypePickerVisible(true)}
         activeOpacity={0.8}
       >
-        <Text style={{ fontSize: 28 }}>{selectedTypeObj.emoji}</Text>
+        <Text style={{ fontSize: 28, lineHeight: 36 }}>{selectedTypeObj.emoji}</Text>
         <Text variant="bodyLarge" style={{ flex: 1, marginLeft: spacing.md, color: colors.textPrimary, fontWeight: '600' }}>
           {selectedTypeObj.label}
         </Text>
@@ -146,7 +146,7 @@ export const TypeStep: React.FC<TypeStepProps> = ({
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text style={{ fontSize: 28, marginRight: spacing.md }}>{type.emoji}</Text>
+                  <Text style={{ fontSize: 28, lineHeight: 36, marginRight: spacing.md }}>{type.emoji}</Text>
                   <Text
                     variant="bodyLarge"
                     style={{ flex: 1, color: selectedType === type.id ? colors.primary : colors.textPrimary, fontWeight: selectedType === type.id ? '600' : '400' }}

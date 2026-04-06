@@ -7,7 +7,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { StatusBar, StyleSheet, View, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ProfileMenu }          from '@organisms/ProfileMenu';
@@ -50,13 +51,10 @@ export const ProfileScreen: React.FC = () => {
         setUserPhone(user.phone_number || '');
         // Load mission count
         try {
-          const { authRequest } = require('@services/authService');
-          const unitsData = await authRequest('/emergency-units/');
-          const units: any[] = unitsData?.units ?? [];
-          const dept = (user.department ?? '').toUpperCase();
-          const myUnit = units.find((u: any) => u.department?.toUpperCase() === dept) ?? units[0];
-          if (myUnit?.id) {
-            const data = await authRequest(`/deployments/unit/${myUnit.id}/active`);
+          const { authRequest, getUserUnitInfo } = require('@services/authService');
+          const { unitId } = await getUserUnitInfo();
+          if (unitId) {
+            const data = await authRequest(`/deployments/unit/${unitId}/active`);
             setMissionCount(data?.count ?? (data?.missions?.length ?? 0));
           }
         } catch {}
@@ -77,28 +75,24 @@ export const ProfileScreen: React.FC = () => {
     navigation.navigate(screen as never);
   };
 
-  const handleLogout = async () => {
-    await authService.logout();
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log Out', style: 'destructive',
+        onPress: async () => {
+          await authService.logout();
+          navigation.reset({ index: 0, routes: [{ name: 'Auth' as any }] });
+        },
+      },
+    ]);
   };
 
   const headerColor = isResponder ? RED : colors.primary;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={headerColor} />
-
-      <View style={[styles.header, { backgroundColor: headerColor }]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M19 12H5M12 19l-7-7 7-7"
-              stroke={colors.white} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </Svg>
-        </TouchableOpacity>
-        <Text variant="h4" style={styles.headerTitle}>
-          {isResponder ? 'Responder Profile' : 'My Profile'}
-        </Text>
-        <View style={styles.placeholder} />
-      </View>
 
       {isResponder && responderData ? (
         <ResponderProfileMenu

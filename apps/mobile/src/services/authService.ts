@@ -207,6 +207,9 @@ export function validateOTP(otp: string, length = 6): { valid: boolean; error?: 
   return { valid: true };
 }
 
+// ─── Cached unit info (cleared on logout) ─────────────────────────────────
+let _cachedUnitInfo: { unitId: string | null; unitIds: string[]; unitCodes: string[] } | null = null;
+
 // ─── AuthService ──────────────────────────────────────────────────────────
 
 class AuthService {
@@ -236,6 +239,7 @@ class AuthService {
   async clearTokens() {
     try {
       this.accessToken = null;
+      _cachedUnitInfo = null; // clear cached unit info on logout
       await AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.USER_DATA);
@@ -297,3 +301,34 @@ class AuthService {
 
 export const authService = new AuthService();
 export default authService;
+
+// ─── Helper: Get responder unit info via /users/{user_id} ─────────────────
+// Returns { unitId, unitIds, unitCodes } or null if no unit assigned.
+// Caches the result for the session to avoid repeated calls.
+
+export async function getUserUnitInfo(forceRefresh = false): Promise<{
+  unitId: string | null;
+  unitIds: string[];
+  unitCodes: string[];
+}> {
+  if (_cachedUnitInfo && !forceRefresh) return _cachedUnitInfo;
+
+  const user = await authService.getStoredUser();
+  if (!user?.id) return { unitId: null, unitIds: [], unitCodes: [] };
+
+  try {
+    const data = await authRequest<any>(`/users/${user.id}`);
+    const unitIds: string[] = data?.unit_ids ?? [];
+    const unitCodes: string[] = data?.unit_codes ?? [];
+    const unitId = unitIds.length > 0 ? unitIds[0] : null;
+    _cachedUnitInfo = { unitId, unitIds, unitCodes };
+    return _cachedUnitInfo;
+  } catch (e: any) {
+    console.warn('[getUserUnitInfo] Failed to fetch user unit info:', e.message);
+    return { unitId: null, unitIds: [], unitCodes: [] };
+  }
+}
+
+export function clearCachedUnitInfo() {
+  _cachedUnitInfo = null;
+}

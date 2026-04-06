@@ -18,3 +18,4 @@ export { DisasterTimelineScreen } from './DisasterTimelineScreen';
 export { ReportDisasterScreen }   from './ReportDisaster';
 export { DisasterCommandScreen }  from './DisasterCommandScreen';
 export { CompletedMissionsScreen } from './CompletedMissionsScreen';
+export { MyCrewScreen } from './MyCrewScreen';

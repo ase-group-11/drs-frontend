@@ -5,8 +5,9 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, StyleSheet, SafeAreaView, StatusBar, TouchableOpacity, ActivityIndicator,
+  View, StyleSheet, StatusBar, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ReportsList } from '@organisms/ReportsList';
 import { Text } from '@/components/atoms/Text';
@@ -110,7 +111,7 @@ export const MyReportsScreen: React.FC = () => {
   const resolvedCount = reports.filter((r) => r.status === 'resolved' || r.status === 'rejected').length;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header with Back Button */}

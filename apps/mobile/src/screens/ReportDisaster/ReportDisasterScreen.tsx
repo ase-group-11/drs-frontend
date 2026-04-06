@@ -6,8 +6,9 @@
 import React, { useState } from 'react';
 import {
   View, TouchableOpacity, Animated, ScrollView,
-  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Alert,
+  KeyboardAvoidingView, Platform, StatusBar, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
@@ -162,7 +163,7 @@ export const ReportDisasterScreen = () => {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }}>
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.white }}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       <KeyboardAvoidingView

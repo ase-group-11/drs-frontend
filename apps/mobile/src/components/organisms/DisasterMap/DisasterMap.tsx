@@ -1061,37 +1061,6 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
           </MapboxGL.MarkerView>
         )}
 
-        {/* -- WS Reroute overlay (citizen-specific assigned route) -- */}
-        {rerouteOverlay && rerouteOverlay.length > 1 && (
-          <MapboxGL.ShapeSource
-            id="reroute-ws-src"
-            shape={{
-              type: 'Feature',
-              geometry: { type: 'LineString', coordinates: rerouteOverlay },
-              properties: {},
-            }}
-          >
-            <MapboxGL.LineLayer
-              id="reroute-ws-outline"
-              style={{ lineColor: '#fff', lineWidth: 7, lineCap: 'round', lineOpacity: 0.7 }}
-            />
-            <MapboxGL.LineLayer
-              id="reroute-ws-line"
-              style={{ lineColor: '#F97316', lineWidth: 5, lineCap: 'round' }}
-            />
-          </MapboxGL.ShapeSource>
-        )}
-        {rerouteOverlay && (
-          <MapboxGL.MarkerView id="reroute-dismiss" coordinate={rerouteOverlay[Math.floor(rerouteOverlay.length / 2)]}>
-            <TouchableOpacity
-              style={{ backgroundColor: '#F97316', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}
-              onPress={() => { setRerouteOverlay(null); setRerouteDisasterId(null); }}
-            >
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>✕ Clear Reroute</Text>
-            </TouchableOpacity>
-          </MapboxGL.MarkerView>
-        )}
-
 
         {/* -- Disaster markers -- */}
         {validDisasters.map(d => (

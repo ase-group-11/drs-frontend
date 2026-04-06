@@ -14,7 +14,9 @@ import { HelpSupportScreen }        from '@screens/HelpSupportScreen';
 import { ReportDetailScreen }       from '@screens/ReportDetailScreen';
 import { ActiveMissionsScreen }     from '@screens/ActiveMissionsScreen';
 import { DisasterCommandScreen }  from '@screens/DisasterCommandScreen';
+import { DisasterDetailScreen }   from '@screens/DisasterDetailScreen';
 import { CompletedMissionsScreen } from '@screens/CompletedMissionsScreen';
+import { MyCrewScreen }           from '@screens/MyCrewScreen';
 import { EvacuationPlansScreen }    from '@screens/EvacuationPlansScreen';
 import { DisasterTimelineScreen }   from '@screens/DisasterTimelineScreen';
 
@@ -26,11 +28,13 @@ export type MainStackParamList = {
   ReportDisaster:  undefined;
   Settings:        undefined;
   HelpSupport:     undefined;
-  EvacuationPlans: undefined; // now EvacuationPlansScreen
+  EvacuationPlans: undefined;
   ReportDetail:    { reportId: string };
   ActiveMissions:      undefined;
   DisasterCommand:     undefined;
+  DisasterDetail:      { disasterId: string };
   CompletedMissions:   undefined;
+  MyCrew:              undefined;
   DisasterTimeline:  { disasterId: string; trackingId?: string };
 };
 
@@ -48,7 +52,9 @@ export const MainNavigator: React.FC = () => (
     <Stack.Screen name="ReportDetail"    component={ReportDetailScreen} />
     <Stack.Screen name="ActiveMissions"    component={ActiveMissionsScreen} />
     <Stack.Screen name="DisasterCommand"  component={DisasterCommandScreen} />
+    <Stack.Screen name="DisasterDetail"   component={DisasterDetailScreen} />
     <Stack.Screen name="CompletedMissions" component={CompletedMissionsScreen} />
+    <Stack.Screen name="MyCrew"            component={MyCrewScreen} />
     <Stack.Screen name="DisasterTimeline" component={DisasterTimelineScreen} />
     <Stack.Screen
       name="ReportDisaster"

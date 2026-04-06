@@ -6,9 +6,10 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar,
+  View, ScrollView, StyleSheet, StatusBar,
   TouchableOpacity, ActivityIndicator, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import MapboxGL from '@rnmapbox/maps';
 import { Text } from '@atoms/Text';
@@ -125,7 +126,7 @@ export const ReportDetailScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
             <BackArrow />
@@ -145,7 +146,7 @@ export const ReportDetailScreen: React.FC = () => {
 
   if (error || !report) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
             <BackArrow />
@@ -169,7 +170,7 @@ export const ReportDetailScreen: React.FC = () => {
   const severityClr = SEVERITY_COLORS[report.severity?.toLowerCase()] ?? colors.warning;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header */}
@@ -192,7 +193,7 @@ export const ReportDetailScreen: React.FC = () => {
 
         {/* Status Banner */}
         <View style={[styles.statusBanner, { backgroundColor: statusCfg.color + '18', borderColor: statusCfg.color }]}>
-          <Text style={{ fontSize: 28 }}>{statusCfg.icon}</Text>
+          <Text style={{ fontSize: 28, lineHeight: 36 }}>{statusCfg.icon}</Text>
           <View style={{ flex: 1 }}>
             <Text variant="h5" style={{ color: statusCfg.color }}>{statusCfg.label}</Text>
             <Text variant="bodySmall" color="textSecondary">{statusCfg.description}</Text>
@@ -210,7 +211,7 @@ export const ReportDetailScreen: React.FC = () => {
         {/* Type + Severity */}
         <View style={styles.card}>
           <View style={styles.cardRow}>
-            <Text style={{ fontSize: 40 }}>{getEmoji(report.disaster_type)}</Text>
+            <Text style={{ fontSize: 40, lineHeight: 52 }}>{getEmoji(report.disaster_type)}</Text>
             <View style={{ flex: 1, marginLeft: spacing.md }}>
               <Text variant="h4" color="textPrimary">
                 {report.disaster_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
@@ -250,7 +251,7 @@ export const ReportDetailScreen: React.FC = () => {
               coordinate={[report.longitude, report.latitude]}
             >
               <View style={styles.pin}>
-                <Text style={{ fontSize: 24 }}>{getEmoji(report.disaster_type)}</Text>
+                <Text style={{ fontSize: 24, lineHeight: 32 }}>{getEmoji(report.disaster_type)}</Text>
               </View>
             </MapboxGL.MarkerView>
           </MapboxGL.MapView>
@@ -397,7 +398,7 @@ const PinIcon = () => (
 interface ImpactItemProps { icon: string; label: string; value: string; alert?: boolean; }
 const ImpactItem: React.FC<ImpactItemProps> = ({ icon, label, value, alert }) => (
   <View style={styles.impactItem}>
-    <Text style={{ fontSize: 20 }}>{icon}</Text>
+    <Text style={{ fontSize: 20, lineHeight: 26 }}>{icon}</Text>
     <Text variant="bodySmall" color="textSecondary" style={{ marginTop: 2 }}>{label}</Text>
     <Text variant="bodyMedium" style={{ color: alert ? colors.error : colors.textPrimary, fontWeight: '600' }}>
       {value}

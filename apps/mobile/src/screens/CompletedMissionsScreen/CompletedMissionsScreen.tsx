@@ -7,14 +7,15 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar,
+  View, ScrollView, StyleSheet, StatusBar,
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
-import { authRequest, authService } from '@services/authService';
+import { authRequest, authService, getUserUnitInfo } from '@services/authService';
 
 const RED = '#DC2626';
 
@@ -41,15 +42,8 @@ export const CompletedMissionsScreen: React.FC = () => {
       const user = await authService.getStoredUser() as any;
       if (!user?.id) { setLoading(false); setRefreshing(false); return; }
 
-      // Find unit ID — try by department match from emergency-units
-      let unitId: string | null = null;
-      try {
-        const units = await authRequest<any>('/emergency-units/');
-        const arr: any[] = units?.units ?? [];
-        const dept = (user.department ?? '').toUpperCase();
-        const match = arr.find((u: any) => u.department?.toUpperCase() === dept) ?? arr[0];
-        if (match?.id) unitId = match.id;
-      } catch {}
+      // Get unit ID from /users/{user_id} API
+      const { unitId } = await getUserUnitInfo();
 
       if (!unitId) { setMissions([]); setLoading(false); setRefreshing(false); return; }
 
@@ -84,7 +78,7 @@ export const CompletedMissionsScreen: React.FC = () => {
 
   if (selected) {
     return (
-      <SafeAreaView style={S.safe}>
+      <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
         <StatusBar barStyle="light-content" backgroundColor={RED} />
         <View style={S.header}>
           <TouchableOpacity style={S.hBtn} onPress={() => setSelected(null)}>
@@ -128,7 +122,7 @@ export const CompletedMissionsScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
       <StatusBar barStyle="light-content" backgroundColor={RED} />
       <View style={S.header}>
         <TouchableOpacity style={S.hBtn} onPress={() => navigation.goBack()}>
@@ -155,7 +149,7 @@ export const CompletedMissionsScreen: React.FC = () => {
         <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}>
           {missions.length === 0 ? (
             <View style={S.empty}>
-              <Text style={{ fontSize: 40 }}>📋</Text>
+              <Text style={{ fontSize: 40, lineHeight: 52 }}>📋</Text>
               <Text style={S.emptyTitle}>No completed missions</Text>
             </View>
           ) : missions.map((m, i) => {

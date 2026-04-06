@@ -6,9 +6,10 @@
 
 import React, { useState } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar,
+  View, ScrollView, StyleSheet, StatusBar,
   TouchableOpacity, Alert, Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
@@ -74,7 +75,7 @@ export const HelpSupportScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header */}
@@ -189,8 +190,8 @@ const S = StyleSheet.create({
   },
   cardRed:  { backgroundColor: '#FFF5F5' },
   cardBlue: { backgroundColor: '#EFF6FF' },
-  cardIcon: { fontSize: 36, marginBottom: spacing.sm },
-  cardNumber: { fontSize: 22, fontWeight: '800', color: colors.error, marginTop: spacing.xs },
+  cardIcon: { fontSize: 36, lineHeight: 48, marginBottom: spacing.sm },
+  cardNumber: { fontSize: 22, lineHeight: 28, fontWeight: '800', color: colors.error, marginTop: spacing.xs },
   cardEmail:  { fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: spacing.xs, textAlign: 'center' },
 
   emergNote: {

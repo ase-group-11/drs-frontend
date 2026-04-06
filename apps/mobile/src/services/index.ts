@@ -15,6 +15,8 @@ export {
   validateEmail,
   validateFullName,
   validateOTP,
+  getUserUnitInfo,
+  clearCachedUnitInfo,
   ApiError,
 } from './authService';
 

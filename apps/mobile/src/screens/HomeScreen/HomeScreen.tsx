@@ -13,13 +13,14 @@ import { FilterTabs }  from '@organisms/FilterTabs';
 import { MapTemplate } from '@templates/MapTemplate';
 import { ProfileMenu } from '@organisms/ProfileMenu';
 import { ResponderProfileMenu } from '@organisms/ResponderProfileMenu';
-import { mapService }  from '@services/mapService';
-import { authService, authRequest } from '@services/authService';
+import { authService, authRequest, getUserUnitInfo } from '@services/authService';
 import { wsService, WSAlert } from '@services/wsService';
 import { notificationStore } from '@services/notificationStore';
+import { disasterStore } from '@services/disasterStore';
 import { colors }      from '@theme/colors';
 import type { Disaster, DisasterFilter } from '../../types/disaster';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '@types/navigation';
 
@@ -47,6 +48,7 @@ const getInitials = (name: string): string => {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => {
   const [disasters, setDisasters]                 = useState<Disaster[]>([]);
+  const insets     = useSafeAreaInsets();
   const [filteredDisasters, setFilteredDisasters] = useState<Disaster[]>([]);
   const [selectedFilter, setSelectedFilter]       = useState('all');
   const [loading, setLoading]                     = useState(true);
@@ -116,7 +118,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     loadDisasters();
     loadUserData();
     loadAlertCount();
-    const interval = setInterval(() => { loadDisasters(); loadAlertCount(); }, 30000);
+
+    // Subscribe to disasterStore — re-read disasters when store changes
+    // (wsService dispatches to store on WS events, so this is reactive)
+    const unsubStore2 = disasterStore.subscribe(() => {
+      const activeList = disasterStore.getState().activeDisasters;
+      const converted = activeList
+        .map((d: any) => ({
+          id: d.id || String(Math.random()),
+          type: (d.type || d.disaster_type || 'other').toLowerCase(),
+          severity: (d.severity || 'medium').toLowerCase(),
+          title: `${d.type || d.disaster_type || 'Disaster'} - ${d.severity}`,
+          location: {
+            latitude: d.location?.lat ?? d.lat ?? d.latitude ?? 53.35,
+            longitude: d.location?.lon ?? d.lon ?? d.longitude ?? -6.26,
+            address: d.location_address ?? d.description ?? 'Disaster location',
+          },
+          description: d.description || d.location_address || '',
+          reportedAt: d.created_at ? new Date(d.created_at) : new Date(),
+          status: (d.disaster_status ?? d.status ?? 'active').toLowerCase(),
+        }))
+        .filter((d: any) => d.location.latitude && d.location.longitude);
+      setDisasters(converted);
+    });
 
     // Connect WebSocket for real-time alerts
     const connectWS = async () => {
@@ -132,10 +156,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     });
 
     return () => {
-      clearInterval(interval);
       unsubAlert();
       unsubConnect();
       unsubStore();
+      unsubStore2();
       wsService.disconnect();
     };
   }, []);
@@ -155,12 +179,41 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
   const loadDisasters = async () => {
     try {
-      const bounds = mapService.formatBounds(53.20, -6.45, 53.45, -6.05);
-      // ERT doc Section 11: responders use GET /live-map/data (richer combined data)
-      // Citizens use GET /live-map/disasters
-      const data = await mapService.getDisasters(bounds, 100);
-      setDisasters(data);
-      console.log('[HomeScreen] Disasters loaded:', data?.length ?? 0);
+      // Spec: use GET /disasters/active?limit=50 — NOT live-map/disasters
+      // This populates the global disasterStore. All screens read from the store.
+      // On subsequent WS events, wsService dispatches directly to the store.
+      const storeState = disasterStore.getState();
+
+      // Only fetch from API if store is empty (first load)
+      // After that, wsService handles updates via disaster.evaluated → fetch,
+      // disaster.dispatched → in-place, disaster.updated → merge, etc.
+      if (storeState.activeDisasters.length === 0) {
+        const data = await authRequest<any>('/disasters/active?limit=50');
+        const list = data?.disasters ?? (Array.isArray(data) ? data : []);
+        disasterStore.setActiveDisasters(list);
+      }
+
+      // Read from store and convert to Disaster[] format for the map
+      const activeList = disasterStore.getState().activeDisasters;
+      const converted = activeList
+        .map((d: any) => ({
+          id: d.id || String(Math.random()),
+          type: (d.type || d.disaster_type || 'other').toLowerCase(),
+          severity: (d.severity || 'medium').toLowerCase(),
+          title: `${d.type || d.disaster_type || 'Disaster'} - ${d.severity}`,
+          location: {
+            latitude: d.location?.lat ?? d.lat ?? d.latitude ?? 53.35,
+            longitude: d.location?.lon ?? d.lon ?? d.longitude ?? -6.26,
+            address: d.location_address ?? d.description ?? 'Disaster location',
+          },
+          description: d.description || d.location_address || '',
+          reportedAt: d.created_at ? new Date(d.created_at) : new Date(),
+          status: (d.disaster_status ?? d.status ?? 'active').toLowerCase(),
+        }))
+        .filter((d: any) => d.location.latitude && d.location.longitude);
+
+      setDisasters(converted);
+      console.log('[HomeScreen] Disasters from store:', converted.length);
       setLoading(false);
     } catch (error) {
       console.error('Failed to load disasters:', error);
@@ -183,12 +236,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         setResponderData(user);
         // ERT-only APIs — only called when role === 'responder', not for citizens
         try {
-          const unitsData = await authRequest('/emergency-units/');
-          const units: any[] = unitsData?.units ?? [];
-          const userDept = (user.department ?? '').toUpperCase();
-          const myUnit = units.find((u: any) => u.department?.toUpperCase() === userDept) ?? units[0];
-          if (myUnit?.id) {
-            const data = await authRequest(`/deployments/unit/${myUnit.id}/active`);
+          const { unitId } = await getUserUnitInfo();
+          if (unitId) {
+            const data = await authRequest(`/deployments/unit/${unitId}/active`);
             setMissionCount(data?.count ?? 0);
           }
         } catch { /* no missions or unit not found — badge stays 0 */ }
@@ -229,10 +279,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   };
 
   const handleWSAlert = async (alert: WSAlert) => {
-    // Refresh disaster map on relevant events
-    if (['disaster.evaluated', 'disaster.verified', 'disaster.resolved', 'disaster.false_alarm'].includes(alert.event_type)) {
-      loadDisasters();
-    }
+    // wsService already dispatches disaster.evaluated/dispatched/updated/resolved/false_alarm
+    // to the disasterStore, which triggers the store subscription above.
+    // No need to call loadDisasters() here — store is the single source of truth.
 
     // disaster.cleared — roads reopened, clear reroute overlay and status
     if (alert.event_type === 'disaster.cleared') {
@@ -384,16 +433,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     const unread = await notificationStore.unreadCount();
     setAlertCount(unread);
 
-    // ERT-specific events — refreshMap and show urgent alert if responder
+    // ERT-specific events — store already updated by wsService dispatch
     if (isResponder) {
-      if (['disaster.dispatched', 'disaster.updated', 'disaster.unit_completed',
-           'coordination.team_assigned'].includes(alert.event_type)) {
-        loadDisasters();
-      }
+      // No loadDisasters() needed — disasterStore subscription handles re-render
       if (alert.event_type === 'coordination.escalation') {
         // Escalation — always show persistent banner, never auto-dismiss
         setActiveAlert(alert);
         return;
+      }
+      // Evacuation triggered — show evacuation status panel for ERT
+      if (alert.event_type === 'evacuation.triggered') {
+        Alert.alert(
+          '🚨 EVACUATION ACTIVATED',
+          alert.message ?? 'An evacuation plan has been activated for an active disaster.',
+          [
+            { text: 'View Plans', onPress: () => navigation.navigate('EvacuationPlans' as any) },
+            { text: 'OK' },
+          ],
+        );
+      }
+      // Backup requested — prompt additional dispatch for ERT
+      if (alert.event_type === 'disaster.backup_requested') {
+        Alert.alert(
+          '🆘 BACKUP REQUESTED',
+          `${alert.title}\n\n${alert.message}`,
+          [
+            { text: 'View Missions', onPress: () => navigation.navigate('ActiveMissions' as any) },
+            { text: 'OK' },
+          ],
+        );
       }
     }
 
@@ -469,7 +537,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
             ref={mapRef}
             disasters={filteredDisasters}
             loading={loading}
-            onReport={() => navigation.navigate('ReportDisaster' as any)}
+            onReport={isResponder ? undefined : () => navigation.navigate('ReportDisaster' as any)}
+            hideSearch={isResponder}
             selectedFilter={selectedFilter}
           />
         }
@@ -480,7 +549,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         <TouchableOpacity
           activeOpacity={pendingReroute ? 0.75 : 1}
           onPress={pendingReroute ? handleRerouteBannerTap : undefined}
-          style={[styles.alertBanner, { backgroundColor: SEVERITY_BG[activeAlert.severity] ?? '#1F2937' }]}
+          style={[styles.alertBanner, {
+            backgroundColor: SEVERITY_BG[activeAlert.severity] ?? '#1F2937',
+            paddingTop: insets.top + 12,  // respect safe area (notch/status bar)
+          }]}
         >
           <View style={{ flex: 1 }}>
             <Text style={styles.alertBannerTitle}>{activeAlert.title}</Text>
@@ -571,7 +643,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center',
-    padding: 14, paddingTop: 18,
+    paddingHorizontal: 14, paddingBottom: 14,
     zIndex: 999,
   },
   alertBannerTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },

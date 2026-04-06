@@ -8,12 +8,12 @@ import {
   View,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   TouchableOpacity,
   Linking,
   Alert as RNAlert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Text } from '@atoms/Text';
@@ -99,7 +99,7 @@ export const AlertDetailScreen: React.FC = () => {
 
   // ─── Render ─────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header */}
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
     width: 52, height: 52, borderRadius: 26,
     justifyContent: 'center', alignItems: 'center', marginRight: spacing.md,
   },
-  typeEmoji: { fontSize: 24 },
+  typeEmoji: { fontSize: 24, lineHeight: 32 },
   heroInfo: { flex: 1, justifyContent: 'center' },
   sevBadge: {
     borderRadius: borderRadius.sm, paddingVertical: spacing.sm,
