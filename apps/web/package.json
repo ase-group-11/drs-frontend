@@ -12,7 +12,7 @@
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "antd": "^5.12.2",
-    "axios": "^1.6.2",
+    "axios": "1.6.2",
     "mapbox-gl": "^3.18.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -31,6 +31,16 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
+  },
+  "jest": {
+    "coverageThreshold": {
+      "global": {
+        "branches": 70,
+        "functions": 75,
+        "lines": 75,
+        "statements": 75
+      }
+    }
   },
   "eslintConfig": {
     "extends": [

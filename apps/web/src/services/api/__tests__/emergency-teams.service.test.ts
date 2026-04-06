@@ -319,7 +319,7 @@ describe('decommissionUnit()', () => {
       mockApiClient.post.mockResolvedValueOnce({ data: {} });
       await decommissionUnit('unit_001', 'End of service life');
       // ❌ Currently fails — service calls POST /api/admin/teams/unit_001/decommission
-      expect(mockApiClient.delete).toHaveBeenCalledWith('/emergency-units/unit_001');
+      expect(mockApiClient.delete).toHaveBeenCalledWith('/emergency-units/unit_001', expect.objectContaining({ data: expect.objectContaining({ reason: 'End of service life' }) }));
     });
   });
 
@@ -371,11 +371,11 @@ describe('getActiveDisasters()', () => {
   });
 
   describe('endpoint — RED until service uses correct URL', () => {
-    it('calls GET /disasters/active', async () => {
+    it('calls GET /disasters/all (filtered locally for ACTIVE + MONITORING)', async () => {
       mockApiClient.get.mockResolvedValueOnce({ data: [MOCK_DISASTER] });
       await getActiveDisasters();
       // ❌ Currently fails — service calls /api/admin/teams/active-disasters
-      expect(mockApiClient.get).toHaveBeenCalledWith('/disasters/active');
+      expect(mockApiClient.get).toHaveBeenCalledWith('/disasters/all');
     });
   });
 

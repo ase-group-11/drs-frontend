@@ -6,7 +6,7 @@ import OtpVerificationForm from '../OtpVerificationForm';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
-const mockNavigate = jest.fn();
+const mockNavigate    = jest.fn();
 const mockUseLocation = jest.fn();
 
 jest.mock('react-router-dom', () => ({
@@ -15,7 +15,7 @@ jest.mock('react-router-dom', () => ({
   useLocation: () => mockUseLocation(),
 }));
 
-const mockVerifySignupOTP = jest.fn();
+const mockVerifySignupOTP  = jest.fn();
 const mockRequestSignupOTP = jest.fn();
 
 jest.mock('../../../../services', () => ({
@@ -23,11 +23,31 @@ jest.mock('../../../../services', () => ({
   requestSignupOTP: (...args: any[]) => mockRequestSignupOTP(...args),
 }));
 
+// OtpVerificationForm calls useAuth() → loginWithToken.
+// loginWithToken (AuthContext) sets localStorage AND navigates to /admin/dashboard.
+// Declare as jest.fn() then re-implement in EVERY beforeEach — jest.clearAllMocks()
+// would otherwise wipe the implementation between tests.
+const mockLoginWithToken = jest.fn();
+
+jest.mock('../../../../hooks', () => ({
+  useAuth: () => ({
+    loginWithToken: mockLoginWithToken,
+  }),
+}));
+
 beforeEach(() => {
   mockNavigate.mockReset();
   mockVerifySignupOTP.mockReset();
   mockRequestSignupOTP.mockReset();
   localStorage.clear();
+
+  // Re-apply implementation every test because jest.clearAllMocks() wipes it.
+  // loginWithToken saves to localStorage then navigates — mirror AuthContext behaviour.
+  mockLoginWithToken.mockImplementation((token: string, user: any) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    mockNavigate('/admin/dashboard');
+  });
 
   // Default: valid location state with a mobile number
   mockUseLocation.mockReturnValue({
@@ -76,7 +96,6 @@ describe('OtpVerificationForm — rendering', () => {
 
   it('renders the masked phone number in the description', () => {
     renderOtp();
-    // +353871234567 masked → "+353 ** *** 4567"
     expect(screen.getByText(/\+353 \*\* \*\*\* 4567/)).toBeInTheDocument();
   });
 
@@ -90,7 +109,7 @@ describe('OtpVerificationForm — rendering', () => {
 describe('OtpVerificationForm — Verify button enable state', () => {
   it('remains disabled when fewer than 6 digits entered', () => {
     renderOtp();
-    fillOtp('12345'); // only 5
+    fillOtp('12345');
     expect(screen.getByRole('button', { name: /verify/i })).toBeDisabled();
   });
 
@@ -127,7 +146,7 @@ describe('OtpVerificationForm — digit input behaviour', () => {
   it('accepts digits 0-9', () => {
     renderOtp();
     const boxes = screen.getAllByRole('textbox');
-    '0123456789'.slice(0, 6).split('').forEach((digit, i) => {
+    '012345'.split('').forEach((digit, i) => {
       userEvent.type(boxes[i], digit);
       expect(boxes[i]).toHaveValue(digit);
     });
@@ -135,11 +154,6 @@ describe('OtpVerificationForm — digit input behaviour', () => {
 });
 
 // ─── Countdown / Resend ───────────────────────────────────────────────────────
-// Note on fake timers: The OTP component uses setTimeout(() => setCountdown(n-1), 1000)
-// — each tick sets a NEW timeout based on current state, so timers are chained.
-// jest.advanceTimersByTime(N) only fires the FIRST pending timeout; subsequent
-// ones are registered during React's re-render, which happens outside the act().
-// Solution: advance one tick at a time inside its own act(), or use runAllTicks.
 describe('OtpVerificationForm — countdown timer', () => {
   it('displays the initial countdown of 0:60', () => {
     renderOtp();
@@ -154,7 +168,6 @@ describe('OtpVerificationForm — countdown timer', () => {
 
   it('decrements by 3 seconds when advanced tick by tick', () => {
     renderOtp();
-    // Advance one second at a time so React re-renders between each tick
     act(() => { jest.advanceTimersByTime(1000); });
     act(() => { jest.advanceTimersByTime(1000); });
     act(() => { jest.advanceTimersByTime(1000); });
@@ -164,16 +177,10 @@ describe('OtpVerificationForm — countdown timer', () => {
   it('enables the Resend button after all 60 ticks', () => {
     renderOtp();
     expect(screen.getByRole('button', { name: /resend code in/i })).toBeDisabled();
-
-    // Advance all 60 seconds one tick at a time so chained timeouts fire correctly
     for (let i = 0; i < 60; i++) {
       act(() => { jest.advanceTimersByTime(1000); });
     }
-
-    // After 60 ticks the button label changes from "Resend Code in 0:00" to "Resend Code"
-    expect(
-      screen.getByRole('button', { name: /^resend code$/i })
-    ).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /^resend code$/i })).not.toBeDisabled();
   });
 });
 
@@ -198,18 +205,16 @@ describe('OtpVerificationForm — redirect without location state', () => {
 
 // ─── Successful verification ──────────────────────────────────────────────────
 describe('OtpVerificationForm — successful verification', () => {
-  it('navigates to /home after a correct OTP', async () => {
+  it('navigates to /admin/dashboard after a correct OTP', async () => {
     mockVerifySignupOTP.mockResolvedValueOnce({
       success: true,
       data: { token: 'tok_123', user: { role: 'admin' } },
     });
-
     renderOtp();
     fillOtp('123456');
     userEvent.click(screen.getByRole('button', { name: /verify/i }));
-
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/home');
+      expect(mockNavigate).toHaveBeenCalledWith('/admin/dashboard');
     });
   });
 
@@ -218,11 +223,9 @@ describe('OtpVerificationForm — successful verification', () => {
       success: true,
       data: { token: 'tok_abc', user: { role: 'admin' } },
     });
-
     renderOtp();
     fillOtp('654321');
     userEvent.click(screen.getByRole('button', { name: /verify/i }));
-
     await waitFor(() => {
       expect(localStorage.getItem('token')).toBe('tok_abc');
     });
@@ -234,11 +237,9 @@ describe('OtpVerificationForm — successful verification', () => {
       success: true,
       data: { token: 'tok_abc', user: fakeUser },
     });
-
     renderOtp();
     fillOtp('654321');
     userEvent.click(screen.getByRole('button', { name: /verify/i }));
-
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem('user')!)).toEqual(fakeUser);
     });
@@ -247,31 +248,21 @@ describe('OtpVerificationForm — successful verification', () => {
 
 // ─── Failed verification ──────────────────────────────────────────────────────
 describe('OtpVerificationForm — failed verification', () => {
-  it('does not navigate to /home on wrong OTP', async () => {
-    mockVerifySignupOTP.mockResolvedValueOnce({
-      success: false,
-      message: 'Invalid OTP',
-    });
-
+  it('does not navigate to /admin/dashboard on wrong OTP', async () => {
+    mockVerifySignupOTP.mockResolvedValueOnce({ success: false, message: 'Invalid OTP' });
     renderOtp();
     fillOtp('000000');
     userEvent.click(screen.getByRole('button', { name: /verify/i }));
-
     await waitFor(() => {
-      expect(mockNavigate).not.toHaveBeenCalledWith('/home');
+      expect(mockNavigate).not.toHaveBeenCalledWith('/admin/dashboard');
     });
   });
 
   it('clears all OTP inputs on failed verification', async () => {
-    mockVerifySignupOTP.mockResolvedValueOnce({
-      success: false,
-      message: 'Invalid OTP',
-    });
-
+    mockVerifySignupOTP.mockResolvedValueOnce({ success: false, message: 'Invalid OTP' });
     renderOtp();
     fillOtp('000000');
     userEvent.click(screen.getByRole('button', { name: /verify/i }));
-
     await waitFor(() => {
       screen.getAllByRole('textbox').forEach((box) => {
         expect(box).toHaveValue('');

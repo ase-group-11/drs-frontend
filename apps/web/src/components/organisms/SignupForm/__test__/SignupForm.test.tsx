@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import SignupForm from '../SignupForm';
@@ -20,9 +20,6 @@ jest.mock('../../../../services', () => ({
 }));
 
 // ─── Ant Design Grid mock ─────────────────────────────────────────────────────
-// SignupForm uses Row / Col for its responsive layout. These components call
-// window.matchMedia via antd's useBreakpoint hook. Replacing them with plain
-// divs isolates form-behaviour tests from the browser layout API entirely.
 jest.mock('antd', () => {
   const antd = jest.requireActual('antd');
   return {
@@ -44,6 +41,22 @@ const renderSignupForm = () =>
       <SignupForm />
     </MemoryRouter>
   );
+
+// Open an Ant Design Select and pick an option from the portal dropdown.
+async function selectOption(selectorIndex: number, optionText: string) {
+  const selectors = document.querySelectorAll('.ant-select-selector');
+  fireEvent.mouseDown(selectors[selectorIndex]);
+  await waitFor(() => {
+    const option = Array.from(
+      document.querySelectorAll('.ant-select-item-option-content')
+    ).find(el => el.textContent === optionText);
+    if (!option) throw new Error(`Option "${optionText}" not found`);
+  });
+  const option = Array.from(
+    document.querySelectorAll('.ant-select-item-option-content')
+  ).find(el => el.textContent === optionText)!;
+  fireEvent.click(option);
+}
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
 describe('SignupForm — rendering', () => {
@@ -135,9 +148,7 @@ describe('SignupForm — name minimum length', () => {
     userEvent.type(screen.getByPlaceholderText('Enter first name'), 'J');
     userEvent.click(screen.getByRole('button', { name: /sign up/i }));
     await waitFor(() => {
-      expect(
-        screen.getByText('First name must be at least 2 characters')
-      ).toBeInTheDocument();
+      expect(screen.getByText('First name must be at least 2 characters')).toBeInTheDocument();
     });
   });
 
@@ -146,9 +157,7 @@ describe('SignupForm — name minimum length', () => {
     userEvent.type(screen.getByPlaceholderText('Enter last name'), 'D');
     userEvent.click(screen.getByRole('button', { name: /sign up/i }));
     await waitFor(() => {
-      expect(
-        screen.getByText('Last name must be at least 2 characters')
-      ).toBeInTheDocument();
+      expect(screen.getByText('Last name must be at least 2 characters')).toBeInTheDocument();
     });
   });
 
@@ -183,10 +192,6 @@ describe('SignupForm — Irish mobile number validation (+353 default)', () => {
       expect(screen.getByText(/valid Irish mobile number/i)).toBeInTheDocument();
     });
   });
-
-  // NOTE: "too long" is not testable via the input because the component sets
-  // maxLength={9}, so jsdom prevents typing more than 9 characters.
-  // The regex-level guard is covered in validation.test.ts instead.
 });
 
 // ─── Password strength validation ─────────────────────────────────────────────
@@ -244,9 +249,7 @@ describe('SignupForm — password confirmation', () => {
     userEvent.type(screen.getByPlaceholderText('Confirm password'), 'Secret@999');
     userEvent.click(screen.getByRole('button', { name: /sign up/i }));
     await waitFor(() => {
-      expect(
-        screen.getByText('The two passwords do not match!')
-      ).toBeInTheDocument();
+      expect(screen.getByText('The two passwords do not match!')).toBeInTheDocument();
     });
   });
 
@@ -265,34 +268,18 @@ describe('SignupForm — password confirmation', () => {
 // ─── Successful submission ────────────────────────────────────────────────────
 describe('SignupForm — successful OTP request', () => {
   it('navigates to /otp with the formatted mobile number on success', async () => {
-    mockRequestSignupOTP.mockResolvedValueOnce({
-      success: true,
-      message: 'OTP sent',
-    });
+    mockRequestSignupOTP.mockResolvedValueOnce({ success: true, message: 'OTP sent' });
 
     renderSignupForm();
-
-    // Ant Design Select: click the selector container (not the placeholder span
-    // which has pointer-events:none), then pick the option from the dropdown.
-    const selects = screen.getAllByRole('combobox');
-
-    // Salutation (first combobox)
-    userEvent.click(selects[0]);
-    await waitFor(() => screen.getByText('Mr.'));
-    userEvent.click(screen.getByText('Mr.'));
 
     userEvent.type(screen.getByPlaceholderText('Enter first name'), 'John');
     userEvent.type(screen.getByPlaceholderText('Enter last name'), 'Doe');
 
-    // Role (second combobox)
-    userEvent.click(selects[1]);
-    await waitFor(() => screen.getByText('Admin'));
-    userEvent.click(screen.getByText('Admin'));
+    // Role select (index 0 among ant-select-selector elements)
+    await selectOption(0, 'Admin');
 
-    // Department (third combobox)
-    userEvent.click(selects[2]);
-    await waitFor(() => screen.getByText('Medical'));
-    userEvent.click(screen.getByText('Medical'));
+    // Department select (index 1)
+    await selectOption(1, 'IT');
 
     userEvent.type(screen.getByPlaceholderText('87 123 4567'), '871234567');
     userEvent.type(screen.getByPlaceholderText('user@company.com'), 'john@example.com');
