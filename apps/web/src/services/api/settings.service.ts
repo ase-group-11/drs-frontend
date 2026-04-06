@@ -52,7 +52,13 @@ export const changeAdminPassword = async (payload: {
   newPassword: string;
 }): Promise<AdminApiResponse> => {
   try {
-    await apiClient.post(API_ENDPOINTS.SETTINGS.CHANGE_PASSWORD, {
+    // team_member_id is required as a query param by the backend
+    const storedUser = localStorage.getItem('user');
+    const user = storedUser ? JSON.parse(storedUser) : null;
+    const teamMemberId = user?.userId || user?.id || '';
+
+    const url = `${API_ENDPOINTS.SETTINGS.CHANGE_PASSWORD}?team_member_id=${teamMemberId}`;
+    await apiClient.post(url, {
       old_password: payload.currentPassword,
       new_password: payload.newPassword,
     });

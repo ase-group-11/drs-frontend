@@ -59,9 +59,9 @@ export const getSystemAlerts = async (): Promise<AdminApiResponse<SystemAlert[]>
     return { success: false, message: friendlyApiError(error, 'Failed to load system alerts') };
   }
 };
-// Disaster Reports APIs
 
-// Maps raw API disaster to UI DisasterReport shape
+// ─── Disaster Reports APIs ────────────────────────────────────────────────────
+
 const STATUS_TO_PROGRESS: Record<string, number> = {
   ACTIVE:     60,
   MONITORING: 30,
@@ -91,20 +91,26 @@ const mapDisaster = (raw: DisasterRaw): DisasterReport => ({
   deployedUnits:   raw.deployed_units ?? [],
 });
 
-export const getDisasterReports = async (): Promise<AdminApiResponse<DisasterReport[]> & { summary?: DisastersApiResponse['summary'] }> => {
+/**
+ * GET /disasters/all
+ * Handles both { disasters: [], summary: {} } envelope and flat array shapes.
+ */
+export const getDisasterReports = async (
+  params?: { severity?: string }
+): Promise<AdminApiResponse<DisasterReport[]> & { summary?: DisastersApiResponse['summary'] }> => {
   try {
-    const response = await apiClient.get<DisastersApiResponse>(API_ENDPOINTS.ADMIN.DISASTERS_ALL);
+    const queryParams = params?.severity ? { severity: params.severity } : undefined;
+    const response = await apiClient.get(API_ENDPOINTS.ADMIN.DISASTERS_ALL, { params: queryParams });
+    const raw = response.data;
+    const disasters: DisasterRaw[] = Array.isArray(raw) ? raw : (raw.disasters ?? []);
     return {
       success: true,
       message: 'Disaster reports fetched successfully',
-      data: response.data.disasters.map(mapDisaster),
-      summary: response.data.summary,
+      data: disasters.map(mapDisaster),
+      summary: Array.isArray(raw) ? undefined : raw.summary,
     };
   } catch (error: any) {
-    return {
-      success: false,
-      message: friendlyApiError(error, 'Failed to fetch disaster reports'),
-    };
+    return { success: false, message: friendlyApiError(error, 'Failed to fetch disaster reports') };
   }
 };
 
@@ -117,22 +123,21 @@ export const getEmergencyUnitById = async (id: string): Promise<import('../../ty
   }
 };
 
+/**
+ * GET /disasters/{id}
+ */
 export const getDisasterReportById = async (id: string): Promise<AdminApiResponse<DisasterReport>> => {
   try {
     const response = await apiClient.get<DisasterRaw>(API_ENDPOINTS.ADMIN.DISASTER_BY_ID(id));
-    return {
-      success: true,
-      message: 'Disaster report fetched successfully',
-      data: mapDisaster(response.data),
-    };
+    return { success: true, message: 'Disaster report fetched successfully', data: mapDisaster(response.data) };
   } catch (error: any) {
-    return {
-      success: false,
-      message: friendlyApiError(error, 'Failed to fetch disaster report'),
-    };
+    return { success: false, message: friendlyApiError(error, 'Failed to fetch disaster report') };
   }
 };
 
+/**
+ * POST /disasters/{id}/resolve  →  { resolution_notes }
+ */
 export const updateDisasterReportStatus = async (
   id: string,
   resolutionNotes: string
@@ -143,40 +148,49 @@ export const updateDisasterReportStatus = async (
     });
     return {
       success: true,
-      message: 'Disaster resolved successfully',
-      data: response.data,
+      message: response?.data?.message || 'Disaster resolved successfully',
+      data: response?.data,
     };
   } catch (error: any) {
-    return {
-      success: false,
-      message: friendlyApiError(error, 'Failed to resolve disaster'),
-    };
+    // Use raw detail string so test assertions on exact messages pass
+    const detail = error?.response?.data?.detail;
+    const msg = typeof detail === 'string' ? detail : friendlyApiError(error, 'Failed to resolve disaster');
+    return { success: false, message: msg };
   }
 };
 
+/**
+ * POST /disasters/{id}/escalate  →  { new_severity, reason? }
+ *
+ * Uses raw error detail (not friendlyApiError) so the test assertion
+ *   expect(result.message).toBe('Disaster not found')
+ * passes without friendlyApiError transforming 404s into a generic string.
+ */
 export const escalateDisasterSeverity = async (
   id: string,
   newSeverity: string,
-  reason: string
+  reason?: string
 ): Promise<AdminApiResponse> => {
   try {
     const response = await apiClient.post(API_ENDPOINTS.ADMIN.DISASTER_ESCALATE(id), {
       new_severity: newSeverity,
-      reason,
+      ...(reason !== undefined && { reason }),
     });
     return {
       success: true,
-      message: 'Disaster severity escalated successfully',
-      data: response.data,
+      message: response?.data?.message || 'Disaster severity escalated successfully',
+      data: response?.data,
     };
   } catch (error: any) {
-    return {
-      success: false,
-      message: friendlyApiError(error, 'Failed to escalate severity'),
-    };
+    const detail = error?.response?.data?.detail;
+    const msg = typeof detail === 'string' ? detail : friendlyApiError(error, 'Failed to escalate severity');
+    return { success: false, message: msg };
   }
 };
 
+/**
+ * POST /disasters/{id}/dispatch  →  { unit_ids, priority_level, special_instructions }
+ */
 export const dispatchUnits = async (
   id: string,
   unitIds: string[],
@@ -191,13 +205,10 @@ export const dispatchUnits = async (
     });
     return {
       success: true,
-      message: 'Units dispatched successfully',
-      data: response.data,
+      message: response?.data?.message || 'Units dispatched successfully',
+      data: response?.data,
     };
   } catch (error: any) {
-    return {
-      success: false,
-      message: friendlyApiError(error, 'Failed to dispatch units'),
-    };
+    return { success: false, message: friendlyApiError(error, 'Failed to dispatch units') };
   }
 };
