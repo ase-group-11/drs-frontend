@@ -10,9 +10,10 @@ import {
 } from 'recharts';
 import { useLocation } from 'react-router-dom';
 import apiClient from '../../../lib/axios';
+import { getSystemStatus } from '../../../services';
 import { useNotifications } from '../../../context/NotificationContext';
 import type { AppNotification } from '../../../hooks/useWebSocket';
-import type { DashboardStats, DisasterRaw, DisastersApiResponse } from '../../../types';
+import type { DashboardStats, DisasterRaw, DisastersApiResponse, HealthResponse } from '../../../types';
 import SystemActivityPage from './SystemActivityPage';
 import './Dashboard.css';
 
@@ -58,6 +59,7 @@ const Dashboard: React.FC = () => {
   const [distributionData, setDistributionData] = useState<{ name: string; value: number; color: string }[]>([]);
 
   const [allDisasters, setAllDisasters] = useState<DisasterRaw[]>([]);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const location = useLocation();
 
   // Shared notifications from context — same instance as AdminTemplate + NotificationPanel
@@ -82,8 +84,14 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchAll();
+    fetchHealth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const fetchHealth = async () => {
+    const res = await getSystemStatus();
+    if (res.success && res.data) setHealth(res.data);
+  };
 
   // Recompute trend chart whenever period changes or disasters reload
   useEffect(() => {
@@ -239,14 +247,20 @@ const Dashboard: React.FC = () => {
         </Col>
 
         <Col xs={24} sm={12} lg={6}>
-          <Card className="stat-card stat-card-green">
-            <div className="stat-icon-wrapper stat-icon-green">
+          <Card className={`stat-card ${health && health.status !== 'ok' ? 'stat-card-red' : 'stat-card-green'}`}>
+            <div className={`stat-icon-wrapper ${health && health.status !== 'ok' ? 'stat-icon-red' : 'stat-icon-green'}`}>
               <ThunderboltOutlined className="stat-icon" />
             </div>
             <div className="stat-content">
               <div className="stat-label">System Status</div>
-              <div className="stat-value stat-status">{stats?.systemStatus ?? 'Operational'}</div>
-              <div className="stat-detail">Uptime: {stats?.uptime ?? 99.9}%</div>
+              <div className={`stat-value stat-status`} style={{ color: health && health.status !== 'ok' ? '#dc2626' : '#16a34a' }}>
+                {health ? (health.status === 'ok' ? 'Operational' : 'Degraded') : 'Loading...'}
+              </div>
+              <div className="stat-detail">
+                {health
+                  ? `${Object.values(health.services).filter(s => s.status === 'ok' || s.status === 'healthy').length} / ${Object.values(health.services).length} services healthy`
+                  : 'Checking services...'}
+              </div>
             </div>
           </Card>
         </Col>
