@@ -332,6 +332,17 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Allows external callers (e.g. chat) to inject a notification into the panel + toast
+  const pushNotification = useCallback((n: AppNotification) => {
+    setNotifications((prev) => {
+      const next = [n, ...prev].slice(0, MAX_NOTIFICATIONS);
+      saveToStorage(next);
+      return next;
+    });
+    setUnreadCount((c) => c + 1);
+    onNotifRef.current?.(n);
+  }, []);
+
   const markAllRead = useCallback(() => {
     setNotifications((prev) => {
       const next = prev.map((n) => ({ ...n, read: true }));
@@ -557,5 +568,5 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
     console.log('[WS] Manually reconnecting');
   }, [connect]);
 
-  return { notifications, connected, unreadCount, markAllRead, clearAll, disconnect, reconnect };
+  return { notifications, connected, unreadCount, markAllRead, clearAll, disconnect, reconnect, pushNotification };
 }
