@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>mobile</string>
+	<string>DubResQ</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -29,14 +29,12 @@
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
-		<false/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>DRS needs camera access to photograph disaster scenes</string>
+	<string>DubResQ needs camera access to photograph disaster scenes</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>DRS needs photo library access to attach images to disaster reports</string>
+	<string>DubResQ needs photo library access to attach images to disaster reports</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>DubResQ needs your location to show nearby disasters and emergencies on the map</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

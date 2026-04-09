@@ -33,6 +33,4 @@ export const API_TIMEOUT = 30000; // 30 seconds
 // API Base URL - Update this to your actual backend URL
 // For local development: http://localhost:8000/api/v1
 // For production: https://api.drs.dublin.ie/api/v1
-export const API_BASE_URL = __DEV__ 
-  ? 'http://localhost:8000/api/v1'  // Development
-  : 'https://api.drs.dublin.ie/api/v1'; // Production
+export const API_BASE_URL = 'http://20.90.162.121:30333/api/v1';
