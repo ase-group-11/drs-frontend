@@ -128,6 +128,6 @@ export const API_ENDPOINTS = {
     NOTIFICATIONS:   '/admin/settings/notifications',
     SECURITY:        '/admin/settings/security',
     CHANGE_PASSWORD: '/emergency-team/change-password',
-    HEALTH:          '/health', // uses healthClient (REACT_APP_HEALTH_URL), not apiClient
+    HEALTH:          '/health/ready', // uses healthClient (REACT_APP_HEALTH_URL), not apiClient
   },
 };
