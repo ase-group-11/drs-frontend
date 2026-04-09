@@ -1,2 +1,4 @@
 android/app/src/main/assets/
 *.bundle
+apps/mobile/android/app/src/main/assets/
+*.bundle
