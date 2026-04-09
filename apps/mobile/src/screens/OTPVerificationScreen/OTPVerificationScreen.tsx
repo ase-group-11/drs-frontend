@@ -92,19 +92,9 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
     }
   };
 
-  const handleResend = async () => {
+  const handleResend = async (): Promise<void> => {
     setError('');
-    
-    try {
-      await authService.resendOTP(phoneNumber, isSignup, userName, email);
-      console.log('OTP resent successfully');
-    } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError(err.message || 'Failed to resend OTP. Please try again.');
-      }
-    }
+    await authService.resendOTP(phoneNumber, isSignup, userName, email);
   };
 
   const clearError = () => {

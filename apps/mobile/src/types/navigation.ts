@@ -1,250 +1,127 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// COMPLETE NAVIGATION TYPES - Updated for Report Disaster Flow
-// src/types/navigation.ts
+// FILE: src/types/navigation.ts  (UPDATED)
+//
+// Added: ResponderSignup, ResponderForgotPassword to AuthStackParamList
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { CompositeScreenProps } from '@react-navigation/native';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { CompositeScreenProps }   from '@react-navigation/native';
+import type { BottomTabScreenProps }   from '@react-navigation/bottom-tabs';
 
-// ───────────────────────────────────────────────────────────────────────────
-// Auth Stack (Login flow)
-// ───────────────────────────────────────────────────────────────────────────
+// ── Auth Stack ──────────────────────────────────────────────────────────────
 export type AuthStackParamList = {
-  Login: undefined;
-  Signup: undefined;
+  Login:                    undefined;
+  Signup:                   undefined;
   OTPVerification: {
-    phoneNumber: string;
-    countryCode?: string;   // passed from login/signup so display is correct
-    isSignup: boolean;
-    userName?: string;
-    email?: string;
+    phoneNumber:  string;
+    countryCode?: string;
+    isSignup:     boolean;
+    userName?:    string;
+    email?:       string;
   };
   Welcome: {
     isNewUser: boolean;
   };
-  ResponderLogin: undefined;
+  ResponderLogin:           undefined;
+  ResponderSignup:          undefined;          // ← NEW
+  ResponderForgotPassword:  undefined;          // ← NEW
 };
 
-// ───────────────────────────────────────────────────────────────────────────
-// Main Tab Navigator (Bottom tabs - Home, Reports, Alerts, Profile)
-// ───────────────────────────────────────────────────────────────────────────
+// ── Main Tab Navigator ──────────────────────────────────────────────────────
 export type MainTabParamList = {
-  Home: undefined;
+  Home:      undefined;
   MyReports: undefined;
-  Alerts: undefined;
-  Profile: undefined;
+  Alerts:    undefined;
+  Profile:   undefined;
 };
 
-// ───────────────────────────────────────────────────────────────────────────
-// Main Stack Navigator (Wraps Tabs + Report Disaster Flow)
-// ───────────────────────────────────────────────────────────────────────────
+// ── Main Stack Navigator ────────────────────────────────────────────────────
 export type MainStackParamList = {
-  // Main tabs
-  MainTabs: undefined;
-  
-  // Report Disaster flow (5 screens)
+  MainTabs:       undefined;
+  Home:           undefined;
+  MyReports:      undefined;
+  Alerts:         undefined;
+  Profile:        undefined;
+  ReportDisaster: undefined;
+  Settings:       undefined;
+  HelpSupport:    undefined;
+  EvacuationPlans: undefined;
+  ReportDetail:   { reportId: string };
+  ActiveMissions:    undefined;
+  DisasterCommand:   undefined;
+  DisasterDetail:    { disasterId: string };
+  CompletedMissions: undefined;
+  MyCrew:            undefined;
+  UnitStatus:        undefined;
+  DisasterTimeline:  { disasterId: string; trackingId?: string };
+
+  // Report Disaster flow
   ReportLocation: undefined;
   ReportType: {
-    location: {
-      latitude: number;
-      longitude: number;
-      address: string;
-    };
+    location: { latitude: number; longitude: number; address: string };
   };
   ReportDetails: {
-    location: {
-      latitude: number;
-      longitude: number;
-      address: string;
-    };
-    type: string;
+    location: { latitude: number; longitude: number; address: string };
+    type:     string;
     severity: string;
   };
   ReportReview: {
-    location: {
-      latitude: number;
-      longitude: number;
-      address: string;
-    };
-    type: string;
-    severity: string;
-    description: string;
-    photos: string[];
-    peopleAffected: string;
+    location:         { latitude: number; longitude: number; address: string };
+    type:             string;
+    severity:         string;
+    description:      string;
+    photos:           string[];
+    peopleAffected:   string;
     additionalDetails: string[];
   };
-  ReportSuccess: {
-    reportId: string;
-  };
-  
-  // Other screens (if needed)
-  Settings?: undefined;
-  DisasterDetail?: { disasterId: string };
-  ReportDetail?: { reportId: string };
+  ReportSuccess: { reportId: string };
 };
 
-// ───────────────────────────────────────────────────────────────────────────
-// Root Stack (Auth or Main)
-// ───────────────────────────────────────────────────────────────────────────
+// ── Root Stack ──────────────────────────────────────────────────────────────
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SCREEN PROPS TYPES
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Screen Props ────────────────────────────────────────────────────────────
 
-// ───────────────────────────────────────────────────────────────────────────
-// Auth Screen Props
-// ───────────────────────────────────────────────────────────────────────────
-export type LoginScreenProps = NativeStackScreenProps<AuthStackParamList, 'Login'>;
-export type SignupScreenProps = NativeStackScreenProps<AuthStackParamList, 'Signup'>;
-export type OTPVerificationScreenProps = NativeStackScreenProps<AuthStackParamList, 'OTPVerification'>;
-export type WelcomeScreenProps = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
+// Auth
+export type LoginScreenProps                   = NativeStackScreenProps<AuthStackParamList, 'Login'>;
+export type SignupScreenProps                  = NativeStackScreenProps<AuthStackParamList, 'Signup'>;
+export type OTPVerificationScreenProps         = NativeStackScreenProps<AuthStackParamList, 'OTPVerification'>;
+export type WelcomeScreenProps                 = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
+export type ResponderLoginScreenProps          = NativeStackScreenProps<AuthStackParamList, 'ResponderLogin'>;
+export type ResponderSignupScreenProps         = NativeStackScreenProps<AuthStackParamList, 'ResponderSignup'>;
+export type ResponderForgotPasswordScreenProps = NativeStackScreenProps<AuthStackParamList, 'ResponderForgotPassword'>;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Tab Screen Props (Home, MyReports, Alerts, Profile)
-// These screens can navigate to both tabs AND stack screens
-// ───────────────────────────────────────────────────────────────────────────
+// Main (tab + stack composite)
 export type HomeScreenProps = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Home'>,
   NativeStackScreenProps<MainStackParamList>
 >;
-
 export type MyReportsScreenProps = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'MyReports'>,
   NativeStackScreenProps<MainStackParamList>
 >;
-
 export type AlertsScreenProps = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Alerts'>,
   NativeStackScreenProps<MainStackParamList>
 >;
-
 export type ProfileScreenProps = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Profile'>,
   NativeStackScreenProps<MainStackParamList>
 >;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Report Disaster Screen Props
-// ───────────────────────────────────────────────────────────────────────────
+// Report flow
 export type ReportLocationScreenProps = NativeStackScreenProps<MainStackParamList, 'ReportLocation'>;
-export type ReportTypeScreenProps = NativeStackScreenProps<MainStackParamList, 'ReportType'>;
-export type ReportDetailsScreenProps = NativeStackScreenProps<MainStackParamList, 'ReportDetails'>;
-export type ReportReviewScreenProps = NativeStackScreenProps<MainStackParamList, 'ReportReview'>;
-export type ReportSuccessScreenProps = NativeStackScreenProps<MainStackParamList, 'ReportSuccess'>;
+export type ReportTypeScreenProps     = NativeStackScreenProps<MainStackParamList, 'ReportType'>;
+export type ReportDetailsScreenProps  = NativeStackScreenProps<MainStackParamList, 'ReportDetails'>;
+export type ReportReviewScreenProps   = NativeStackScreenProps<MainStackParamList, 'ReportReview'>;
+export type ReportSuccessScreenProps  = NativeStackScreenProps<MainStackParamList, 'ReportSuccess'>;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Global Navigation Declaration
-// ───────────────────────────────────────────────────────────────────────────
+// ── Global Navigation Declaration ───────────────────────────────────────────
 declare global {
   namespace ReactNavigation {
     interface RootParamList extends RootStackParamList {}
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// USAGE EXAMPLES
-// ═══════════════════════════════════════════════════════════════════════════
-
-/*
-// ─────────────────────────────────────────────────────────────────────────
-// Example 1: HomeScreen (Tab screen - can navigate to tabs AND stack)
-// ─────────────────────────────────────────────────────────────────────────
-import React from 'react';
-import type { HomeScreenProps } from '../types/navigation';
-
-export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
-  const handleReport = () => {
-    navigation.navigate('ReportLocation'); // ✅ Navigate to stack screen
-  };
-
-  const goToAlerts = () => {
-    navigation.navigate('Alerts'); // ✅ Navigate to other tab
-  };
-
-  return (
-    // ... your component
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────
-// Example 2: ReportLocationScreen (Stack screen)
-// ─────────────────────────────────────────────────────────────────────────
-import React from 'react';
-import type { ReportLocationScreenProps } from '../types/navigation';
-
-export const ReportLocationScreen: React.FC<ReportLocationScreenProps> = ({ 
-  navigation, 
-  route 
-}) => {
-  const handleNext = () => {
-    navigation.navigate('ReportType', {
-      location: {
-        latitude: 53.3498,
-        longitude: -6.2603,
-        address: "123 O'Connell Street, Dublin 1",
-      }
-    });
-  };
-
-  const handleClose = () => {
-    navigation.navigate('MainTabs'); // Go back to tabs
-  };
-
-  return (
-    // ... your component
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────
-// Example 3: ReportTypeScreen (receives params)
-// ─────────────────────────────────────────────────────────────────────────
-import React from 'react';
-import type { ReportTypeScreenProps } from '../types/navigation';
-
-export const ReportTypeScreen: React.FC<ReportTypeScreenProps> = ({ 
-  navigation, 
-  route 
-}) => {
-  const { location } = route.params; // ✅ TypeScript knows the shape
-  
-  const handleNext = () => {
-    navigation.navigate('ReportDetails', {
-      location,
-      type: 'fire',
-      severity: 'high',
-    });
-  };
-
-  return (
-    // ... your component
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────
-// Example 4: LoginScreen (Auth screen)
-// ─────────────────────────────────────────────────────────────────────────
-import React from 'react';
-import type { LoginScreenProps } from '../types/navigation';
-
-export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
-  const handleSignup = () => {
-    navigation.navigate('Signup');
-  };
-
-  const handleOTP = () => {
-    navigation.navigate('OTPVerification', {
-      phoneNumber: '+353892039542',
-      isSignup: false,
-    });
-  };
-
-  return (
-    // ... your component
-  );
-};
-*/

@@ -1,2 +1,3 @@
-export { DisasterMarker, type DisasterMarkerProps } from './DisasterMarker';
-export { DisasterMarker as default } from './DisasterMarker';
+export { DisasterMarker } from './DisasterMarker';
+export type { DisasterMarkerProps } from './DisasterMarker';
+export { default } from './DisasterMarker';

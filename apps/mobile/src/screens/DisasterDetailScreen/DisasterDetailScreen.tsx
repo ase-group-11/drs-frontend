@@ -15,10 +15,17 @@ import { Text } from '@atoms/Text';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authRequest } from '@services/authService';
+import { API } from '@services/apiConfig';
 import { SEVERITY_COLOR } from '@services/disasterStore';
 
 const RED = '#DC2626';
-const TYPE_EMOJI: Record<string, string> = { FIRE: '🔥', FLOOD: '🌊', STORM: '⛈️', EARTHQUAKE: '🏚️', HURRICANE: '🌀', EXPLOSION: '💥', GAS_LEAK: '☁️', ACCIDENT: '🚗', HAZMAT: '☣️', OTHER: '⚠️' };
+const TYPE_EMOJI: Record<string, string> = {
+  FIRE: '🔥', FLOOD: '🌊', STORM: '⛈️', EARTHQUAKE: '🏚️',
+  EXPLOSION: '💥', GAS_LEAK: '☁️', HAZMAT: '☣️', LANDSLIDE: '⛰️',
+  ACCIDENT: '🚗', BUILDING_COLLAPSE: '🏗️', MEDICAL_EMERGENCY: '🚑',
+  POWER_OUTAGE: '⚡', WATER_CONTAMINATION: '💧', CRIME: '🚨',
+  RIOT: '⚠️', TERRORIST_ATTACK: '🚨', OTHER: '⚠️',
+};
 const DEP_COLOR: Record<string, string> = { DISPATCHED: '#3B82F6', EN_ROUTE: '#F97316', ON_SCENE: '#8B5CF6', IN_PROGRESS: '#EF4444', COMPLETED: '#22C55E', CANCELLED: '#6B7280' };
 
 const fmt = (iso?: string | null) => !iso ? '—' : new Date(iso).toLocaleString('en-IE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -40,8 +47,8 @@ export const DisasterDetailScreen: React.FC = () => {
     setLoading(true);
     try {
       const [det, deps] = await Promise.allSettled([
-        authRequest<any>(`/disasters/${disasterId}`),
-        authRequest<any>(`/disasters/${disasterId}/deployments`),
+        authRequest<any>(API.disasters.byId(disasterId)),
+        authRequest<any>(API.disasters.deployments(disasterId)),
       ]);
       if (det.status === 'fulfilled') setDisaster(det.value);
       if (deps.status === 'fulfilled') { setDeployments(deps.value?.deployments ?? []); setDeploySummary(deps.value?.summary ?? null); }

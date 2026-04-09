@@ -16,13 +16,11 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '@constants/index';
+import { API, WS_URL } from './apiConfig';
 import { disasterStore } from './disasterStore';
 import type { WSAlert } from './disasterStore';
 
-// Convert http(s) base URL to ws(s)
-const WS_BASE = API_BASE_URL
-  .replace(/^http/, 'ws')
-  .replace(/\/api\/v1\/?$/, '');
+// WS base URL imported from apiConfig (strips /api/v1, swaps http→ws)
 
 export type WSEventType =
   | 'disaster.evaluated'
@@ -82,6 +80,10 @@ class WsService {
     this.isResponder     = responder;
     this.shouldReconnect = true;
 
+    // Clear any stale API URL cached from old dev builds (e.g. localhost:8000)
+    // The URL is always taken from the compiled constant now, not AsyncStorage
+    await AsyncStorage.removeItem('@config/api_base_url').catch(() => {});
+
     let token = await this._getFreshToken();
     if (!token) { console.warn('[WS] No token — cannot connect'); return; }
 
@@ -91,7 +93,7 @@ class WsService {
   private async _getFreshToken(): Promise<string | null> {
     const token = await AsyncStorage.getItem('@auth/access_token');
     if (!token) {
-      console.warn('[WS] No access_token in storage');
+      console.warn('[WS] No access_token in storage — not logged in');
       return null;
     }
 
@@ -104,16 +106,43 @@ class WsService {
     try {
       const payloadJson = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
       const payload = JSON.parse(payloadJson);
-      console.log('[WS] Token payload — type:', payload.type, 'user_type:', payload.user_type);
+      const userType = payload.user_type ?? 'user';
+      console.log('[WS] Token — type:', payload.type, '| user_type:', userType, '| sub:', payload.sub);
 
       if (payload.type !== 'access') {
         console.error('[WS] Token type is not "access":', payload.type);
         return null;
       }
 
-      if (payload.exp && Date.now() / 1000 > payload.exp) {
-        console.error('[WS] Token is expired');
-        return null;
+      // Token expires within 60 seconds — try to refresh proactively
+      if (payload.exp) {
+        const secondsLeft = payload.exp - Date.now() / 1000;
+        if (secondsLeft <= 0) {
+          console.error('[WS] Token is expired — cannot connect');
+          return null;
+        }
+        if (secondsLeft < 60) {
+          console.warn('[WS] Token expires in', Math.round(secondsLeft), 's — trying refresh');
+          try {
+            const refreshToken = await AsyncStorage.getItem('@auth/refresh_token');
+            if (refreshToken) {
+              const API_BASE_URL_VAL = API_BASE_URL;
+              const res = await fetch(`${API_BASE_URL_VAL}/auth/token/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                await AsyncStorage.setItem('@auth/access_token', data.access_token);
+                console.log('[WS] Token refreshed successfully');
+                return data.access_token;
+              }
+            }
+          } catch (e) {
+            console.warn('[WS] Token refresh failed — using existing token');
+          }
+        }
       }
     } catch (e) {
       console.warn('[WS] Could not decode token payload:', e);
@@ -142,7 +171,7 @@ class WsService {
   private _openConnection(token: string) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
-    const url = `${WS_BASE}/api/v1/ws/notifications?token=${token}`;
+    const url = `${WS_URL}${API.notifications.ws()}?token=${token}`;
     console.log('[WS] Connecting:', url.replace(token, '***'));
 
     try {
@@ -158,39 +187,51 @@ class WsService {
       this.reconnectDelay = 3000;
       this._notifyConnect(true);
 
-      if (!this.isResponder) {
-        this._sendPing();
-        this.pingInterval = setInterval(() => this._sendPing(), 3 * 60 * 1000);
-      }
+      // Send location frame immediately on connect (all users).
+      // Backend step 4 reads this within 15s to enable geo-targeting.
+      // Also send a keepalive ping every 25s to stay within the backend's
+      // 30s receive timeout — prevents silent disconnection.
+      this._sendPing();
+      this.pingInterval = setInterval(() => this._sendPing(), 25 * 1000);
     };
 
     this.ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
+      // Wrap in an immediately-invoked async function so we can await
+      // addAlert (AsyncStorage write) and _dispatchToStore (fetch calls)
+      // without making the onmessage handler itself async (which React Native
+      // WebSocket doesn't support directly).
+      void (async () => {
+        try {
+          const msg = JSON.parse(event.data);
 
-        // Server keepalive ping — respond
-        if (msg.type === 'ping') {
-          this._sendPing();
-          return;
-        }
+          // Server keepalive ping — respond with client ping
+          if (msg.type === 'ping') {
+            this._sendPing();
+            return;
+          }
 
-        // Real alert — dispatch to store and handlers
-        if (msg.event_type) {
+          // Server pong — no action needed
+          if (msg.type === 'pong') return;
+
+          // Real alert — must have event_type field
+          if (!msg.event_type) return;
+
           const alert: WSAlert = msg as WSAlert;
-          console.log('[WS] Alert:', alert.event_type, alert.severity);
+          console.log('[WS] ▶ Alert received:', alert.event_type, '|', alert.severity, '|', alert.title);
 
-          // ─── GLOBAL RULE: persist every event as alert ─────────
-          disasterStore.addAlert(alert);
+          // ─── 1. Persist to store (awaited — ensures AsyncStorage write) ──
+          await disasterStore.addAlert(alert);
 
-          // ─── Dispatch to store based on event_type ─────────────
-          this._dispatchToStore(alert);
+          // ─── 2. Dispatch store mutations (awaited — ensures fetches complete) ─
+          await this._dispatchToStore(alert);
 
-          // ─── Notify screen-level handlers ──────────────────────
+          // ─── 3. Notify screen-level handlers (HomeScreen, ActiveMissions etc) ─
           this.handlers.forEach(h => h(alert));
+
+        } catch (e) {
+          console.warn('[WS] onmessage error:', e);
         }
-      } catch {
-        // Non-JSON frame — ignore
-      }
+      })();
     };
 
     this.ws.onerror = (e) => {
@@ -219,7 +260,7 @@ class WsService {
         try {
           const token = await AsyncStorage.getItem('@auth/access_token');
           if (!token) break;
-          const res = await fetch(`${API_BASE_URL}/disasters/active?limit=50`, {
+          const res = await fetch(`${API_BASE_URL}${API.disasters.active()}`, {
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           });
           if (res.ok) {
@@ -245,7 +286,7 @@ class WsService {
         try {
           const token = await AsyncStorage.getItem('@auth/access_token');
           if (!token) break;
-          const res = await fetch(`${API_BASE_URL}/disasters/${disasterId}`, {
+          const res = await fetch(`${API_BASE_URL}${API.disasters.byId(disasterId)}`, {
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           });
           if (res.ok) {
@@ -278,7 +319,7 @@ class WsService {
           if (!token || !userData) break;
           const user = JSON.parse(userData);
           // Auto-register vehicle as "emergency"
-          const res = await fetch(`${API_BASE_URL}/vehicles/register`, {
+          const res = await fetch(`${API_BASE_URL}${API.vehicles.register()}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -321,12 +362,14 @@ class WsService {
 
   private _sendPing() {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
-    const frame: any = { type: 'ping' };
-    if (!this.isResponder) {
-      frame.lat = this.currentLat;
-      frame.lon = this.currentLon;
-    }
-    this.ws.send(JSON.stringify(frame));
+    // Always include lat/lon — backend uses it for geo-targeting for both
+    // citizens and responders. Without it, the backend marks geo-targeting
+    // as disabled for this user and they may miss location-scoped alerts.
+    this.ws.send(JSON.stringify({
+      type: 'ping',
+      lat:  this.currentLat,
+      lon:  this.currentLon,
+    }));
   }
 
   private _scheduleReconnect(token: string) {

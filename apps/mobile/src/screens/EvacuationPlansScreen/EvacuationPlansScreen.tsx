@@ -19,6 +19,7 @@ import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { authRequest, authService } from '@services/authService';
+import { API } from '@services/apiConfig';
 import { wsService } from '@services/wsService';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -133,7 +134,10 @@ const STATUS_ICON: Record<string, string> = {
 
 const TYPE_EMOJI: Record<string, string> = {
   FIRE: '🔥', FLOOD: '🌊', STORM: '⛈️', EARTHQUAKE: '🏚️',
-  HURRICANE: '🌀', TORNADO: '🌪️', TSUNAMI: '🌊', OTHER: '⚠️',
+  EXPLOSION: '💥', GAS_LEAK: '☁️', HAZMAT: '☣️', LANDSLIDE: '⛰️',
+  ACCIDENT: '🚗', BUILDING_COLLAPSE: '🏗️', MEDICAL_EMERGENCY: '🚑',
+  POWER_OUTAGE: '⚡', WATER_CONTAMINATION: '💧', CRIME: '🚨',
+  RIOT: '⚠️', TERRORIST_ATTACK: '🚨', OTHER: '⚠️',
 };
 
 const BackIcon = ({ onPress }: { onPress: () => void }) => (
@@ -158,7 +162,7 @@ export const EvacuationPlansScreen: React.FC = () => {
   const [plans, setPlans]               = useState<EvacuationPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<EvacuationPlan | null>(null);
   const [progress, setProgress]         = useState<ProgressData | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
   const [isManager, setIsManager]       = useState(false); // ADMIN/MANAGER only can trigger/approve/activate
   const [view, setView]                 = useState<'list' | 'detail'>('list');
 
@@ -196,24 +200,19 @@ export const EvacuationPlansScreen: React.FC = () => {
   const loadEvacuationDisasters = async () => {
     try {
       // Citizen API: GET /live-map/disasters — disaster-evaluation/active-ranked is ERT-only
-      const data = await authRequest<any>('/live-map/disasters?bounds=53.2,-6.45,53.45,-6.05');
+      const data = await authRequest<any>(API.liveMap.disasters('53.2,-6.45,53.45,-6.05'));
       const arr: any[] = Array.isArray(data) ? data : (data?.disasters ?? []);
-      const withEvac = arr
-        .filter((d: any) => {
-          const sev = (d.severity ?? '').toUpperCase();
-          return sev === 'CRITICAL' || sev === 'HIGH';
-        })
-        .map((d: any) => ({
-          disaster_id:          d.id ?? d.disaster_id,
-          type:                 d.disaster_type ?? d.type ?? 'OTHER',
-          severity:             (d.severity ?? 'MEDIUM').toUpperCase(),
-          status:               d.disaster_status ?? d.status,
-          location_address:     d.location?.address ?? d.location_address ?? 'Dublin',
-          people_affected:      d.people_affected,
-          trigger_evacuation:   true,
-          recommended_services: d.recommended_services ?? [],
-        }));
-      setEvtDisasters(withEvac);
+      const mapped = arr.map((d: any) => ({
+        disaster_id:          d.id ?? d.disaster_id,
+        type:                 d.disaster_type ?? d.type ?? 'OTHER',
+        severity:             (d.severity ?? 'MEDIUM').toUpperCase(),
+        status:               d.disaster_status ?? d.status,
+        location_address:     d.location?.address ?? d.location_address ?? 'Dublin',
+        people_affected:      d.people_affected,
+        trigger_evacuation:   true,
+        recommended_services: d.recommended_services ?? [],
+      }));
+      setEvtDisasters(mapped);
     } catch (e) {
       console.warn('Could not load active disasters:', e);
     }
@@ -221,7 +220,7 @@ export const EvacuationPlansScreen: React.FC = () => {
 
   const loadPlans = async () => {
     try {
-      const data = await authRequest<{ evacuation_plans: EvacuationPlan[] }>('/evacuations/');
+      const data = await authRequest<{ evacuation_plans: EvacuationPlan[] }>(API.evacuations.list());
       setPlans(data?.evacuation_plans ?? []);
     } catch (e) {
       console.warn('Could not load evacuation plans:', e);
@@ -229,9 +228,9 @@ export const EvacuationPlansScreen: React.FC = () => {
   };
 
   const loadPlanDetail = async (planId: string) => {
-    setDetailLoading(true);
+    setLoadingPlanId(planId);
     try {
-      const detail = await authRequest<EvacuationPlan>(`/evacuations/${planId}`);
+      const detail = await authRequest<EvacuationPlan>(API.evacuations.byId(planId));
       setSelectedPlan(detail);
       setView('detail');
       if (detail.plan_status === 'ACTIVE' || detail.plan_status === 'COMPLETED') {
@@ -240,12 +239,12 @@ export const EvacuationPlansScreen: React.FC = () => {
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not load plan details');
     }
-    setDetailLoading(false);
+    setLoadingPlanId(null);
   };
 
   const loadProgress = async (planId: string) => {
     try {
-      const prog = await authRequest<ProgressData>(`/evacuations/${planId}/progress`);
+      const prog = await authRequest<ProgressData>(API.evacuations.progressGet(planId));
       setProgress(prog);
     } catch { /* Plan may not be active yet */ }
   };
@@ -263,7 +262,7 @@ export const EvacuationPlansScreen: React.FC = () => {
     try {
       console.log('[Evacuation] Triggering plan for disaster:', disasterId);
       // POST /evacuations/plan — ERT-integration.md Section 10
-      const result = await authRequest<any>('/evacuations/plan', {
+      const result = await authRequest<any>(API.evacuations.plan(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ disaster_id: disasterId, auto_approve: false }),
@@ -283,7 +282,7 @@ export const EvacuationPlansScreen: React.FC = () => {
       // POST /evacuations/{plan_id}/approve — requires approved_by
       const user = await authService.getStoredUser() as any;
       const approvedBy = user?.full_name ?? user?.email ?? user?.employee_id ?? 'ERT Officer';
-      await authRequest<any>(`/evacuations/${planId}/approve`, {
+      await authRequest<any>(API.evacuations.approve(planId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved_by: approvedBy, notes: '' }),
@@ -300,7 +299,7 @@ export const EvacuationPlansScreen: React.FC = () => {
   const activatePlan = async (planId: string) => {
     try {
       console.log('[Evacuation] Activating plan:', planId);
-      await authRequest<any>(`/evacuations/${planId}/activate`, { method: 'POST' } as any);
+      await authRequest<any>(API.evacuations.activate(planId), { method: 'POST' } as any);
       console.log('[Evacuation] Plan activated');
       Alert.alert('Plan Activated', 'Evacuation is now active and citizens have been notified.');
       await loadPlanDetail(planId);
@@ -345,20 +344,32 @@ export const EvacuationPlansScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          {evtDisasters.length > 0 && (
+          {evtDisasters.filter(d => plans.some(p => p.disaster_id === d.disaster_id && p.plan_status === 'ACTIVE')).length > 0 && (() => {
+            const activeEvacDisasters = evtDisasters.filter(d =>
+              plans.some(p => p.disaster_id === d.disaster_id && p.plan_status === 'ACTIVE')
+            );
+            return (
             <View style={S.alertSection}>
               <View style={S.alertBanner}>
                 <Text style={S.alertIcon}>⚠️</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={S.alertTitle}>EVACUATION TRIGGERED</Text>
+                  <Text style={S.alertTitle}>ACTIVE EVACUATION</Text>
                   <Text style={S.alertSub}>
-                    {evtDisasters.length} active disaster{evtDisasters.length > 1 ? 's' : ''} require evacuation
+                    {activeEvacDisasters.length} disaster{activeEvacDisasters.length > 1 ? 's' : ''} with active evacuation plan{activeEvacDisasters.length > 1 ? 's' : ''}
                   </Text>
                 </View>
               </View>
 
-              {evtDisasters.map(d => (
-                <View key={d.disaster_id} style={S.alertCard}>
+              {activeEvacDisasters.map(d => {
+                const activePlan = plans.find(p => p.disaster_id === d.disaster_id && p.plan_status === 'ACTIVE');
+                return (
+                <TouchableOpacity
+                  key={d.disaster_id}
+                  style={S.alertCard}
+                  onPress={() => { if (activePlan) loadPlanDetail(activePlan.id); }}
+                  disabled={!!loadingPlanId}
+                  activeOpacity={0.85}
+                >
                   <View style={S.alertCardTop}>
                     <Text style={{ fontSize: 28 }}>{TYPE_EMOJI[d.type ?? ''] ?? '⚠️'}</Text>
                     <View style={{ flex: 1, marginLeft: spacing.md }}>
@@ -388,7 +399,7 @@ export const EvacuationPlansScreen: React.FC = () => {
                       key={p.id}
                       style={S.planChip}
                       onPress={() => loadPlanDetail(p.id)}
-                      disabled={detailLoading}
+                      disabled={!!loadingPlanId}
                     >
                       <Text style={S.planChipIcon}>{STATUS_ICON[p.plan_status]}</Text>
                       <Text style={S.planChipText}>{p.plan_ref}</Text>
@@ -414,14 +425,16 @@ export const EvacuationPlansScreen: React.FC = () => {
                       <Text style={S.planChipArrow}>→</Text>
                     </TouchableOpacity>
                   ))}
-                </View>
-              ))}
+                </TouchableOpacity>
+                );
+              })}
             </View>
-          )}
+            );
+          })()}
 
           <Text style={S.sectionTitle}>ALL EVACUATION PLANS</Text>
 
-          {plans.length === 0 ? (
+          {plans.filter(p => p.plan_status !== 'PENDING').length === 0 ? (
             <View style={S.emptyCard}>
               <Text style={{ fontSize: 48 }}>🛡️</Text>
               <Text variant="h5" style={{ marginTop: spacing.md }}>No Plans Yet</Text>
@@ -430,12 +443,12 @@ export const EvacuationPlansScreen: React.FC = () => {
               </Text>
             </View>
           ) : (
-            plans.map(p => (
+            plans.filter(p => p.plan_status !== 'PENDING').map(p => (
               <TouchableOpacity
                 key={p.id}
                 style={S.planCard}
                 onPress={() => loadPlanDetail(p.id)}
-                disabled={detailLoading}
+                disabled={!!loadingPlanId}
                 activeOpacity={0.8}
               >
                 <View style={S.planCardLeft}>
@@ -459,7 +472,7 @@ export const EvacuationPlansScreen: React.FC = () => {
                   </Text>
                   {p.approved_by && <Text style={S.planMeta}>Approved by: {p.approved_by}</Text>}
                 </View>
-                {detailLoading
+                {loadingPlanId === p.id
                   ? <ActivityIndicator size="small" color={colors.primary} />
                   : <Text style={{ color: colors.primary, fontSize: 18 }}>›</Text>
                 }
@@ -573,7 +586,6 @@ const DetailView: React.FC<{
           <View style={S.card}>
             <Text style={S.cardTitle}>Impact Zones ({zones.length})</Text>
             {zones.map((z: any, zi: number) => {
-              const bestRoute = (routes[z.zone_id] ?? routes[z.disaster_id] ?? [])[0];
               const m = metrics[z.zone_id] ?? metrics[z.disaster_id];
               return (
                 <View key={z.zone_id ?? z.area_name ?? `zone-${zi}`} style={S.zoneRow}>
@@ -586,12 +598,8 @@ const DetailView: React.FC<{
                       {(z.population ?? 0).toLocaleString()} residents
                       {z.distance_from_disaster_km != null ? ` · ${z.distance_from_disaster_km.toFixed(1)} km` : ''}
                     </Text>
-                    {bestRoute && <Text style={S.zoneShelter}>→ {bestRoute.shelter_name} ({bestRoute.estimated_time_min} min)</Text>}
                     {m && <Text style={{ fontSize: 11, color: '#22C55E', marginTop: 2 }}>{(m.percentage ?? 0).toFixed(0)}% evacuated</Text>}
                   </View>
-                  <TouchableOpacity style={S.navBtn} onPress={() => onNavigate(z.lat, z.lon, z.name)}>
-                    <Text style={S.navBtnTxt}>🧭</Text>
-                  </TouchableOpacity>
                 </View>
               );
             })}
@@ -707,8 +715,6 @@ const S = StyleSheet.create({
   planChipArrow: { fontSize: 16, color: colors.primary },
   ertActionBtn:  { backgroundColor: '#3B82F6', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginRight: 4 },
   ertActionTxt:  { color: '#fff', fontSize: 11, fontWeight: '700' },
-  ertActionBtn:  { backgroundColor: '#3B82F6', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginRight: 4 },
-  ertActionTxt:  { color: '#fff', fontSize: 11, fontWeight: '700' },
   sectionTitle: {
     fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8,
     paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm,
@@ -758,9 +764,6 @@ const S = StyleSheet.create({
   zonePriTxt:  { color: '#fff', fontSize: 11, fontWeight: '800' },
   zoneName:    { fontSize: 14, fontWeight: '700', color: '#1F2937' },
   zoneMeta:    { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  zoneShelter: { fontSize: 12, color: '#3B82F6', marginTop: 2 },
-  navBtn:      { padding: spacing.xs },
-  navBtnTxt:   { fontSize: 18 },
   shelterRow:  { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   shelterName: { fontSize: 14, fontWeight: '700', color: '#1F2937', marginBottom: spacing.xs },
   shelterMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },

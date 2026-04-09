@@ -13,16 +13,16 @@ import { reportStyles } from '../styles';
 import Svg, { Path } from 'react-native-svg';
 
 const DISASTER_TYPES = [
-  { id: 'fire',       emoji: '🔥', label: 'Fire' },
   { id: 'flood',      emoji: '🌊', label: 'Flood' },
-  { id: 'storm',      emoji: '⛈️', label: 'Storm' },
+  { id: 'fire',       emoji: '🔥', label: 'Fire' },
   { id: 'earthquake', emoji: '🏚️', label: 'Earthquake' },
   { id: 'hurricane',  emoji: '🌀', label: 'Hurricane' },
+  { id: 'tornado',    emoji: '🌪️', label: 'Tornado' },
   { id: 'tsunami',    emoji: '🌊', label: 'Tsunami' },
   { id: 'drought',    emoji: '☀️', label: 'Drought' },
   { id: 'heatwave',   emoji: '🌡️', label: 'Heatwave' },
-  { id: 'coldwave',   emoji: '🥶', label: 'Cold Wave' },
-  { id: 'tornado',    emoji: '🌪️', label: 'Tornado' },
+  { id: 'coldwave',   emoji: '🥶', label: 'Coldwave' },
+  { id: 'storm',      emoji: '⛈️', label: 'Storm' },
   { id: 'other',      emoji: '⚠️', label: 'Other' },
 ];
 

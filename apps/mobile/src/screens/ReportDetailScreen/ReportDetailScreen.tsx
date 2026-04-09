@@ -55,17 +55,15 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const TYPE_EMOJI: Record<string, string> = {
-  fire:       '🔥',
-  flood:      '🌊',
-  storm:      '⛈️',
-  earthquake: '🏚️',
-  hurricane:  '🌀',
-  tornado:    '🌪️',
-  tsunami:    '🌊',
-  drought:    '☀️',
-  heatwave:   '🌡️',
-  coldwave:   '🥶',
-  other:      '⚠️',
+  fire:       '🔥', flood:      '🌊', storm:      '⛈️',
+  earthquake: '🏚️', hurricane:  '🌀', tornado:    '🌪️',
+  tsunami:    '🌊', drought:    '☀️', heatwave:   '🌡️',
+  coldwave:   '🥶', other:      '⚠️',
+  // UPPERCASE from API response
+  FIRE:       '🔥', FLOOD:      '🌊', STORM:      '⛈️',
+  EARTHQUAKE: '🏚️', HURRICANE:  '🌀', TORNADO:    '🌪️',
+  TSUNAMI:    '🌊', DROUGHT:    '☀️', HEATWAVE:   '🌡️',
+  COLDWAVE:   '🥶', OTHER:      '⚠️',
 };
 
 const getEmoji = (type: string) => TYPE_EMOJI[type?.toLowerCase()] ?? '⚠️';

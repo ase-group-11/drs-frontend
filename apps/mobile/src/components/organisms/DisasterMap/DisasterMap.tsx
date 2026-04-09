@@ -46,8 +46,11 @@ interface DisasterMapProps {
   disasters:       Disaster[];
   loading?:        boolean;
   onReport?:       () => void;
+  onViewDetails?:  (disasterId: string) => void;  // navigate to DisasterDetailScreen
   selectedFilter?: string;
   onRerouteAlert?: (disasterId: string, routeAssignments: Record<string,string>) => void;
+  hideSearch?:     boolean;
+  isResponder?:    boolean;
 }
 
 export interface DisasterMapRef {
@@ -97,18 +100,31 @@ const CONGESTION_SPEED: Record<CongestionLevel, number> = {
 
 const CONGESTION_LEVELS: CongestionLevel[] = ['light', 'moderate', 'heavy', 'severe'];
 
+// Refined disaster icons: distinct, instantly readable shapes
 const DISASTER_ICONS: Record<string, string> = {
-  fire:       '🔥',
-  flood:      '🌊',
-  storm:      '⛈️',
-  earthquake: '🏚️',
-  hurricane:  '🌀',
-  tornado:    '🌪️',
-  tsunami:    '🌊',
-  drought:    '☀️',
-  heatwave:   '🌡️',
-  coldwave:   '🥶',
-  other:      '⚠️',
+  fire:                '🔥',
+  flood:               '🌊',
+  storm:               '🌩️',
+  earthquake:          '💢',
+  explosion:           '💥',
+  gas_leak:            '🟡',
+  hazmat:              '☣️',
+  landslide:           '🪨',
+  accident:            '🚧',
+  building_collapse:   '🏚️',
+  medical_emergency:   '🏥',
+  power_outage:        '⚡',
+  water_contamination: '🧪',
+  crime:               '🔴',
+  riot:                '🚧',
+  terrorist_attack:    '💣',
+  other:               '⚠️',
+  hurricane:           '🌀',
+  tornado:             '🌪️',
+  tsunami:             '🌊',
+  drought:             '🏜️',
+  heatwave:            '🌡️',
+  coldwave:            '🧊',
 };
 const SEVERITY_COLORS: Record<string, string> = {
   critical: '#EF4444', high: '#F97316', medium: '#EAB308', low: '#3B82F6',
@@ -230,7 +246,7 @@ const parseTrafficSegments = (flow: any[]): TrafficSegment[] => {
 // -------------------------------------------------------------------------
 
 export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
-  disasters, loading, onReport, selectedFilter = 'all',
+  disasters, loading, onReport, onViewDetails, selectedFilter = 'all', hideSearch, isResponder,
 }, ref) => {
 
   const [mapStyle, setMapStyle]               = useState('light');
@@ -587,6 +603,9 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       setRerouteDisasterId(null);
       setRerouteStatus(null);
       setRerouteRouteData(null);
+      setDestinationPin(null);
+      setDestinationLabel('');
+      setShowRoutes(false);
     },
   }));
 
@@ -1089,7 +1108,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
 
       {/* Disaster detail bottom sheet */}
       {selectedDisaster && (
-        <View style={styles.disasterSheet}>
+        <View style={[styles.disasterSheet, isResponder && { bottom: 32, left: 80 }]}>
           <View style={styles.disasterSheetHandle} />
           <View style={styles.disasterSheetHeader}>
             <Text style={{ fontSize: 26 }}>
@@ -1140,6 +1159,22 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
               {!!selectedDisaster.description && (
                 <Text style={styles.disasterSheetDesc} numberOfLines={3}>{selectedDisaster.description}</Text>
               )}
+              {/* ── View Full Details button ── */}
+              {onViewDetails && (
+                <TouchableOpacity
+                  style={styles.disasterSheetBtn}
+                  onPress={() => {
+                    const id = selectedDisaster.id ?? selectedDisaster.disaster_id;
+                    if (id) {
+                      setSelectedDisaster(null);
+                      onViewDetails(id);
+                    }
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.disasterSheetBtnTxt}>View Full Details →</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>
@@ -1173,7 +1208,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       )}
 
       {/* -- Search: collapsed icon OR expanded panel -- */}
-      {!searchExpanded ? (
+      {!isResponder && !searchExpanded ? (
         /* Collapsed: small search button sitting left of right controls */
         <TouchableOpacity
           style={styles.searchIconBtn}
@@ -1185,7 +1220,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
             <Path d="M21 21l-4.35-4.35" stroke="#1F2937" strokeWidth={2} strokeLinecap="round" />
           </Svg>
         </TouchableOpacity>
-      ) : (
+      ) : !isResponder && searchExpanded ? (
         /* Expanded: Google Maps-style panel - left:12, right stops before dark/2D buttons (right:68) */
         <View style={styles.searchPanel}>
 
@@ -1296,7 +1331,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
             </View>
           )}
         </View>
-      )}
+      ) : null}
 
       {/* -- Route Info Card -- */}
       {showRoutes && (
@@ -1387,7 +1422,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       )}
 
       {/* Left controls */}
-      <View style={styles.leftControls}>
+      <View style={[styles.leftControls, isResponder && { bottom: 32 }]}>
         <TouchableOpacity style={styles.btn} onPress={handleCenterMap}>
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
             <Circle cx={12} cy={12} r={8} stroke={colors.primary} strokeWidth={2} />
@@ -1444,12 +1479,21 @@ const styles = StyleSheet.create({
   map:       { flex: 1 },
 
   marker: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: '#FFF',
-    justifyContent: 'center', alignItems: 'center', borderWidth: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 6, elevation: 8,
+    width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFF',
+    justifyContent: 'center', alignItems: 'center', borderWidth: 3,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 10,
   },
-  markerIcon: { fontSize: 32, textAlign: 'center' },
+  markerPulse: {
+    position: 'absolute', width: 68, height: 68, borderRadius: 34,
+    opacity: 0.25,
+  },
+  markerIcon: { fontSize: 28, textAlign: 'center' },
+  markerCriticalDot: {
+    position: 'absolute', top: 0, right: 0,
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: '#EF4444', borderWidth: 2, borderColor: '#fff',
+  },
 
   loadingOverlay: {
     position: 'absolute', top: '50%', alignSelf: 'center',
@@ -1789,6 +1833,17 @@ const styles = StyleSheet.create({
   },
   disasterSheetDesc: {
     fontSize: 13, color: '#6B7280', lineHeight: 18,
+  },
+  disasterSheetBtn: {
+    marginTop: 10,
+    backgroundColor: '#1D4ED8',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  disasterSheetBtnTxt: {
+    color: '#fff', fontSize: 13, fontWeight: '700', letterSpacing: 0.3,
   },
 });
 

@@ -206,6 +206,17 @@ class DisasterStore {
   // ── Alerts (every WS event) ────────────────────────────────────────────
 
   async addAlert(wsAlert: WSAlert) {
+    // Dedup guard: if an alert with the same timestamp + event_type already
+    // exists, skip it. This prevents double-adds if HomeScreen handlers also
+    // call addAlert (belt-and-suspenders protection).
+    const isDuplicate = this.state.alerts.some(
+      a => a.timestamp === wsAlert.timestamp && a.event_type === wsAlert.event_type
+    );
+    if (isDuplicate) {
+      console.log('[Store] Skipping duplicate alert:', wsAlert.event_type);
+      return;
+    }
+
     const stored: StoredAlert = {
       ...wsAlert,
       id:       `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -214,21 +225,37 @@ class DisasterStore {
     };
     const updated = [stored, ...this.state.alerts].slice(0, MAX_ALERTS);
     this.state = { ...this.state, alerts: updated };
-    this.notify();
-    // Persist
+
+    // Persist FIRST, then notify — ensures subscribers see consistent state
     try {
       await AsyncStorage.setItem(ALERTS_KEY, JSON.stringify(updated));
-    } catch {}
+    } catch (e) {
+      console.warn('[Store] Failed to persist alert:', e);
+    }
+
+    // Notify AFTER persist so AlertsScreen renders fully committed data
+    this.notify();
   }
 
   async loadPersistedAlerts() {
     try {
       const raw = await AsyncStorage.getItem(ALERTS_KEY);
       if (raw) {
-        this.state = { ...this.state, alerts: JSON.parse(raw) };
-        this.notify();
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge with any alerts already in memory (arrived while loading)
+          // Keep the in-memory ones (newer) at the front
+          const inMemoryIds = new Set(this.state.alerts.map(a => a.id));
+          const fromDisk = parsed.filter((a: StoredAlert) => !inMemoryIds.has(a.id));
+          const merged = [...this.state.alerts, ...fromDisk].slice(0, MAX_ALERTS);
+          this.state = { ...this.state, alerts: merged };
+          this.notify();
+          console.log('[Store] Loaded', fromDisk.length, 'alerts from disk, total:', merged.length);
+        }
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[Store] Failed to load persisted alerts:', e);
+    }
   }
 
   markAlertRead(alertId: string) {

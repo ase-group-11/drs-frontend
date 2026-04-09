@@ -10,7 +10,7 @@
 // All responders assigned to the SAME disaster share one chat room.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, ScrollView, StyleSheet, StatusBar, TouchableOpacity,
   ActivityIndicator, Alert, Linking, Modal, TextInput,
@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
@@ -26,6 +26,7 @@ import { authService, authRequest, getUserUnitInfo } from '@services/authService
 import { wsService } from '@services/wsService';
 import { disasterStore } from '@services/disasterStore';
 import { disasterService } from '@services/disasterService';
+import { API, WS_URL } from '@services/apiConfig';
 
 const RED = '#DC2626';
 
@@ -47,15 +48,23 @@ interface Mission {
 
 interface ChatMessage {
   id: string;
-  sender: string;
-  senderId: string;
-  text: string;
-  timestamp: string;
+  seq?: number;
+  sender: string;       // sender_name from backend
+  senderId: string;     // sender_id from backend
+  sender_type?: string; // 'admin' | 'unit'
+  text: string;         // message field from backend
+  timestamp: string;    // sent_at from backend
+  type?: 'message' | 'system' | 'error' | 'ping' | 'pong';
+  isSystem?: boolean;
 }
 
 const SEV_COLOR: Record<string, string> = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#3b82f6' };
 const STATUS_COLOR: Record<string, string> = { dispatched: '#DC2626', en_route: '#F97316', on_scene: '#8B5CF6', in_progress: '#EF4444', completed: '#22C55E', cancelled: '#6B7280' };
-const TYPE_EMOJI: Record<string, string> = { FIRE: '🔥', FLOOD: '🌊', STORM: '⛈️', EARTHQUAKE: '🏚️', HURRICANE: '🌀', TORNADO: '🌪️', OTHER: '⚠️' };
+const TYPE_EMOJI: Record<string, string> = {
+  FLOOD: '🌊', FIRE: '🔥', EARTHQUAKE: '🏚️', HURRICANE: '🌀',
+  TORNADO: '🌪️', TSUNAMI: '🌊', DROUGHT: '☀️', HEATWAVE: '🌡️',
+  COLDWAVE: '🥶', STORM: '⛈️', OTHER: '⚠️',
+};
 const STATUS_OPTIONS = [
   { id: 'EN_ROUTE',    emoji: '🚗', label: 'En Route',    desc: 'Traveling to scene' },
   { id: 'ON_SCENE',    emoji: '📍', label: 'On Scene',    desc: 'Arrived at location' },
@@ -84,6 +93,7 @@ export const ActiveMissionsScreen: React.FC = () => {
   const [missionDetail, setMissionDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<'details' | 'chat'>('details');
+  const [isCompletedMission, setIsCompletedMission] = useState(false);  // true = read-only history
 
   // Status modal
   const [statusModal, setStatusModal] = useState<Mission | null>(null);
@@ -98,12 +108,34 @@ export const ActiveMissionsScreen: React.FC = () => {
   const [assessmentNotes, setAssessmentNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Chat state
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [userName, setUserName] = useState('');
-  const [userId, setUserId] = useState('');
+  // Chat state — real-time WebSocket
+  const [messages, setMessages]         = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput]       = useState('');
+  const [userName, setUserName]         = useState('');
+  const [userId, setUserId]             = useState('');
+  const [chatConnected, setChatConnected] = useState(false);
+  const [chatConnecting, setChatConnecting] = useState(false);
+  const [chatError, setChatError]       = useState<string | null>(null);
+  const [membersOnline, setMembersOnline] = useState(0);
+  const [chatHistoryLoading, setChatHistoryLoading] = useState(false);
+  const chatWsRef   = useRef<WebSocket | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const chatDisasterRef = useRef<string | null>(null);
+
+  // Subscribe to disasterStore so any external mission changes reflect immediately
+  useEffect(() => {
+    const unsub = disasterStore.subscribe(() => {
+      const storeMissions = disasterStore.getState().activeMissions;
+      if (storeMissions.length === 0) return; // store cleared — don't override local list
+      // Re-map store missions to local Mission shape if store has fresher data
+      setActive(prev => prev.map(m => {
+        const updated = storeMissions.find(s => s.id === m.id || s.deployment_id === m.id);
+        if (!updated) return m;
+        return { ...m, status: (updated.deployment_status ?? m.status).toLowerCase() };
+      }).filter(m => storeMissions.some(s => s.id === m.id || s.deployment_id === m.id)));
+    });
+    return unsub;
+  }, []);
 
   // WS
   useEffect(() => {
@@ -112,10 +144,6 @@ export const ActiveMissionsScreen: React.FC = () => {
       if (['disaster.dispatched', 'disaster.verified', 'disaster.updated', 'disaster.resolved',
            'disaster.false_alarm', 'disaster.unit_completed', 'coordination.team_assigned'].includes(alert.event_type)) {
         fetchMissions();
-      }
-      if (alert.event_type === 'disaster.resolved' || alert.event_type === 'disaster.false_alarm') {
-        const did = alert.data?.disaster_id;
-        if (did) setActive(prev => prev.filter(m => m.disaster_id !== did));
       }
       if (alert.event_type === 'disaster.backup_requested') Alert.alert('🆘 BACKUP', alert.message, [{ text: 'OK' }]);
       if (alert.event_type === 'evacuation.triggered') Alert.alert('🚨 EVACUATION', alert.message ?? '', [{ text: 'View', onPress: () => navigation.navigate('EvacuationPlans' as any) }, { text: 'OK' }]);
@@ -127,6 +155,11 @@ export const ActiveMissionsScreen: React.FC = () => {
     fetchMissions();
     loadUser();
   }, []);
+
+  // Refresh whenever screen comes into focus (e.g. navigating back from detail)
+  useFocusEffect(useCallback(() => {
+    fetchMissions();
+  }, []));
 
   const loadUser = async () => {
     try {
@@ -149,8 +182,8 @@ export const ActiveMissionsScreen: React.FC = () => {
       if (!unitId) { setLoading(false); return; }
 
       const [a, c] = await Promise.all([
-        authRequest<any>(`/deployments/unit/${unitId}/active`),
-        authRequest<any>(`/deployments/unit/${unitId}/completed?limit=20`),
+        authRequest<any>(API.deployments.unitActive(unitId)),
+        authRequest<any>(API.deployments.unitCompleted(unitId, 20)),
       ]);
 
       const toM = (m: any): Mission => ({
@@ -161,12 +194,12 @@ export const ActiveMissionsScreen: React.FC = () => {
         location_address: m.disaster?.location_address ?? m.location_address ?? 'Unknown',
         coordinates: m.disaster?.location ?? m.disaster?.coordinates ?? { lat: 53.3498, lon: -6.2603 },
         status: (m.deployment_status ?? m.status ?? 'dispatched').toLowerCase(),
-        assigned_at: m.assigned_at ?? m.timeline?.dispatched_at ?? m.created_at ?? new Date().toISOString(),
+        assigned_at: m.timeline?.assigned_at ?? m.assigned_at ?? m.timeline?.dispatched_at ?? m.created_at ?? new Date().toISOString(),
         distance_km: m.distance_km ? String(m.distance_km) : '—',
         people_affected: m.disaster?.people_affected ? String(m.disaster.people_affected) : '—',
         eta_minutes: m.eta_minutes ? String(m.eta_minutes) : '—',
-        unit_id: m.unit_id ?? unitCode,
-        unit_members: m.unit_members ?? 4,
+        unit_id: m.unit_id ?? m.unit?.unit_code ?? unitCode,
+        unit_members: m.unit?.crew_count ?? m.unit_members ?? 4,
       });
 
       const al = a?.active_missions ?? a?.missions ?? (Array.isArray(a) ? a : []);
@@ -178,42 +211,244 @@ export const ActiveMissionsScreen: React.FC = () => {
     setLoading(false);
   };
 
-  const openDetail = async (m: Mission) => {
-    setSelectedMission(m); setDetailTab('details'); setDetailLoading(true);
+  const openDetail = async (m: Mission, fromCompleted = false) => {
+    console.log('[openDetail] mission id:', m.id, 'disaster_id:', m.disaster_id);
+    setSelectedMission(m);
+    setDetailTab('details');
+    setDetailLoading(true);
+    setIsCompletedMission(fromCompleted);
+    setMessages([]);
+    setChatError(null);
     try {
       const detail = await disasterService.getDeploymentDetail(m.id);
       setMissionDetail(detail);
     } catch { setMissionDetail(null); }
     setDetailLoading(false);
-    // Load chat for this disaster
-    loadChat(m.disaster_id);
+    // For completed missions: fetch read-only history via REST
+    // For active missions: connect WebSocket for live chat
+    if (fromCompleted) {
+      loadChatHistory(m.disaster_id);
+    } else {
+      loadChat(m.disaster_id);
+    }
   };
 
   const navigateToDisaster = (m: Mission) => {
     navigation.navigate('Home' as any, { flyToLat: m.coordinates.lat, flyToLon: m.coordinates.lon, flyToLabel: m.location_address });
   };
 
-  // ── Chat (per-disaster, AsyncStorage) ──────────────────────────────
-  const chatKey = (did: string) => `@disaster_chat:${did}`;
+  // ── Chat — real WebSocket via /ws/chat/{disaster_id} ───────────────
 
-  const loadChat = async (did: string) => {
-    try {
-      const raw = await AsyncStorage.getItem(chatKey(did));
-      setMessages(raw ? JSON.parse(raw) : []);
-    } catch { setMessages([]); }
+  const disconnectChat = () => {
+    if (chatWsRef.current) {
+      chatWsRef.current.onclose = null; // prevent reconnect loop
+      chatWsRef.current.close();
+      chatWsRef.current = null;
+    }
+    setChatConnected(false);
+    setChatConnecting(false);
+    chatDisasterRef.current = null;
   };
 
-  const sendMessage = async () => {
-    if (!chatInput.trim() || !selectedMission) return;
-    const msg: ChatMessage = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      sender: userName, senderId: userId, text: chatInput.trim(),
-      timestamp: new Date().toISOString(),
-    };
-    const updated = [...messages, msg];
-    setMessages(updated); setChatInput('');
-    try { await AsyncStorage.setItem(chatKey(selectedMission.disaster_id), JSON.stringify(updated)); } catch {}
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+  const connectChat = async (disasterId: string) => {
+    // Already connected to same disaster — skip
+    if (chatDisasterRef.current === disasterId && chatWsRef.current?.readyState === WebSocket.OPEN) return;
+    // Disconnect from previous disaster chat first
+    disconnectChat();
+
+    setChatConnecting(true);
+    setChatError(null);
+    setMessages([]);
+
+    try {
+      // Always fetch a fresh token — expired tokens cause 1006 silent rejection
+      let token = await AsyncStorage.getItem('@auth/access_token');
+      if (!token) { setChatError('Not authenticated. Please log in again.'); setChatConnecting(false); return; }
+
+      // Verify token is not expired by checking its expiry if possible
+      // Use the full disaster ID (not sliced) for the WS path
+      console.log('[Chat WS] disaster_id:', disasterId);
+
+      const url = `${WS_URL}${API.chat.ws(disasterId)}?token=${token}`;
+      console.log('[Chat WS] Connecting to:', url.replace(token, token.slice(0, 16) + '...'));
+      const ws  = new WebSocket(url);
+      chatWsRef.current    = ws;
+      chatDisasterRef.current = disasterId;
+
+      // Connection timeout — if no onopen within 10s, treat as failure
+      const timeoutId = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.warn('[Chat WS] Connection timeout after 10s');
+          ws.close();
+          setChatConnecting(false);
+          setChatError('Connection timed out. Check your network and tap Reconnect.');
+        }
+      }, 10000);
+
+      ws.onopen = () => {
+        clearTimeout(timeoutId);
+        setChatConnected(true);
+        setChatConnecting(false);
+        setChatError(null);
+        console.log('[Chat WS] Connected to disaster:', disasterId);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // History on connect
+          if (data.type === 'history') {
+            const hist: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
+              id:          m.id,
+              seq:         m.seq,
+              sender:      m.sender_name ?? 'Unknown',
+              senderId:    m.sender_id   ?? '',
+              sender_type: m.sender_type ?? 'unit',
+              text:        m.message     ?? '',
+              timestamp:   m.sent_at     ?? new Date().toISOString(),
+              type:        'message',
+            }));
+            setMessages(hist);
+            if (data.members_online != null) setMembersOnline(data.members_online);
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
+            return;
+          }
+
+          // System messages (join/leave)
+          if (data.type === 'system') {
+            setMessages(prev => [...prev, {
+              id:        `sys-${Date.now()}`,
+              sender:    'System',
+              senderId:  'system',
+              text:      data.message ?? '',
+              timestamp: data.sent_at ?? new Date().toISOString(),
+              isSystem:  true,
+              type:      'system',
+            }]);
+            return;
+          }
+
+          // Error from server
+          if (data.type === 'error') {
+            setChatError(data.message ?? 'Chat error');
+            return;
+          }
+
+          // Ping — respond with pong
+          if (data.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'ping' }));
+            return;
+          }
+
+          // Regular chat message broadcast
+          if (data.type === 'message') {
+            setMessages(prev => {
+              // Deduplicate by id (server echoes back our own messages)
+              if (prev.some(m => m.id === data.id)) return prev;
+              return [...prev, {
+                id:          data.id,
+                seq:         data.seq,
+                sender:      data.sender_name ?? 'Unknown',
+                senderId:    data.sender_id   ?? '',
+                sender_type: data.sender_type ?? 'unit',
+                text:        data.message     ?? '',
+                timestamp:   data.sent_at     ?? new Date().toISOString(),
+                type:        'message',
+              }];
+            });
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+          }
+        } catch { /* non-JSON frame — ignore */ }
+      };
+
+      ws.onerror = (e: any) => {
+        clearTimeout(timeoutId);
+        setChatConnecting(false);
+        setChatConnected(false);
+        console.warn('[Chat WS] onerror:', e?.message ?? e);
+        // onclose fires right after onerror with a more specific code — let it set the message
+      };
+
+      ws.onclose = (e) => {
+        clearTimeout(timeoutId);
+        setChatConnected(false);
+        setChatConnecting(false);
+        console.log('[Chat WS] closed — code:', e.code, 'reason:', e.reason, 'disaster:', disasterId);
+
+        const reason = (e.reason ?? '').toLowerCase();
+        const is403  = e.code === 1006 && reason.includes('403');
+        const is401  = e.code === 1006 && (reason.includes('401') || reason.includes('unauthorized'));
+
+        if (e.code === 4001 || is401) {
+          setChatError('Authentication failed. Please log out and log back in.');
+        } else if (e.code === 4003) {
+          setChatError('Access denied — you are not assigned to this disaster.');
+        } else if (e.code === 4004) {
+          setChatError('Disaster not found. It may have been resolved.');
+        } else if (e.code === 4009) {
+          setChatError('Chat is closed — this disaster is no longer active.');
+        } else if (is403) {
+          // Server returned 403 before completing WS handshake.
+          // This means the backend does not consider this user assigned to the disaster.
+          // Fall back to read-only REST history so messages are still visible.
+          setChatError('Live chat unavailable — loading message history instead.');
+          loadChatHistory(disasterId);
+        } else if (e.code === 1006) {
+          setChatError('Connection failed. Check your network and tap Reconnect.');
+        } else if (e.code !== 1000) {
+          setChatError(`Connection closed (code ${e.code}). Tap Reconnect to try again.`);
+        }
+        // code 1000 = normal close, no error message needed
+      };
+
+    } catch (e: any) {
+      setChatError(e.message || 'Failed to connect to chat.');
+      setChatConnecting(false);
+    }
+  };
+
+  const loadChat = (disasterId: string) => {
+    connectChat(disasterId);
+  };
+
+  // Read-only history for completed/resolved missions via REST
+  const loadChatHistory = async (disasterId: string) => {
+    setChatHistoryLoading(true);
+    setChatError(null);
+    try {
+      const data = await authRequest<any>(API.chat.history(disasterId, 200));
+      const hist: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
+        id:          m.id,
+        seq:         m.seq,
+        sender:      m.sender_name ?? 'Unknown',
+        senderId:    m.sender_id   ?? '',
+        sender_type: m.sender_type ?? 'unit',
+        text:        m.message     ?? '',
+        timestamp:   m.sent_at     ?? new Date().toISOString(),
+        type:        'message',
+      }));
+      setMessages(hist);
+      if (hist.length > 0) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
+      }
+    } catch (e: any) {
+      // 403 = not assigned, 404 = no history yet — both are non-critical
+      if (e.status === 403 || e.status === 404) {
+        setMessages([]);
+      } else {
+        setChatError(e.message || 'Could not load chat history.');
+      }
+    } finally {
+      setChatHistoryLoading(false);
+    }
+  };
+
+  const sendMessage = () => {
+    const text = chatInput.trim();
+    if (!text || !chatWsRef.current || chatWsRef.current.readyState !== WebSocket.OPEN) return;
+    chatWsRef.current.send(JSON.stringify({ message: text }));
+    setChatInput('');
   };
 
   // ── Status modal ───────────────────────────────────────────────────
@@ -237,8 +472,10 @@ export const ActiveMissionsScreen: React.FC = () => {
       Alert.alert('✅ Updated', `Status: ${selStatus.replace(/_/g, ' ')}`);
       const sl = selStatus.toLowerCase();
       if (sl === 'completed' || isFalseAlarm) {
+        // Optimistic remove then full re-fetch so completed tab also populates
         setActive(prev => prev.filter(x => x.id !== statusModal.id));
         disasterStore.removeMission(statusModal.id);
+        fetchMissions();
       } else {
         setActive(prev => prev.map(x => x.id === statusModal.id ? { ...x, status: sl } : x));
         disasterStore.updateMissionStatus(statusModal.id, selStatus);
@@ -258,12 +495,30 @@ export const ActiveMissionsScreen: React.FC = () => {
     const sevCol = SEV_COLOR[m.severity] ?? '#6B7280';
 
     const renderBubble = ({ item }: { item: ChatMessage }) => {
+      // System messages (join/leave) — centred grey pill
+      if (item.isSystem || item.type === 'system') {
+        return (
+          <View style={S.systemMsgWrap}>
+            <Text style={S.systemMsg}>{item.text}</Text>
+          </View>
+        );
+      }
       const isMe = item.senderId === userId;
+      const isAdmin = item.sender_type === 'admin';
       return (
-        <View style={[S.bubble, isMe ? S.bubbleMe : S.bubbleOther]}>
-          {!isMe && <Text style={S.bubbleSender}>{item.sender}</Text>}
+        <View style={[S.bubbleWrap, isMe ? S.bubbleWrapMe : S.bubbleWrapOther]}>
+          {!isMe && (
+            <View style={S.bubbleHeader}>
+              {isAdmin && (
+                <View style={S.adminBadge}>
+                  <Text style={S.adminBadgeTxt}>CMD</Text>
+                </View>
+              )}
+              <Text style={S.bubbleSender} numberOfLines={1}>{item.sender}</Text>
+            </View>
+          )}
           <Text style={[S.bubbleText, isMe && { color: '#fff' }]}>{item.text}</Text>
-          <Text style={[S.bubbleTime, isMe && { color: 'rgba(255,255,255,0.7)' }]}>
+          <Text style={[S.bubbleTime, isMe && { color: 'rgba(255,255,255,0.65)' }]}>
             {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
@@ -274,7 +529,7 @@ export const ActiveMissionsScreen: React.FC = () => {
       <SafeAreaView style={S.safe} edges={['top', 'left', 'right']}>
         <StatusBar barStyle="light-content" backgroundColor={RED} />
         <View style={S.header}>
-          <TouchableOpacity style={S.hBtn} onPress={() => { setSelectedMission(null); setMissionDetail(null); setMessages([]); }}>
+          <TouchableOpacity style={S.hBtn} onPress={() => { disconnectChat(); setSelectedMission(null); setMissionDetail(null); setMessages([]); }}>
             <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
               <Path d="M19 12H5M12 19l-7-7 7-7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
@@ -290,9 +545,14 @@ export const ActiveMissionsScreen: React.FC = () => {
           </TouchableOpacity>
           <TouchableOpacity style={[S.tab, detailTab === 'chat' && S.tabOn]}
             onPress={() => { setDetailTab('chat'); setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100); }}>
-            <Text style={[S.tabTxt, detailTab === 'chat' && S.tabTxtOn]}>
-              Group Chat{messages.length > 0 ? ` (${messages.length})` : ''}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={[S.tabTxt, detailTab === 'chat' && S.tabTxtOn]}>
+                {isCompletedMission ? 'Chat History' : 'Group Chat'}
+              </Text>
+              {!isCompletedMission && chatConnected && (
+                <View style={[S.chatLiveDot, { marginBottom: 6 }]} />
+              )}
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -322,6 +582,7 @@ export const ActiveMissionsScreen: React.FC = () => {
               </View>
             ) : null}
 
+            {m.status !== 'completed' && (
             <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
               <TouchableOpacity style={S.btnRed} onPress={() => navigateToDisaster(m)}>
                 <Text style={S.btnRedTxt}>🧭  Navigate to Disaster</Text>
@@ -335,6 +596,7 @@ export const ActiveMissionsScreen: React.FC = () => {
                 <Text style={S.btnOutTxt}>📞  Contact Command</Text>
               </TouchableOpacity>
             </View>
+            )}
             <View style={{ height: 60 }} />
           </ScrollView>
         )}
@@ -342,27 +604,141 @@ export const ActiveMissionsScreen: React.FC = () => {
         {/* ── GROUP CHAT TAB ── */}
         {detailTab === 'chat' && (
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
-            {messages.length === 0 ? (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
-                <Text style={{ fontSize: 40, lineHeight: 52 }}>💬</Text>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: '#374151', marginTop: 8 }}>Mission Group Chat</Text>
-                <Text style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', marginTop: 4 }}>
-                  Coordinate with all responders on this disaster. Messages stored locally.
-                </Text>
-              </View>
+
+            {/* ── COMPLETED MISSION: read-only history ── */}
+            {isCompletedMission ? (
+              <>
+                {/* Read-only banner */}
+                <View style={S.historyBanner}>
+                  <Text style={S.historyBannerIcon}>🔒</Text>
+                  <Text style={S.historyBannerTxt}>Read-only — mission completed</Text>
+                  <TouchableOpacity
+                    onPress={() => selectedMission && loadChatHistory(selectedMission.disaster_id)}
+                    style={S.historyRefreshBtn}
+                    disabled={chatHistoryLoading}
+                  >
+                    <Text style={S.historyRefreshTxt}>{chatHistoryLoading ? '…' : '↻'}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Error */}
+                {!!chatError && (
+                  <View style={S.chatErrorBar}>
+                    <Text style={S.chatErrorTxt}>{chatError}</Text>
+                  </View>
+                )}
+
+                {/* Loading */}
+                {chatHistoryLoading && messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color={RED} />
+                    <Text style={{ color: '#6B7280', marginTop: 12, fontSize: 13 }}>Loading chat history…</Text>
+                  </View>
+                ) : messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
+                    <Text style={{ fontSize: 40, lineHeight: 52 }}>💬</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#374151', marginTop: 8 }}>No Chat History</Text>
+                    <Text style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', marginTop: 4 }}>
+                      No messages were sent during this mission.
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    ref={flatListRef}
+                    data={messages}
+                    keyExtractor={i => i.id}
+                    renderItem={renderBubble}
+                    contentContainerStyle={{ padding: spacing.md, paddingBottom: 20 }}
+                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                  />
+                )}
+                {/* No input bar for completed missions */}
+              </>
             ) : (
-              <FlatList ref={flatListRef} data={messages} keyExtractor={i => i.id} renderItem={renderBubble}
-                contentContainerStyle={{ padding: spacing.md, paddingBottom: 8 }}
-                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })} />
+              <>
+                {/* ── ACTIVE MISSION: live WebSocket chat ── */}
+
+                {/* Connection status bar */}
+                <View style={[S.chatStatusBar, chatConnected ? S.chatStatusBarOn : S.chatStatusBarOff]}>
+                  <View style={[S.chatStatusDot, {
+                    backgroundColor: chatConnected ? '#22C55E' : chatConnecting ? '#F59E0B' : '#9CA3AF'
+                  }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={S.chatStatusTxt}>
+                      {chatConnecting ? 'Connecting…' : chatConnected ? `Live · ${membersOnline > 0 ? `${membersOnline} online` : 'connected'}` : 'Disconnected'}
+                    </Text>
+                    {!chatConnected && !chatConnecting && selectedMission && (
+                      <Text style={{ fontSize: 10, color: '#9CA3AF' }}>
+                        Disaster #{selectedMission.disaster_id?.slice(0, 8)}
+                      </Text>
+                    )}
+                  </View>
+                  {!chatConnected && !chatConnecting && (
+                    <TouchableOpacity
+                      onPress={() => { setChatError(null); selectedMission && connectChat(selectedMission.disaster_id); }}
+                      style={S.chatRetryBtn}
+                    >
+                      <Text style={S.chatRetryTxt}>Reconnect</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Error banner */}
+                {!!chatError && (
+                  <View style={S.chatErrorBar}>
+                    <Text style={S.chatErrorTxt}>{chatError}</Text>
+                  </View>
+                )}
+
+                {/* Connecting spinner / empty state / messages */}
+                {chatConnecting && messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color={RED} />
+                    <Text style={{ color: '#6B7280', marginTop: 12, fontSize: 13 }}>Joining group chat…</Text>
+                  </View>
+                ) : messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
+                    <Text style={{ fontSize: 40, lineHeight: 52 }}>💬</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#374151', marginTop: 8 }}>Mission Group Chat</Text>
+                    <Text style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', marginTop: 4 }}>
+                      Real-time chat for all responders assigned to this disaster.{`\n`}Messages are saved on the server.
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    ref={flatListRef}
+                    data={messages}
+                    keyExtractor={i => i.id}
+                    renderItem={renderBubble}
+                    contentContainerStyle={{ padding: spacing.md, paddingBottom: 8 }}
+                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                  />
+                )}
+
+                {/* Only show input bar when actually connected — hidden in history fallback (403) */}
+                {chatConnected && (
+                <View style={S.chatBar}>
+                  <TextInput
+                    style={S.chatInput}
+                    placeholder="Type a message…"
+                    placeholderTextColor="#9CA3AF"
+                    value={chatInput}
+                    onChangeText={setChatInput}
+                    multiline
+                    maxLength={500}
+                    editable={true}
+                  />
+                  <TouchableOpacity
+                    style={[S.sendBtn, !chatInput.trim() && { opacity: 0.4 }]}
+                    onPress={sendMessage}
+                    disabled={!chatInput.trim()}
+                  >
+                    <Text style={S.sendBtnTxt}>Send</Text>
+                  </TouchableOpacity>
+                </View>
+                )}
+              </>
             )}
-            <View style={S.chatBar}>
-              <TextInput style={S.chatInput} placeholder="Type a message..." placeholderTextColor="#9CA3AF"
-                value={chatInput} onChangeText={setChatInput} multiline maxLength={500} />
-              <TouchableOpacity style={[S.sendBtn, !chatInput.trim() && { opacity: 0.4 }]}
-                onPress={sendMessage} disabled={!chatInput.trim()}>
-                <Text style={S.sendBtnTxt}>Send</Text>
-              </TouchableOpacity>
-            </View>
           </KeyboardAvoidingView>
         )}
 
@@ -494,7 +870,7 @@ export const ActiveMissionsScreen: React.FC = () => {
           </View>
         ) : list.map(m => (
           <TouchableOpacity key={m.id} style={[S.card, { borderLeftWidth: 4, borderLeftColor: SEV_COLOR[m.severity] ?? '#6B7280' }]}
-            onPress={() => openDetail(m)} activeOpacity={0.8}>
+            onPress={() => openDetail(m, tab === 'completed')} activeOpacity={0.8}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <Text style={{ fontSize: 11, color: '#9CA3AF', fontWeight: '600' }}>#{m.disaster_id?.slice(0, 8)}</Text>
               <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, backgroundColor: SEV_COLOR[m.severity] ?? '#6B7280' }}>
@@ -545,16 +921,18 @@ const S = StyleSheet.create({
   btnOutline: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingVertical: 14, alignItems: 'center', backgroundColor: '#fff' },
   btnOutTxt: { color: '#374151', fontWeight: '600', fontSize: 14 },
   // Chat
-  bubble: { maxWidth: '80%', padding: 10, borderRadius: 12, marginBottom: 6 },
-  bubbleMe: { alignSelf: 'flex-end', backgroundColor: RED, borderBottomRightRadius: 4 },
-  bubbleOther: { alignSelf: 'flex-start', backgroundColor: '#fff', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#E5E7EB' },
-  bubbleSender: { fontSize: 11, fontWeight: '700', color: RED, marginBottom: 2 },
-  bubbleText: { fontSize: 14, color: '#1F2937' },
-  bubbleTime: { fontSize: 10, color: '#9CA3AF', marginTop: 4, textAlign: 'right' },
-  chatBar: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB', gap: 8 },
-  chatInput: { flex: 1, minHeight: 40, maxHeight: 100, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: '#1F2937', backgroundColor: '#F9FAFB' },
-  sendBtn: { backgroundColor: RED, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
-  sendBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  // Bubble wrapper (replaces old bubble/bubbleMe/bubbleOther)
+  bubbleWrap:      { maxWidth: '78%', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, marginBottom: 8 },
+  bubbleWrapMe:    { alignSelf: 'flex-end', backgroundColor: RED, borderBottomRightRadius: 4 },
+  bubbleWrapOther: { alignSelf: 'flex-start', backgroundColor: '#fff', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#E5E7EB' },
+  bubbleHeader:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 },
+  bubbleSender:    { fontSize: 11, fontWeight: '700', color: RED, flexShrink: 1 },
+  bubbleText:      { fontSize: 14, color: '#1F2937', lineHeight: 20 },
+  bubbleTime:      { fontSize: 10, color: '#9CA3AF', marginTop: 3, textAlign: 'right' },
+  chatBar:         { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingVertical: 10, paddingBottom: 14, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB', gap: 8 },
+  chatInput:       { flex: 1, minHeight: 42, maxHeight: 100, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 21, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: '#1F2937', backgroundColor: '#F9FAFB' },
+  sendBtn:         { backgroundColor: RED, borderRadius: 21, paddingHorizontal: 18, paddingVertical: 11, justifyContent: 'center', alignItems: 'center' },
+  sendBtnTxt:      { color: '#fff', fontWeight: '700', fontSize: 14 },
   // Modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '92%' },
@@ -572,6 +950,35 @@ const S = StyleSheet.create({
   cBtnTxt: { fontSize: 18, lineHeight: 24, fontWeight: '700', color: '#374151' },
   cVal: { fontSize: 18, lineHeight: 24, fontWeight: '800', color: '#1F2937', minWidth: 32, textAlign: 'center' },
   falseAlarmBox: { marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+  // Chat WS status
+  chatStatusBar:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 6 },
+  chatStatusBarOn:  { backgroundColor: '#F0FDF4' },
+  chatStatusBarOff: { backgroundColor: '#F9FAFB' },
+  chatStatusDot:    { width: 8, height: 8, borderRadius: 4 },
+  chatStatusTxt:    { fontSize: 12, fontWeight: '600', color: '#374151', flex: 1 },
+  chatRetryBtn:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: RED },
+  chatRetryTxt:     { color: '#fff', fontSize: 11, fontWeight: '700' },
+  chatErrorBar:     { backgroundColor: '#FEF2F2', paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#FCA5A5' },
+  chatErrorTxt:     { color: '#991B1B', fontSize: 12 },
+  chatLiveDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
+  // System message
+  systemMsgWrap:    { alignItems: 'center', marginVertical: 10 },
+  systemMsg:        { fontSize: 11, color: '#6B7280', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12 },
+  // Admin badge in chat
+  adminBadge:       { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, backgroundColor: RED },
+  adminBadgeTxt:    { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  bubbleSeq:        { fontSize: 9, color: '#D1D5DB' },
+  // Completed mission history banner
+  historyBanner:      {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+  },
+  historyBannerIcon:  { fontSize: 13, lineHeight: 18 },
+  historyBannerTxt:   { flex: 1, fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  historyRefreshBtn:  { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: '#E5E7EB' },
+  historyRefreshTxt:  { fontSize: 14, fontWeight: '700', color: '#374151' },
 });
 
 export default ActiveMissionsScreen;

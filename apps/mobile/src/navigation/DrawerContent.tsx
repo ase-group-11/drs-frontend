@@ -3,14 +3,16 @@
 // Left drawer menu with all options
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { DrawerContentScrollView } from '@react-navigation/drawer';
-import { Text } from '@/components/atoms/Text';
+import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { authService } from '@services/authService';
+import { disasterStore } from '@services/disasterStore';
 
 interface DrawerContentProps {
   navigation: any;
@@ -22,12 +24,14 @@ const DrawerItem = ({
   icon, 
   label, 
   onPress, 
-  active = false 
+  active = false,
+  badge,
 }: { 
   icon: React.ReactNode; 
   label: string; 
   onPress: () => void; 
   active?: boolean;
+  badge?: number;
 }) => (
   <TouchableOpacity
     style={[styles.drawerItem, active && styles.drawerItemActive]}
@@ -41,11 +45,29 @@ const DrawerItem = ({
     >
       {label}
     </Text>
+    {!!badge && (
+      <View style={styles.badge}>
+        <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+      </View>
+    )}
   </TouchableOpacity>
 );
 
 export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state }) => {
   const currentRoute = state.routes[state.index]?.name;
+  const [user, setUser] = useState<any>(null);
+  const [unreadAlerts, setUnreadAlerts] = useState(disasterStore.unreadCount);
+
+  useEffect(() => {
+    authService.getStoredUser().then(setUser).catch(() => {});
+    disasterStore.loadPersistedAlerts();
+    const unsub = disasterStore.subscribe(() => setUnreadAlerts(disasterStore.unreadCount));
+    return unsub;
+  }, []);
+
+  const initials = user?.full_name
+    ? user.full_name.trim().split(/\s+/).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+    : '?';
 
   const handleLogout = async () => {
     Alert.alert(
@@ -57,9 +79,7 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
-            await AsyncStorage.removeItem('accessToken');
-            await AsyncStorage.removeItem('refreshToken');
-            await AsyncStorage.removeItem('user');
+            await authService.logout();
             // Navigation will automatically go to Login screen
             // because App.tsx checks for token
           },
@@ -73,10 +93,10 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatar}>
-          <Text variant="h2" style={styles.avatarText}>KP</Text>
+          <Text variant="h2" style={styles.avatarText}>{initials}</Text>
         </View>
-        <Text variant="h3" style={styles.userName}>Keshwith Pyla</Text>
-        <Text variant="bodySmall" color="textSecondary">keshwith@email.com</Text>
+        <Text variant="h3" style={styles.userName}>{user?.full_name ?? 'User'}</Text>
+        <Text variant="bodySmall" color="textSecondary">{user?.email ?? ''}</Text>
       </View>
 
       {/* Divider */}
@@ -147,6 +167,7 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
           label="Alerts"
           onPress={() => navigation.navigate('Alerts')}
           active={currentRoute === 'Alerts'}
+          badge={unreadAlerts > 0 ? unreadAlerts : undefined}
         />
 
         <DrawerItem
@@ -310,6 +331,20 @@ const styles = StyleSheet.create({
   },
   footerText: {
     marginBottom: spacing.xs,
+  },
+  badge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
 

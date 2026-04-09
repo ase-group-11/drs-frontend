@@ -113,6 +113,11 @@ export const ResponderProfileMenu: React.FC<ResponderProfileMenuProps> = ({
           onPress={() => onNavigate('MyCrew')}
         />
         <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🔄</Text>}
+          label="Unit Status"
+          onPress={() => onNavigate('UnitStatus')}
+        />
+        <MenuItem
           icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🚁</Text>}
           label="Evacuation Plans"
           onPress={() => onNavigate('EvacuationPlans')}

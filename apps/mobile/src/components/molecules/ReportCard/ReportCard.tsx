@@ -26,10 +26,14 @@ const STATUS_CONFIG: Record<string, { color: string; label: string; borderColor:
 };
 
 const DISASTER_ICONS: Record<string, string> = {
-  // lowercase
-  fire: '🔥', flood: '🌊', storm: '⛈️', earthquake: '🏚️',
-  hurricane: '🌀', tornado: '🌪️', tsunami: '🌊', explosion: '💥',
-  gas_leak: '☁️', accident: '🚗', power: '⚡', other: '⚠️',
+  // lowercase keys — matches DisasterType
+  flood: '🌊', fire: '🔥', earthquake: '🏚️', hurricane: '🌀',
+  tornado: '🌪️', tsunami: '🌊', drought: '☀️', heatwave: '🌡️',
+  coldwave: '🥶', storm: '⛈️', other: '⚠️',
+  // UPPERCASE variants for API responses
+  FLOOD: '🌊', FIRE: '🔥', EARTHQUAKE: '🏚️', HURRICANE: '🌀',
+  TORNADO: '🌪️', TSUNAMI: '🌊', DROUGHT: '☀️', HEATWAVE: '🌡️',
+  COLDWAVE: '🥶', STORM: '⛈️', OTHER: '⚠️',
 };
 
 const getTimeAgo = (date: Date): string => {

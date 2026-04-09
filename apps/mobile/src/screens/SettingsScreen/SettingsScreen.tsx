@@ -17,6 +17,7 @@ import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authService, authRequest } from '@services/authService';
+import { API } from '@services/apiConfig';
 
 // ─── Pref storage keys ────────────────────────────────────────────────────
 const P_PUSH  = '@prefs/push_notifications';
@@ -101,7 +102,7 @@ export const SettingsScreen: React.FC = () => {
         // GET /users/{id} requires admin auth — use stored data + fetch report stats separately
         setProfile(stored);
         try {
-          const reportData = await authRequest<any>(`/disaster-reports/user/${stored.id}?limit=100`);
+          const reportData = await authRequest<any>(API.reports.byUser(stored.id, 100));
           const reports: any[] = reportData?.reports ?? [];
           const verified = reports.filter((r: any) => r.report_status === 'VERIFIED' || r.report_status === 'verified').length;
           setProfile({

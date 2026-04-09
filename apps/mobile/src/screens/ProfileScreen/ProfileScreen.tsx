@@ -6,6 +6,7 @@
 //   responder → red theme + ResponderProfileMenu
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { API } from '@services/apiConfig';
 import React, { useState, useEffect } from 'react';
 import { StatusBar, StyleSheet, View, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -54,7 +55,7 @@ export const ProfileScreen: React.FC = () => {
           const { authRequest, getUserUnitInfo } = require('@services/authService');
           const { unitId } = await getUserUnitInfo();
           if (unitId) {
-            const data = await authRequest(`/deployments/unit/${unitId}/active`);
+            const data = await authRequest(API.deployments.unitActive(unitId));
             setMissionCount(data?.count ?? (data?.missions?.length ?? 0));
           }
         } catch {}

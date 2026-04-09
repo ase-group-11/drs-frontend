@@ -13,7 +13,8 @@
 
 import React, { useState, useRef } from 'react';
 import {
-  View, StyleSheet, TouchableOpacity, TextInput, Keyboard,
+  View, StyleSheet, TouchableOpacity, TextInput, Keyboard, ActivityIndicator,
+  InputAccessoryView, Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -26,6 +27,10 @@ import { colors }       from '@theme/colors';
 import { spacing }      from '@theme/spacing';
 import Svg, { Path }    from 'react-native-svg';
 import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
+import { useOTPTimer } from '@hooks/useOTPTimer';
+import { API } from '@services/apiConfig';
+
+const OTP_ACCESSORY_ID = 'responder-login-otp-accessory';
 
 const STORAGE_KEYS = {
   ACCESS_TOKEN:  '@auth/access_token',
@@ -69,6 +74,7 @@ export const ResponderLoginScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const otpRef = useRef<TextInput>(null);
+  const { canResend, resendLoading, resendSuccess, formattedTime, triggerResend, resetTimer } = useOTPTimer();
 
   const handleStep1 = async () => {
     if (!email.trim())    { setError('Please enter your email address'); return; }
@@ -80,7 +86,7 @@ export const ResponderLoginScreen: React.FC = () => {
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
-      const res = await fetch(`${API_BASE_URL}/emergency-team/login`, {
+      const res = await fetch(`${API_BASE_URL}${API.responder.login()}`, {
         method:  'POST',
         signal:  controller.signal,
         headers: { 'Content-Type': 'application/json' },
@@ -100,6 +106,7 @@ export const ResponderLoginScreen: React.FC = () => {
       setLoginToken(data.login_token);
       setOtpHint(data.message || 'An OTP has been sent to your registered phone number.');
       setStep(2);
+      resetTimer();
       setTimeout(() => otpRef.current?.focus(), 300);
     } catch (e: any) {
       if (e.name === 'AbortError') setError('Request timed out. Check your connection.');
@@ -119,7 +126,7 @@ export const ResponderLoginScreen: React.FC = () => {
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
-      const res = await fetch(`${API_BASE_URL}/emergency-team/login/verify`, {
+      const res = await fetch(`${API_BASE_URL}${API.responder.loginVerify()}`, {
         method:  'POST',
         signal:  controller.signal,
         headers: { 'Content-Type': 'application/json' },
@@ -156,6 +163,24 @@ export const ResponderLoginScreen: React.FC = () => {
       else setError(e.message || 'Verification failed. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async (): Promise<void> => {
+    setOtp('');
+    setError('');
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
+    const res = await fetch(`${API_BASE_URL}${API.responder.loginResendOtp()}`, {
+      method:  'POST',
+      signal:  controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ login_token: loginToken }),
+    });
+    clearTimeout(tid);
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.detail || data.message || 'Failed to resend OTP');
     }
   };
 
@@ -217,7 +242,23 @@ export const ResponderLoginScreen: React.FC = () => {
             </View>
             <Button title="Continue" onPress={handleStep1} loading={loading}
               disabled={!email.trim() || !password.trim() || loading} style={S.button} />
+            {/* Forgot password */}
+            <TouchableOpacity
+              style={S.forgotRow}
+              onPress={() => navigation.navigate('ResponderForgotPassword' as any)}
+              activeOpacity={0.7}
+            >
+              <Text style={S.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
+            {/* Sign up + Citizen login */}
             <View style={S.backRow}>
+              <Text variant="bodyMedium" color="textSecondary">New responder? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('ResponderSignup' as any)} activeOpacity={0.7}>
+                <Text variant="bodyMedium" color="primary">Create Account</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={[S.backRow, { marginTop: 8 }]}>
               <Text variant="bodyMedium" color="textSecondary">Not a responder? </Text>
               <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
                 <Text variant="bodyMedium" color="primary">Citizen Login</Text>
@@ -242,8 +283,33 @@ export const ResponderLoginScreen: React.FC = () => {
                 returnKeyType="done"
                 onSubmitEditing={handleStep2}
                 textContentType="oneTimeCode"
+                inputAccessoryViewID={Platform.OS === 'ios' ? OTP_ACCESSORY_ID : undefined}
               />
+              {/* Empty InputAccessoryView hides the default Done toolbar on iOS */}
+              {Platform.OS === 'ios' && (
+                <InputAccessoryView nativeID={OTP_ACCESSORY_ID}>
+                  <View style={{ height: 0 }} />
+                </InputAccessoryView>
+              )}
               <Text style={S.otpHint}>Check your registered phone for the SMS</Text>
+
+              {/* Resend OTP */}
+              <View style={S.resendRow}>
+                {resendLoading ? (
+                  <>
+                    <ActivityIndicator size="small" color="#DC2626" />
+                    <Text style={S.resendText}> Sending new code…</Text>
+                  </>
+                ) : resendSuccess ? (
+                  <Text style={S.resendSuccess}>✅ OTP resent successfully!</Text>
+                ) : canResend ? (
+                  <TouchableOpacity onPress={() => triggerResend(handleResendOtp)} activeOpacity={0.7}>
+                    <Text style={S.resendLink}>Resend OTP</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={S.resendText}>Resend in <Text style={S.resendTimer}>{formattedTime}</Text></Text>
+                )}
+              </View>
             </View>
 
             <Button title="Verify & Login" onPress={handleStep2} loading={loading}
@@ -287,6 +353,13 @@ const S = StyleSheet.create({
   backStep:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                       marginTop: spacing.lg, gap: spacing.xs },
   backStepText:     { fontSize: 14, color: colors.primary, fontWeight: '600' },
+  forgotRow:        { alignItems: 'flex-end', marginTop: spacing.sm, marginBottom: spacing.sm },
+  forgotText:       { fontSize: 13, color: '#DC2626', fontWeight: '600' },
+  resendRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.md },
+  resendText:       { fontSize: 13, color: '#6B7280' },
+  resendTimer:      { color: '#DC2626', fontWeight: '700' },
+  resendLink:       { fontSize: 13, color: '#DC2626', fontWeight: '700', textDecorationLine: 'underline' },
+  resendSuccess:    { fontSize: 13, color: '#166534', fontWeight: '600' },
 });
 
 export default ResponderLoginScreen;

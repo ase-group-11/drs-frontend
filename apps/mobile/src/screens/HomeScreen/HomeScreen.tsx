@@ -14,9 +14,10 @@ import { MapTemplate } from '@templates/MapTemplate';
 import { ProfileMenu } from '@organisms/ProfileMenu';
 import { ResponderProfileMenu } from '@organisms/ResponderProfileMenu';
 import { authService, authRequest, getUserUnitInfo } from '@services/authService';
+import { API } from '@services/apiConfig';
 import { wsService, WSAlert } from '@services/wsService';
-import { notificationStore } from '@services/notificationStore';
 import { disasterStore } from '@services/disasterStore';
+import { notificationStore } from '@services/notificationStore'; // used only for reroute geometry caching
 import { colors }      from '@theme/colors';
 import type { Disaster, DisasterFilter } from '../../types/disaster';
 import { useFocusEffect } from '@react-navigation/native';
@@ -28,15 +29,24 @@ type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 interface HomeScreenProps { navigation: HomeScreenNavigationProp; route?: any; }
 
 const FILTERS: DisasterFilter[] = [
-  { id: 'all',       label: '📍 All',        icon: '📍' },
-  { id: 'fire',      label: '🔥 Fire',       icon: '🔥', type: 'fire' },
-  { id: 'flood',     label: '🌊 Flood',      icon: '🌊', type: 'flood' },
-  { id: 'storm',     label: '⛈️ Storm',      icon: '⛈️', type: 'storm' },
-  { id: 'earthquake',label: '🏚️ Earthquake', icon: '🏚️', type: 'earthquake' },
-  { id: 'hurricane', label: '🌀 Hurricane',  icon: '🌀', type: 'hurricane' },
-  { id: 'tsunami',   label: '🌊 Tsunami',    icon: '🌊', type: 'tsunami' },
-  { id: 'heatwave',  label: '🌡️ Heatwave',   icon: '🌡️', type: 'heatwave' },
-  { id: 'other',     label: '⚠️ Other',      icon: '⚠️', type: 'other' },
+  { id: 'all',                  label: '📍 All',                  icon: '📍' },
+  { id: 'fire',                 label: '🔥 Fire',                 icon: '🔥', type: 'fire' },
+  { id: 'flood',                label: '🌊 Flood',                icon: '🌊', type: 'flood' },
+  { id: 'storm',                label: '⛈️ Storm',                icon: '⛈️', type: 'storm' },
+  { id: 'earthquake',           label: '🏚️ Earthquake',           icon: '🏚️', type: 'earthquake' },
+  { id: 'explosion',            label: '💥 Explosion',            icon: '💥', type: 'explosion' },
+  { id: 'gas_leak',             label: '☁️ Gas Leak',             icon: '☁️', type: 'gas_leak' },
+  { id: 'hazmat',               label: '☣️ Hazmat',               icon: '☣️', type: 'hazmat' },
+  { id: 'landslide',            label: '⛰️ Landslide',            icon: '⛰️', type: 'landslide' },
+  { id: 'accident',             label: '🚗 Accident',             icon: '🚗', type: 'accident' },
+  { id: 'building_collapse',    label: '🏗️ Building Collapse',    icon: '🏗️', type: 'building_collapse' },
+  { id: 'medical_emergency',    label: '🚑 Medical Emergency',    icon: '🚑', type: 'medical_emergency' },
+  { id: 'power_outage',         label: '⚡ Power Outage',         icon: '⚡', type: 'power_outage' },
+  { id: 'water_contamination',  label: '💧 Water Contamination',  icon: '💧', type: 'water_contamination' },
+  { id: 'crime',                label: '🚨 Crime',                icon: '🚨', type: 'crime' },
+  { id: 'riot',                 label: '⚠️ Riot',                 icon: '⚠️', type: 'riot' },
+  { id: 'terrorist_attack',     label: '🚨 Terrorist Attack',     icon: '🚨', type: 'terrorist_attack' },
+  { id: 'other',                label: '⚠️ Other',                icon: '⚠️', type: 'other' },
 ];
 
 const getInitials = (name: string): string => {
@@ -151,14 +161,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
     const unsubAlert   = wsService.onAlert(handleWSAlert);
     const unsubConnect = wsService.onConnect(setWsConnected);
-    const unsubStore   = notificationStore.subscribe(notifications => {
-      setAlertCount(notifications.filter(n => !n.isRead).length);
+    const unsubDisasterStore = disasterStore.subscribe(() => {
+      setAlertCount(disasterStore.unreadCount);
     });
 
     return () => {
       unsubAlert();
       unsubConnect();
-      unsubStore();
+      unsubDisasterStore();
       unsubStore2();
       wsService.disconnect();
     };
@@ -172,9 +182,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     }
   }, [selectedFilter, disasters]);
 
-  const loadAlertCount = async () => {
-    const count = await notificationStore.unreadCount();
-    setAlertCount(count);
+  const loadAlertCount = () => {
+    setAlertCount(disasterStore.unreadCount);
   };
 
   const loadDisasters = async () => {
@@ -188,7 +197,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       // After that, wsService handles updates via disaster.evaluated → fetch,
       // disaster.dispatched → in-place, disaster.updated → merge, etc.
       if (storeState.activeDisasters.length === 0) {
-        const data = await authRequest<any>('/disasters/active?limit=50');
+        const data = await authRequest<any>(API.disasters.active());
         const list = data?.disasters ?? (Array.isArray(data) ? data : []);
         disasterStore.setActiveDisasters(list);
       }
@@ -238,7 +247,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         try {
           const { unitId } = await getUserUnitInfo();
           if (unitId) {
-            const data = await authRequest(`/deployments/unit/${unitId}/active`);
+            const data = await authRequest(API.deployments.unitActive(unitId));
             setMissionCount(data?.count ?? 0);
           }
         } catch { /* no missions or unit not found — badge stays 0 */ }
@@ -261,7 +270,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     if (!pts || pts.length < 2) {
       try {
         console.log('[Reroute] No cache - fetching geometry now:', routeId);
-        const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${routeId}`);
+        const routeData = await authRequest<any>(API.reroute.status(disasterId, routeId));
         pts = (routeData?.points ?? []).map(
           (p: number[]) => [p[1], p[0]] as [number, number]
         );
@@ -296,10 +305,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       // routes[] in the WS payload already has time/dist metadata
       const routes: any[] = data.routes ?? [];
 
-      // Always store in notification inbox (geometry added below after fetch)
-      await notificationStore.add(alert);
-      setAlertCount(await notificationStore.unreadCount());
-
       try {
         const stored = await AsyncStorage.getItem('@auth/user_data');
         const user = stored ? JSON.parse(stored) : null;
@@ -324,7 +329,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         // Fetch geometry immediately while plan is still active in the DB
         let cachedPts: [number, number][] | null = null;
         try {
-          const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${userRouteId}`);
+          const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
           cachedPts = (routeData?.points ?? []).map(
             (p: number[]) => [p[1], p[0]] as [number, number]
           );
@@ -369,9 +374,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       const routeAssignments: Record<string,string> = data.route_assignments ?? {};
       const routes: any[] = data.routes ?? [];
 
-      await notificationStore.add(alert);
-      setAlertCount(await notificationStore.unreadCount());
-
       try {
         const stored = await AsyncStorage.getItem('@auth/user_data');
         const user = stored ? JSON.parse(stored) : null;
@@ -383,7 +385,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         const routeMeta = routes.find((r: any) => r.route_id === userRouteId);
         let cachedPts: [number, number][] | null = null;
         try {
-          const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${userRouteId}`);
+          const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
           cachedPts = (routeData?.points ?? []).map((p: number[]) => [p[1], p[0]] as [number, number]);
           console.log('[route.updated] New geometry:', cachedPts.length, 'pts');
           const all = await notificationStore.getAll();
@@ -428,10 +430,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       mapRef.current?.clearVehicle?.();
     }
 
-    // Store ALL alerts in notification inbox — AlertsScreen reads from here
-    await notificationStore.add(alert);
-    const unread = await notificationStore.unreadCount();
-    setAlertCount(unread);
+    // NOTE: disasterStore.addAlert() is called by wsService for EVERY event
+    // before handlers.forEach() fires. No need to call it again here.
+    // Just update the badge count from the store (which was already updated).
+    setAlertCount(disasterStore.unreadCount);
 
     // ERT-specific events — store already updated by wsService dispatch
     if (isResponder) {
@@ -538,7 +540,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
             disasters={filteredDisasters}
             loading={loading}
             onReport={isResponder ? undefined : () => navigation.navigate('ReportDisaster' as any)}
+            onViewDetails={(disasterId) => navigation.navigate('DisasterDetail' as any, { disasterId })}
             hideSearch={isResponder}
+            isResponder={isResponder}
             selectedFilter={selectedFilter}
           />
         }

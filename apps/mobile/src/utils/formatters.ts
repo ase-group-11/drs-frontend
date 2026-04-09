@@ -14,9 +14,11 @@ export const getTimeAgo = (date: Date): string => {
 
 export const getDisasterIcon = (type: string): string => {
   const icons: Record<string, string> = {
-    fire: '🔥', flood: '🌊', storm: '💨', accident: '🚗', power: '⚡',
+    flood: '🌊', fire: '🔥', earthquake: '🏚️', hurricane: '🌀',
+    tornado: '🌪️', tsunami: '🌊', drought: '☀️', heatwave: '🌡️',
+    coldwave: '🥶', storm: '⛈️', other: '⚠️',
   };
-  return icons[type] ?? '📍';
+  return icons[type?.toLowerCase()] ?? '📍';
 };
 
 export const getSeverityColor = (severity: string): string => {
@@ -31,4 +33,3 @@ export const getSeverityColor = (severity: string): string => {
 
 export const getSeverityLabel = (severity: string): string =>
   severity.charAt(0).toUpperCase() + severity.slice(1);
-

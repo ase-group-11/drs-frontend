@@ -13,15 +13,17 @@ import { Text } from '@atoms/Text';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authRequest } from '@services/authService';
+import { API } from '@services/apiConfig';
 import { disasterStore, SEVERITY_COLOR } from '@services/disasterStore';
 
 const RED = '#DC2626';
 
 const TYPE_EMOJI: Record<string, string> = {
   FIRE: '🔥', FLOOD: '🌊', STORM: '⛈️', EARTHQUAKE: '🏚️',
-  HURRICANE: '🌀', EXPLOSION: '💥', GAS_LEAK: '☁️',
-  ACCIDENT: '🚗', BUILDING_COLLAPSE: '🏚️', HAZMAT: '☣️',
-  MEDICAL_EMERGENCY: '🏥', CRIME: '🚔', RIOT: '🚨', OTHER: '⚠️',
+  EXPLOSION: '💥', GAS_LEAK: '☁️', HAZMAT: '☣️', LANDSLIDE: '⛰️',
+  ACCIDENT: '🚗', BUILDING_COLLAPSE: '🏗️', MEDICAL_EMERGENCY: '🚑',
+  POWER_OUTAGE: '⚡', WATER_CONTAMINATION: '💧', CRIME: '🚨',
+  RIOT: '⚠️', TERRORIST_ATTACK: '🚨', OTHER: '⚠️',
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -55,7 +57,7 @@ export const DisasterCommandScreen: React.FC = () => {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      const data = await authRequest<any>('/disasters/active?limit=50');
+      const data = await authRequest<any>(API.disasters.active());
       const list = data?.disasters ?? (Array.isArray(data) ? data : []);
       disasterStore.setActiveDisasters(list);
     } catch {}

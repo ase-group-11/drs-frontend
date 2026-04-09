@@ -17,6 +17,8 @@
 
 import { ApiError, authRequest } from './authService';
 import { authService } from './authService';
+import { API_BASE_URL } from '@constants/index';
+import { API } from './apiConfig';
 
 const apiRequest = <T>(endpoint: string, options: RequestInit = {}) =>
   authRequest<T>(endpoint, options);
@@ -24,10 +26,9 @@ const apiRequest = <T>(endpoint: string, options: RequestInit = {}) =>
 // ── Types ─────────────────────────────────────────────────────────────────
 
 export type DisasterType =
-  | 'ACCIDENT' | 'BUILDING_COLLAPSE' | 'CRIME' | 'EARTHQUAKE'
-  | 'EXPLOSION' | 'FIRE' | 'FLOOD' | 'GAS_LEAK' | 'HAZMAT'
-  | 'LANDSLIDE' | 'MEDICAL_EMERGENCY' | 'OTHER' | 'POWER_OUTAGE'
-  | 'RIOT' | 'STORM' | 'TERRORIST_ATTACK' | 'WATER_CONTAMINATION';
+  | 'FLOOD' | 'FIRE' | 'EARTHQUAKE' | 'HURRICANE'
+  | 'TORNADO' | 'TSUNAMI' | 'DROUGHT' | 'HEATWAVE'
+  | 'COLDWAVE' | 'STORM' | 'OTHER';
 
 export type SeverityLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
@@ -60,15 +61,23 @@ export interface DisasterReportResponse {
   disaster_type: string;
   severity: string;
   description?: string;
+  location: { latitude?: number; longitude?: number; address?: string; [key: string]: any };
   location_address?: string;
-  latitude: number;
-  longitude: number;
-  people_affected?: number;
-  multiple_casualties?: boolean;
-  structural_damage?: boolean;
-  road_blocked?: boolean;
-  status: string;
-  created_at: string;
+  latitude?: number;
+  longitude?: number;
+  people_affected: number;
+  multiple_casualties: boolean;
+  structural_damage: boolean;
+  road_blocked: boolean;
+  report_status: string;
+  disaster_id?: string;
+  reviewed_by_id?: string;
+  reviewed_at?: string;
+  rejection_reason?: string;
+  created_at?: string;
+  photo_count?: number;
+  // Legacy compat
+  status?: string;
   photos?: PhotoInput[];
 }
 
@@ -135,7 +144,7 @@ class DisasterService {
 
     try {
       const response = await fetch(
-        `${require('@constants/index').API_BASE_URL}/disaster-reports/upload-media`,
+        `${API_BASE_URL}${API.reports.uploadMedia()}`,
         { method: 'POST', headers: authHeader, body: formData, signal: controller.signal }
       );
       clearTimeout(timeoutId);
@@ -152,20 +161,76 @@ class DisasterService {
     }
   }
 
+  async submitReport(data: DisasterReportRequest, files?: any[]): Promise<DisasterReportResponse> {
+    const formData = new FormData();
+    formData.append('user_id',           data.user_id);
+    formData.append('location_address',  data.location_address);
+    formData.append('disaster_type',     data.disaster_type);
+    formData.append('severity',          data.severity);
+    formData.append('description',       data.description);
+    formData.append('latitude',          String(data.latitude));
+    formData.append('longitude',         String(data.longitude));
+    formData.append('people_affected',   String(data.people_affected ?? 0));
+    formData.append('multiple_casualties', String(data.multiple_casualties ?? false));
+    formData.append('structural_damage',   String(data.structural_damage ?? false));
+    formData.append('road_blocked',        String(data.road_blocked ?? false));
+
+    if (files && files.length > 0) {
+      files.forEach((file) => {
+        // React Native image picker returns objects like { uri, type, fileName }
+        // or just a uri string — normalise both into the shape RN FormData expects
+        if (typeof file === 'string') {
+          const filename = file.split('/').pop() ?? 'photo.jpg';
+          const ext      = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
+          const mime     = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+          formData.append('files', { uri: file, type: mime, name: filename } as any);
+        } else if (file?.uri) {
+          // object with uri (react-native-image-picker / expo-image-picker)
+          const filename = file.fileName ?? file.name ?? file.uri.split('/').pop() ?? 'photo.jpg';
+          const mime     = file.type ?? file.mimeType ?? 'image/jpeg';
+          formData.append('files', { uri: file.uri, type: mime, name: filename } as any);
+        } else {
+          // already a proper File/Blob — pass through
+          formData.append('files', file);
+        }
+      });
+    }
+
+    const authHeader = authService.getAuthHeader();
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}${API.reports.submit()}`,
+        { method: 'POST', headers: authHeader, body: formData, signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new ApiError(errorData.message || errorData.detail || 'Submission failed', response.status, errorData);
+      }
+      return await response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') throw new ApiError('Request timed out', 408);
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(error.message || 'Submission failed', 500);
+    }
+  }
+
+  /** @deprecated Use submitReport() — kept for backwards compat */
   async createReport(data: DisasterReportRequest): Promise<DisasterReportResponse> {
-    return apiRequest<DisasterReportResponse>('/disaster-reports/', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    return this.submitReport(data);
   }
 
   async getReport(reportId: string): Promise<DisasterReportResponse> {
-    return apiRequest<DisasterReportResponse>(`/disaster-reports/${reportId}`);
+    return apiRequest<DisasterReportResponse>(API.reports.byId(reportId));
   }
 
   async getUserReports(userId: string, limit: number = 20) {
     return apiRequest<{ reports: DisasterReportResponse[]; count: number; user_id: string }>(
-      `/disaster-reports/user/${userId}?limit=${limit}`
+      API.reports.byUser(userId, limit)
     );
   }
 
@@ -180,16 +245,16 @@ class DisasterService {
   // ═════════════════════════════════════════════════════════════════════
 
   async getActiveDisasters(limit: number = 50): Promise<any[]> {
-    const data = await apiRequest<any>(`/disasters/active?limit=${limit}`);
+    const data = await apiRequest<any>(API.disasters.active(limit));
     return data?.disasters ?? (Array.isArray(data) ? data : []);
   }
 
   async getDisasterDetail(disasterId: string): Promise<any> {
-    return apiRequest<any>(`/disasters/${disasterId}`);
+    return apiRequest<any>(API.disasters.byId(disasterId));
   }
 
   async getDisasterDeployments(disasterId: string): Promise<any[]> {
-    const data = await apiRequest<any>(`/disasters/${disasterId}/deployments`);
+    const data = await apiRequest<any>(API.disasters.deployments(disasterId));
     return data?.deployments ?? (Array.isArray(data) ? data : []);
   }
 
@@ -198,15 +263,15 @@ class DisasterService {
   // ═════════════════════════════════════════════════════════════════════
 
   async getActiveMissions(unitId: string): Promise<any> {
-    return apiRequest<any>(`/deployments/unit/${unitId}/active`);
+    return apiRequest<any>(API.deployments.unitActive(unitId));
   }
 
   async getCompletedMissions(unitId: string, limit: number = 20): Promise<any> {
-    return apiRequest<any>(`/deployments/unit/${unitId}/completed?limit=${limit}`);
+    return apiRequest<any>(API.deployments.unitCompleted(unitId, limit));
   }
 
   async getDeploymentDetail(deploymentId: string): Promise<any> {
-    return apiRequest<any>(`/deployments/${deploymentId}`);
+    return apiRequest<any>(API.deployments.byId(deploymentId));
   }
 
   // ═════════════════════════════════════════════════════════════════════
@@ -217,7 +282,7 @@ class DisasterService {
     deploymentId: string,
     payload: DeploymentStatusUpdate
   ): Promise<any> {
-    return apiRequest<any>(`/deployments/${deploymentId}/update-status`, {
+    return apiRequest<any>(API.deployments.updateStatus(deploymentId), {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -228,16 +293,16 @@ class DisasterService {
   // ═════════════════════════════════════════════════════════════════════
 
   async getRerouteStatus(disasterId: string): Promise<any> {
-    return apiRequest<any>(`/reroute/status/${disasterId}`);
+    return apiRequest<any>(API.reroute.status(disasterId));
   }
 
   async getAllReroutePlans(): Promise<any[]> {
-    const data = await apiRequest<any>('/reroute/plans');
+    const data = await apiRequest<any>(API.reroute.plans());
     return Array.isArray(data) ? data : [];
   }
 
   async submitRerouteOverride(payload: RerouteOverrideRequest): Promise<any> {
-    return apiRequest<any>('/reroute/override', {
+    return apiRequest<any>(API.reroute.override(), {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -248,29 +313,29 @@ class DisasterService {
   // ═════════════════════════════════════════════════════════════════════
 
   async planEvacuation(disasterId: string): Promise<any> {
-    return apiRequest<any>('/evacuations/plan', {
+    return apiRequest<any>(API.evacuations.plan(), {
       method: 'POST',
       body: JSON.stringify({ disaster_id: disasterId }),
     });
   }
 
   async approveEvacuation(planId: string, approvedBy: string): Promise<any> {
-    return apiRequest<any>(`/evacuations/${planId}/approve`, {
+    return apiRequest<any>(API.evacuations.approve(planId), {
       method: 'POST',
       body: JSON.stringify({ approved_by: approvedBy }),
     });
   }
 
   async activateEvacuation(planId: string): Promise<any> {
-    return apiRequest<any>(`/evacuations/${planId}/activate`, { method: 'POST' });
+    return apiRequest<any>(API.evacuations.activate(planId), { method: 'POST' });
   }
 
   async getEvacuationProgress(planId: string): Promise<any> {
-    return apiRequest<any>(`/evacuations/${planId}/progress`);
+    return apiRequest<any>(API.evacuations.progressGet(planId));
   }
 
   async listEvacuationPlans(): Promise<any[]> {
-    const data = await apiRequest<any>('/evacuations/');
+    const data = await apiRequest<any>(API.evacuations.list());
     return data?.evacuation_plans ?? [];
   }
 
@@ -279,7 +344,7 @@ class DisasterService {
   // ═════════════════════════════════════════════════════════════════════
 
   async getLiveMapData(bounds: string): Promise<any> {
-    return apiRequest<any>(`/live-map/data?bounds=${bounds}`);
+    return apiRequest<any>(API.liveMap.data(bounds));
   }
 
   // ═════════════════════════════════════════════════════════════════════
@@ -287,18 +352,18 @@ class DisasterService {
   // ═════════════════════════════════════════════════════════════════════
 
   async registerVehicle(payload: VehicleRegisterRequest): Promise<any> {
-    return apiRequest<any>('/vehicles/register', {
+    return apiRequest<any>(API.vehicles.register(), {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
   async getVehicleStatus(): Promise<any> {
-    return apiRequest<any>('/vehicles/status');
+    return apiRequest<any>(API.vehicles.status(''));
   }
 
   async deregisterVehicle(userId: string): Promise<any> {
-    return apiRequest<any>('/vehicles/deregister', {
+    return apiRequest<any>(API.vehicles.deregister(payload?.user_id ?? ''), {
       method: 'DELETE',
       body: JSON.stringify({ user_id: userId }),
     });

@@ -17,6 +17,7 @@ import type {
   TokenResponse,
 } from '@types/auth';
 import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
+import { API } from './apiConfig';
 
 // ─── Storage Keys ─────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ async function _doRefresh(): Promise<string> {
   const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
   if (!refreshToken) throw new ApiError('No refresh token. Please log in again.', 401);
 
-  const data = await rawRequest<{ access_token: string }>('/auth/token/refresh', {
+  const data = await rawRequest<{ access_token: string }>(API.auth.tokenRefresh(), {
     method: 'POST',
     body:   JSON.stringify({ refresh_token: refreshToken }),
   });
@@ -262,11 +263,11 @@ class AuthService {
 
   // Auth endpoints (no Bearer token needed)
   async register(req: RegisterRequest): Promise<RegisterResponse> {
-    return rawRequest('/auth/register', { method: 'POST', body: JSON.stringify(req) });
+    return rawRequest(API.auth.register(), { method: 'POST', body: JSON.stringify(req) });
   }
 
   async verifyRegistration(req: VerifyRegisterRequest): Promise<VerifyRegisterResponse> {
-    const res = await rawRequest<VerifyRegisterResponse>('/auth/register/verify', {
+    const res = await rawRequest<VerifyRegisterResponse>(API.auth.registerVerify(), {
       method: 'POST', body: JSON.stringify(req),
     });
     await this.saveTokens(res.tokens, res.user);
@@ -274,11 +275,11 @@ class AuthService {
   }
 
   async login(req: LoginRequest): Promise<LoginResponse> {
-    return rawRequest('/auth/login', { method: 'POST', body: JSON.stringify(req) });
+    return rawRequest(API.auth.login(), { method: 'POST', body: JSON.stringify(req) });
   }
 
   async verifyLogin(req: VerifyLoginRequest): Promise<VerifyLoginResponse> {
-    const res = await rawRequest<VerifyLoginResponse>('/auth/login/verify', {
+    const res = await rawRequest<VerifyLoginResponse>(API.auth.loginVerify(), {
       method: 'POST', body: JSON.stringify(req),
     });
     await this.saveTokens(res.tokens, res.user);
@@ -288,7 +289,7 @@ class AuthService {
   async logout(): Promise<void> { await this.clearTokens(); }
 
   async healthCheck(): Promise<{ status: string }> {
-    return rawRequest('/auth/health', { method: 'GET' });
+    return rawRequest(API.auth.health(), { method: 'GET' });
   }
 
   async resendOTP(phone: string, isSignup: boolean, fullName?: string, email?: string): Promise<void> {
@@ -317,7 +318,7 @@ export async function getUserUnitInfo(forceRefresh = false): Promise<{
   if (!user?.id) return { unitId: null, unitIds: [], unitCodes: [] };
 
   try {
-    const data = await authRequest<any>(`/users/${user.id}`);
+    const data = await authRequest<any>(API.users.byId(user.id));
     const unitIds: string[] = data?.unit_ids ?? [];
     const unitCodes: string[] = data?.unit_codes ?? [];
     const unitId = unitIds.length > 0 ? unitIds[0] : null;

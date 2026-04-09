@@ -1,4 +1,7 @@
-export type DisasterType = 'fire' | 'flood' | 'storm' | 'accident' | 'power';
+export type DisasterType =
+  | 'flood' | 'fire' | 'earthquake' | 'hurricane'
+  | 'tornado' | 'tsunami' | 'drought' | 'heatwave'
+  | 'coldwave' | 'storm' | 'other';
 
 export type DisasterSeverity = 'critical' | 'high' | 'medium' | 'low';
 

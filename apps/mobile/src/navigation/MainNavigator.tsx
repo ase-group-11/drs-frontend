@@ -17,6 +17,7 @@ import { DisasterCommandScreen }  from '@screens/DisasterCommandScreen';
 import { DisasterDetailScreen }   from '@screens/DisasterDetailScreen';
 import { CompletedMissionsScreen } from '@screens/CompletedMissionsScreen';
 import { MyCrewScreen }           from '@screens/MyCrewScreen';
+import { UnitStatusScreen }       from '@screens/UnitStatusScreen';
 import { EvacuationPlansScreen }    from '@screens/EvacuationPlansScreen';
 import { DisasterTimelineScreen }   from '@screens/DisasterTimelineScreen';
 
@@ -35,6 +36,7 @@ export type MainStackParamList = {
   DisasterDetail:      { disasterId: string };
   CompletedMissions:   undefined;
   MyCrew:              undefined;
+  UnitStatus:          undefined;
   DisasterTimeline:  { disasterId: string; trackingId?: string };
 };
 
@@ -55,6 +57,7 @@ export const MainNavigator: React.FC = () => (
     <Stack.Screen name="DisasterDetail"   component={DisasterDetailScreen} />
     <Stack.Screen name="CompletedMissions" component={CompletedMissionsScreen} />
     <Stack.Screen name="MyCrew"            component={MyCrewScreen} />
+    <Stack.Screen name="UnitStatus"        component={UnitStatusScreen} />
     <Stack.Screen name="DisasterTimeline" component={DisasterTimelineScreen} />
     <Stack.Screen
       name="ReportDisaster"
