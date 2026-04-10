@@ -77,7 +77,12 @@ export function mergeMessages(a: ChatMessage[], b: ChatMessage[]): ChatMessage[]
       result.push(msg);
     }
   }
-  return result.sort((x, y) => x.seq - y.seq);
+  return result.sort((x, y) => {
+    const tA = new Date(x.sent_at.endsWith('Z') ? x.sent_at : x.sent_at + 'Z').getTime();
+    const tB = new Date(y.sent_at.endsWith('Z') ? y.sent_at : y.sent_at + 'Z').getTime();
+    if (tA !== tB) return tA - tB;
+    return x.seq - y.seq;
+  });
 }
 
 // ─── Decode JWT sub ───────────────────────────────────────────────────────────

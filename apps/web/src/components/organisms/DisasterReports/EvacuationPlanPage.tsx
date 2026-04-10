@@ -16,7 +16,6 @@ import type { DisasterReport } from '../../../types';
 
 const { Text } = Typography;
 
-// Set token at module level — same pattern as MapView.tsx
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN || '';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,8 +24,7 @@ interface EvacRoute {
   route_id: string;
   score: number;
   fallback: boolean;
-  zone_name: string;
-  origin_zone_id: string;
+  // zone_name not in API — derived from origin_label or shelter destination
   shelter_name: string;
   shelter_capacity: number;
   destination_shelter_id: string;
@@ -35,6 +33,9 @@ interface EvacRoute {
   travel_time_seconds: number;
   traffic_delay_seconds: number;
   length_meters: number;
+  origin_lat: number;
+  origin_lon: number;
+  origin_label: string;
   points: [number, number][];
   geojson?: any;
   waypoints: any[];
@@ -42,18 +43,21 @@ interface EvacRoute {
 
 interface ImpactZone {
   severity?: string;
-  name: string;
+  // API uses area_name, not name
   area_name?: string;
+  name?: string;
   radius_km?: number;
-  lat: number;
-  lon: number;
+  // API uses center_lat/center_lon
   center_lat?: number;
   center_lon?: number;
+  lat?: number;
+  lon?: number;
   population: number;
   vulnerable_count: number;
   affected_roads?: any[];
   affected_facilities?: any[];
   zone_id?: string;
+  disaster_id?: string;
 }
 
 interface Shelter {
@@ -71,7 +75,9 @@ interface TransportSchedule {
   route_id: string;
   shelter_id: string;
   shelter_name: string;
-  buses_needed: number;
+  // API uses rescue_units_needed, not buses_needed
+  rescue_units_needed?: number;
+  buses_needed?: number;
   ambulances_needed: number;
   estimated_time_min: number;
   zone_id?: string;
@@ -98,19 +104,30 @@ interface EvacuationPlan {
     density_factor?: number;
   };
   shelters_with_capacity: Shelter[];
+  // key is disaster_id (not zone_id) in actual API
   best_routes_per_zone: Record<string, EvacRoute[]>;
   blocked_roads: any[];
-  traffic_snapshot: { mode: string; segments: any[] };
+  traffic_snapshot: { source?: string; mode?: string; segments: any[]; available?: boolean };
   transport_plan: {
     schedules: TransportSchedule[];
-    total_people: number;
-    total_buses: number;
-    total_ambulances: number;
-    total_vulnerable: number;
+    total_people?: number;
+    // API returns total_ambulances + rescue_units_needed, not total_buses
+    total_buses?: number;
+    total_ambulances?: number;
+    total_vulnerable?: number;
+    rescue_units_needed?: number;
+    ambulances_available?: number;
+    rescue_units_available?: number;
+    unit_summary?: {
+      rescue?: { available: number; transport_capacity: number };
+      ambulance?: { available: number; transport_capacity: number };
+    };
   };
   allocations: {
     ambulances_allocated: number;
-    buses_allocated: number;
+    // API uses rescue_units_allocated, not buses_allocated
+    buses_allocated?: number;
+    rescue_units_allocated?: number;
     allocation_confirmed: boolean;
     allocated_at: string;
   };
@@ -144,6 +161,11 @@ const fmtMins = (mins: number) => {
 };
 const fmtMeters = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
 
+// Normalise zone: handle both name/area_name and lat/lon vs center_lat/center_lon
+const zoneName = (z: ImpactZone) => z.name ?? z.area_name ?? 'Unknown Zone';
+const zoneLat  = (z: ImpactZone) => z.lat ?? z.center_lat;
+const zoneLon  = (z: ImpactZone) => z.lon ?? z.center_lon;
+
 const SEV_COLOR: Record<string, string> = { CRITICAL: '#dc2626', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e' };
 const ROUTE_COLORS = ['#7c3aed', '#2563eb', '#059669', '#d97706', '#dc2626', '#0891b2'];
 
@@ -171,7 +193,6 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
 
   const allRoutes = Object.values(plan.best_routes_per_zone ?? {}).flat();
 
-  // Build shelter → color map
   const shelterColorMap: Record<string, string> = {};
   let colorIdx = 0;
   allRoutes.forEach(r => {
@@ -186,119 +207,115 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
     const container = containerRef.current;
 
     const initMap = () => {
-      if (mapRef.current) return; // already initialized
+      if (mapRef.current) return;
       if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
 
-      const centerLon = plan.impact_zones[0]?.lon ?? plan.impact_zones[0]?.center_lon ?? -6.26;
-      const centerLat = plan.impact_zones[0]?.lat ?? plan.impact_zones[0]?.center_lat ?? 53.34;
-    const m = new mapboxgl.Map({ container: container, style: 'mapbox://styles/mapbox/dark-v11', center: [centerLon, centerLat], zoom: 11 });
-    mapRef.current = m;
-    m.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      const firstZone = plan.impact_zones[0];
+      const centerLon = zoneLon(firstZone) ?? -6.26;
+      const centerLat = zoneLat(firstZone) ?? 53.34;
 
-    m.on('load', () => {
-      // Draw routes
-      allRoutes.forEach((route, idx) => {
-        const color = shelterColorMap[route.shelter_name] ?? ROUTE_COLORS[idx % ROUTE_COLORS.length];
-        const shelter = plan.shelters_with_capacity.find(s => s.shelter_id === route.destination_shelter_id);
+      const m = new mapboxgl.Map({
+        container,
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: [centerLon, centerLat],
+        zoom: 11,
+      });
+      mapRef.current = m;
+      m.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
-        let coords: [number, number][] | null = null;
+      m.on('load', () => {
+        // Draw routes
+        allRoutes.forEach((route, idx) => {
+          const color = shelterColorMap[route.shelter_name] ?? ROUTE_COLORS[idx % ROUTE_COLORS.length];
+          const shelter = plan.shelters_with_capacity.find(s => s.shelter_id === route.destination_shelter_id);
 
-        // Try geojson first — coordinates are [lon, lat]
-        if (route.geojson?.geometry?.coordinates?.length > 1) {
-          coords = route.geojson.geometry.coordinates as [number, number][];
-        }
+          let coords: [number, number][] | null = null;
 
-        // Try points — they are [lat, lon] pairs
-        if (!coords && route.points?.length > 1) {
-          coords = route.points.map(([lat, lon]) => [lon, lat] as [number, number]);
-        }
+          if (route.geojson?.geometry?.coordinates?.length > 1) {
+            coords = route.geojson.geometry.coordinates as [number, number][];
+          }
 
-        // Fallback: straight line to shelter if we have it
-        if (!coords && shelter) {
-          const originZone = plan.impact_zones.find(z => z.zone_id === route.origin_zone_id);
-          if (originZone) {
+          if (!coords && route.points?.length > 1) {
+            coords = route.points.map(([lat, lon]) => [lon, lat] as [number, number]);
+          }
+
+          if (!coords && shelter) {
             coords = [
-              [originZone.lon ?? originZone.center_lon!, originZone.lat ?? originZone.center_lat!],
+              [centerLon, centerLat],
               [shelter.lon, shelter.lat],
             ];
           }
-        }
 
-        if (!coords) return;
+          if (!coords) return;
 
-        const sid = `route-${route.route_id}`;
-        const lid = `line-${route.route_id}`;
-        m.addSource(sid, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} } });
-        m.addLayer({
-          id: lid, type: 'line', source: sid,
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: {
-            'line-color': color, 'line-width': 3, 'line-opacity': 0.85,
-            'line-dasharray': (coords.length <= 2) ? [2, 2] : [1], // dashed if straight line fallback
-          },
+          const sid = `route-${route.route_id}`;
+          const lid = `line-${route.route_id}`;
+          m.addSource(sid, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} } });
+          m.addLayer({
+            id: lid, type: 'line', source: sid,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-color': color, 'line-width': 3, 'line-opacity': 0.85,
+              'line-dasharray': (coords.length <= 2) ? [2, 2] : [1],
+            },
+          });
         });
+
+        // Impact zone markers
+        plan.impact_zones.forEach(zone => {
+          const zLon = zoneLon(zone);
+          const zLat = zoneLat(zone);
+          if (zLon == null || zLat == null) return;
+          const el = document.createElement('div');
+          el.style.cssText = 'width:16px;height:16px;border-radius:50%;background:#ef4444;border:2px solid white;box-shadow:0 0 0 3px rgba(239,68,68,0.3);cursor:pointer;';
+          new mapboxgl.Marker({ element: el }).setLngLat([zLon, zLat])
+            .setPopup(new mapboxgl.Popup({ offset: 14, maxWidth: '220px' }).setHTML(`
+              <div style="font-family:-apple-system,sans-serif;padding:4px 0">
+                <div style="font-weight:700;font-size:13px;color:#dc2626;margin-bottom:6px">⚠ ${zoneName(zone)}</div>
+                <div style="display:flex;flex-direction:column;gap:3px">
+                  <div style="font-size:12px;color:#374151">Severity: <strong>${zone.severity ?? 'N/A'}</strong></div>
+                  ${zone.radius_km != null ? `<div style="font-size:12px;color:#374151">Radius: <strong>${zone.radius_km} km</strong></div>` : ''}
+                  <div style="font-size:12px;color:#374151">👥 <strong>${zone.population}</strong> residents</div>
+                  <div style="font-size:12px;color:#dc2626">⚠️ <strong>${zone.vulnerable_count}</strong> vulnerable</div>
+                </div>
+              </div>`)).addTo(m);
+        });
+
+        // Shelter markers
+        plan.shelters_with_capacity.forEach(shelter => {
+          const route = allRoutes.find(r => r.destination_shelter_id === shelter.shelter_id);
+          const el = document.createElement('div');
+          el.style.cssText = 'width:32px;height:32px;border-radius:8px;background:#1d4ed8;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);';
+          el.textContent = '🏟';
+          new mapboxgl.Marker({ element: el }).setLngLat([shelter.lon, shelter.lat])
+            .setPopup(new mapboxgl.Popup({ offset: 18, maxWidth: '220px' }).setHTML(`
+              <div style="font-family:-apple-system,sans-serif;padding:4px 0">
+                <div style="font-weight:700;font-size:13px;color:#1d4ed8;margin-bottom:6px">${shelter.name}</div>
+                <div style="display:flex;flex-direction:column;gap:3px">
+                  <div style="font-size:12px;color:#374151">Capacity: <strong>${shelter.capacity.toLocaleString()}</strong></div>
+                  ${route ? `<div style="font-size:12px;color:#374151">Distance: <strong>${route.distance_km} km</strong></div>` : ''}
+                  ${route ? `<div style="font-size:12px;color:#374151">ETA: <strong>${route.estimated_time_min} min</strong></div>` : ''}
+                </div>
+              </div>`)).addTo(m);
+        });
+
+        // Fit bounds
+        const pts: [number, number][] = [
+          ...plan.impact_zones
+            .filter(z => zoneLon(z) != null && zoneLat(z) != null)
+            .map(z => [zoneLon(z)!, zoneLat(z)!] as [number, number]),
+          ...plan.shelters_with_capacity.map(s => [s.lon, s.lat] as [number, number]),
+        ];
+        if (pts.length > 1) {
+          const bounds = pts.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(pts[0], pts[0]));
+          m.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+        }
       });
+    };
 
-      // Impact zone markers (red)
-      plan.impact_zones.forEach(zone => {
-        const zoneLon = zone.lon ?? zone.center_lon;
-        const zoneLat = zone.lat ?? zone.center_lat;
-        if (zoneLon == null || zoneLat == null) return;
-        const zoneName = zone.name ?? zone.area_name ?? 'Unknown Zone';
-        const el = document.createElement('div');
-        el.style.cssText = 'width:16px;height:16px;border-radius:50%;background:#ef4444;border:2px solid white;box-shadow:0 0 0 3px rgba(239,68,68,0.3);cursor:pointer;';
-        new mapboxgl.Marker({ element: el }).setLngLat([zoneLon, zoneLat])
-          .setPopup(new mapboxgl.Popup({ offset: 14, maxWidth: '220px' }).setHTML(`
-            <div style="font-family:-apple-system,sans-serif;padding:4px 0">
-              <div style="font-weight:700;font-size:13px;color:#dc2626;margin-bottom:6px">⚠ ${zoneName}</div>
-              <div style="display:flex;flex-direction:column;gap:3px">
-                <div style="font-size:12px;color:#374151">Severity: <strong>${zone.severity}</strong></div>
-                ${zone.radius_km != null ? `<div style="font-size:12px;color:#374151">Radius: <strong>${zone.radius_km} km</strong></div>` : ''}
-                <div style="font-size:12px;color:#374151">👥 <strong>${zone.population}</strong> residents</div>
-                <div style="font-size:12px;color:#dc2626">⚠️ <strong>${zone.vulnerable_count}</strong> vulnerable</div>
-              </div>
-            </div>`)).addTo(m);
-      });
-
-      // Shelter markers (blue)
-      plan.shelters_with_capacity.forEach(shelter => {
-        // Find the route to this shelter to get the actual route distance
-        const route = allRoutes.find(r => r.destination_shelter_id === shelter.shelter_id);
-        const el = document.createElement('div');
-        el.style.cssText = 'width:32px;height:32px;border-radius:8px;background:#1d4ed8;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);';
-        el.textContent = '🏟';
-        new mapboxgl.Marker({ element: el }).setLngLat([shelter.lon, shelter.lat])
-          .setPopup(new mapboxgl.Popup({ offset: 18, maxWidth: '220px' }).setHTML(`
-            <div style="font-family:-apple-system,sans-serif;padding:4px 0">
-              <div style="font-weight:700;font-size:13px;color:#1d4ed8;margin-bottom:6px">${shelter.name}</div>
-              <div style="display:flex;flex-direction:column;gap:3px">
-                <div style="font-size:12px;color:#374151">Capacity: <strong>${shelter.capacity.toLocaleString()}</strong></div>
-                ${route ? `<div style="font-size:12px;color:#374151">Distance: <strong>${route.distance_km} km</strong></div>` : ''}
-                ${route ? `<div style="font-size:12px;color:#374151">ETA: <strong>${route.estimated_time_min} min</strong></div>` : ''}
-              </div>
-            </div>`)).addTo(m);
-      });
-
-      // Fit bounds
-      const pts: [number, number][] = [
-        ...plan.impact_zones
-          .filter(z => (z.lon ?? z.center_lon) != null && (z.lat ?? z.center_lat) != null)
-          .map(z => [(z.lon ?? z.center_lon)!, (z.lat ?? z.center_lat)!] as [number, number]),
-        ...plan.shelters_with_capacity.map(s => [s.lon, s.lat] as [number, number]),
-      ];
-      if (pts.length > 1) {
-        const bounds = pts.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(pts[0], pts[0]));
-        m.fitBounds(bounds, { padding: 60, maxZoom: 14 });
-      }
-    });
-    }; // end initMap
-
-    // Try immediately, then use ResizeObserver as fallback
     initMap();
-
     const ro = new ResizeObserver(() => { initMap(); });
     ro.observe(container);
-
     const timer = setTimeout(initMap, 100);
 
     return () => {
@@ -309,27 +326,21 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Style switcher
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
     m.setStyle(STYLE_URLS[styleMode]);
   }, [styleMode]);
 
-  // 3D toggle
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
-    if (is3D) {
-      m.easeTo({ pitch: 45, bearing: -10, duration: 600 });
-    } else {
-      m.easeTo({ pitch: 0, bearing: 0, duration: 600 });
-    }
+    m.easeTo(is3D ? { pitch: 45, bearing: -10, duration: 600 } : { pitch: 0, bearing: 0, duration: 600 });
   }, [is3D]);
 
   const styleMeta = [
-    { mode: 'streets', icon: '☀️', label: 'Light' },
-    { mode: 'dark',    icon: '🌙', label: 'Dark' },
+    { mode: 'streets',   icon: '☀️', label: 'Light' },
+    { mode: 'dark',      icon: '🌙', label: 'Dark' },
     { mode: 'satellite', icon: '🛰️', label: 'Satellite' },
   ] as const;
 
@@ -356,7 +367,6 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
       <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
         <div ref={containerRef} style={{ width: '100%', height: 440 }} />
 
-        {/* Style Controls Overlay */}
         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10 }}>
           <button
             onClick={() => setCtrlOpen(o => !o)}
@@ -409,7 +419,8 @@ const EvacuationMap: React.FC<{ plan: EvacuationPlan }> = ({ plan }) => {
                 {is3D && <span style={{ color: '#22d3ee', fontSize: 12 }}>✓</span>}
               </button>
               <button onClick={() => {
-                mapRef.current?.flyTo({ center: [(plan.impact_zones[0]?.lon ?? plan.impact_zones[0]?.center_lon ?? -6.26), (plan.impact_zones[0]?.lat ?? plan.impact_zones[0]?.center_lat ?? 53.34)], zoom: 11, pitch: 0, bearing: 0, duration: 1000 });
+                const fz = plan.impact_zones[0];
+                mapRef.current?.flyTo({ center: [zoneLon(fz) ?? -6.26, zoneLat(fz) ?? 53.34], zoom: 11, pitch: 0, bearing: 0, duration: 1000 });
                 setCtrlOpen(false);
               }} style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 10,
@@ -454,11 +465,7 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         notes: 'Approved via DRS dashboard.',
       });
       fetchPlan();
-    } catch {
-      // error silently — could add notification here
-    } finally {
-      setActionLoading(false);
-    }
+    } catch { } finally { setActionLoading(false); }
   };
 
   const handleActivate = async () => {
@@ -466,10 +473,7 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
     try {
       await apiClient.post(API_ENDPOINTS.EVACUATIONS.ACTIVATE(planId));
       fetchPlan();
-    } catch {
-    } finally {
-      setActionLoading(false);
-    }
+    } catch { } finally { setActionLoading(false); }
   };
 
   useEffect(() => {
@@ -491,6 +495,13 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
   const totalEvacuated = Object.values(plan.completion_metrics ?? {}).reduce((s, m) => s + (m.evacuated ?? 0), 0);
   const overallPct = plan.population_stats.total > 0 ? Math.round((totalEvacuated / plan.population_stats.total) * 100) : 0;
   const allRoutes = Object.values(plan.best_routes_per_zone ?? {}).flat();
+
+  // Derive totals from API fields — prefer explicit fields, fall back to unit_summary
+  const totalAmbulances   = plan.transport_plan.total_ambulances   ?? plan.transport_plan.unit_summary?.ambulance?.available ?? 0;
+  const totalRescueUnits  = plan.transport_plan.rescue_units_needed ?? plan.transport_plan.unit_summary?.rescue?.available   ?? 0;
+  const totalVulnerable   = plan.transport_plan.total_vulnerable    ?? plan.population_stats.vulnerable ?? 0;
+  const totalPeople       = plan.transport_plan.total_people        ?? plan.population_stats.total      ?? 0;
+  const rescueAllocated   = plan.allocations.rescue_units_allocated ?? plan.allocations.buses_allocated ?? 0;
 
   const section: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', marginBottom: 16 };
 
@@ -520,24 +531,15 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
             </div>
           </div>
 
-          {/* Action button — only for PENDING and APPROVED */}
           {plan.plan_status === 'PENDING' && (
-            <Button
-              type="primary"
-              loading={actionLoading}
-              onClick={handleApprove}
-              style={{ background: '#2563eb', borderColor: '#2563eb', fontWeight: 600, flexShrink: 0 }}
-            >
+            <Button type="primary" loading={actionLoading} onClick={handleApprove}
+              style={{ background: '#2563eb', borderColor: '#2563eb', fontWeight: 600, flexShrink: 0 }}>
               ✓ Approve Plan
             </Button>
           )}
           {plan.plan_status === 'APPROVED' && (
-            <Button
-              type="primary"
-              loading={actionLoading}
-              onClick={handleActivate}
-              style={{ background: '#16a34a', borderColor: '#16a34a', fontWeight: 600, flexShrink: 0 }}
-            >
+            <Button type="primary" loading={actionLoading} onClick={handleActivate}
+              style={{ background: '#16a34a', borderColor: '#16a34a', fontWeight: 600, flexShrink: 0 }}>
               ▶ Activate Plan
             </Button>
           )}
@@ -560,12 +562,12 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
 
       {/* Population Stats */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <StatCard label="Total Population"  value={plan.population_stats?.total ?? 0}       color="#7c3aed" />
-        <StatCard label="Vulnerable"         value={plan.population_stats?.vulnerable ?? plan.transport_plan?.total_vulnerable ?? 0}  sub="requiring assistance" color="#dc2626" />
-        <StatCard label="Mobile"             value={plan.population_stats?.mobile ?? 0}      color="#d97706" />
-        <StatCard label="Impact Zones"       value={plan.impact_zones?.length ?? 0}          color="#0891b2" />
-        <StatCard label="Ambulances Alloc."  value={plan.allocations?.ambulances_allocated ?? 0} color="#7c3aed" />
-        <StatCard label="Buses Allocated"    value={plan.allocations?.buses_allocated ?? 0}      color="#059669" />
+        <StatCard label="Total Population"    value={plan.population_stats?.total ?? 0}      color="#7c3aed" />
+        <StatCard label="Vulnerable"           value={totalVulnerable}                         sub="requiring assistance" color="#dc2626" />
+        <StatCard label="Mobile"               value={plan.population_stats?.mobile ?? 0}     color="#d97706" />
+        <StatCard label="Impact Zones"         value={plan.impact_zones?.length ?? 0}         color="#0891b2" />
+        <StatCard label="Ambulances Alloc."    value={plan.allocations?.ambulances_allocated ?? 0} color="#7c3aed" />
+        <StatCard label="Rescue Units Alloc."  value={rescueAllocated}                         color="#059669" />
       </div>
 
       {/* Evacuation Routes Map */}
@@ -582,32 +584,30 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         <div style={section}>
           <SectionTitle icon={<CarOutlined />} title="Route Details" sub="Best evacuation routes per zone to each shelter" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {Object.entries(plan.best_routes_per_zone).map(([, routes]) =>
-              routes.map((route, i) => (
-                <div key={route.route_id} style={{
-                  background: '#f9fafb', borderRadius: 10, padding: '12px 14px',
-                  border: '1px solid #e5e7eb', borderLeft: `4px solid ${ROUTE_COLORS[i % ROUTE_COLORS.length]}`,
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                    <div>
-                      <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
-                        {route.zone_name} → {route.shelter_name}
-                      </Text>
-                      {route.fallback && <Tag style={{ marginLeft: 8, fontSize: 10, color: '#9ca3af', background: '#f3f4f6', border: '1px solid #e5e7eb' }}>Fallback</Tag>}
-                    </div>
-                    <Text style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>Score: {route.score}</Text>
+            {allRoutes.map((route, i) => (
+              <div key={route.route_id} style={{
+                background: '#f9fafb', borderRadius: 10, padding: '12px 14px',
+                border: '1px solid #e5e7eb', borderLeft: `4px solid ${ROUTE_COLORS[i % ROUTE_COLORS.length]}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  <div>
+                    <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
+                      {route.origin_label ?? 'Impact Zone'} → {route.shelter_name}
+                    </Text>
+                    {route.fallback && <Tag style={{ marginLeft: 8, fontSize: 10, color: '#9ca3af', background: '#f3f4f6', border: '1px solid #e5e7eb' }}>Fallback</Tag>}
                   </div>
-                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                    <Text style={{ fontSize: 12, color: '#6b7280' }}>📏 <strong>{route.distance_km} km</strong> ({fmtMeters(route.length_meters)})</Text>
-                    <Text style={{ fontSize: 12, color: '#6b7280' }}>⏱ <strong>{fmtMins(route.estimated_time_min)}</strong> ETA</Text>
-                    {route.traffic_delay_seconds > 0 && (
-                      <Text style={{ fontSize: 12, color: '#f97316' }}>🚦 +{fmtMins(route.traffic_delay_seconds / 60)} traffic delay</Text>
-                    )}
-                    <Text style={{ fontSize: 12, color: '#6b7280' }}>🏟 Shelter capacity: <strong>{route.shelter_capacity.toLocaleString()}</strong></Text>
-                  </div>
+                  <Text style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>Score: {route.score}</Text>
                 </div>
-              ))
-            )}
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <Text style={{ fontSize: 12, color: '#6b7280' }}>📏 <strong>{route.distance_km} km</strong> ({fmtMeters(route.length_meters)})</Text>
+                  <Text style={{ fontSize: 12, color: '#6b7280' }}>⏱ <strong>{fmtMins(route.estimated_time_min)}</strong> ETA</Text>
+                  {route.traffic_delay_seconds > 0 && (
+                    <Text style={{ fontSize: 12, color: '#f97316' }}>🚦 +{fmtMins(route.traffic_delay_seconds / 60)} traffic delay</Text>
+                  )}
+                  <Text style={{ fontSize: 12, color: '#6b7280' }}>🏟 Shelter capacity: <strong>{route.shelter_capacity.toLocaleString()}</strong></Text>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -617,18 +617,18 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         <SectionTitle icon={<AlertOutlined />} title="Impact Zones" sub="Zones requiring evacuation" />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {plan.impact_zones.map((zone, idx) => {
-            const zoneKey = zone.zone_id ?? zone.area_name ?? String(idx);
-            const metric = plan.completion_metrics[zoneKey];
+            const zKey = zone.zone_id ?? zone.area_name ?? String(idx);
+            const metric = plan.completion_metrics[zKey];
             const pct = metric?.percentage ?? 0;
             const sevColor = (zone.severity ? SEV_COLOR[zone.severity] : undefined) ?? '#6b7280';
             return (
-              <div key={zoneKey} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 14px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${sevColor}` }}>
+              <div key={zKey} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 14px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${sevColor}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {zone.severity && (
                       <Tag style={{ fontSize: 10, color: sevColor, background: sevColor + '15', border: `1px solid ${sevColor}30`, borderRadius: 20, margin: 0 }}>{zone.severity}</Tag>
                     )}
-                    <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{zone.name ?? zone.area_name ?? 'Unknown Zone'}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{zoneName(zone)}</Text>
                   </div>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <Text style={{ fontSize: 12, color: '#6b7280' }}>👥 <strong>{fmt(zone.population)}</strong> residents</Text>
@@ -640,7 +640,7 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
                 </div>
                 {zone.affected_roads && zone.affected_roads.length > 0 && (
                   <Text style={{ fontSize: 11, color: '#ef4444', display: 'block', marginBottom: 4 }}>
-                    🚧 Affected roads: {zone.affected_roads.map((r: any) => r.road_name ?? r).join(', ')}
+                    🚧 Affected roads: {zone.affected_roads.map((r: any) => r.road_name ?? r.name ?? r).join(', ')}
                   </Text>
                 )}
                 {zone.affected_facilities && zone.affected_facilities.length > 0 && (
@@ -706,14 +706,15 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
 
       {/* Transport Plan */}
       <div style={section}>
-        <SectionTitle icon={<CarOutlined />} title="Transport Plan" sub={`${fmt(plan.transport_plan.total_buses)} buses · ${fmt(plan.transport_plan.total_ambulances)} ambulances · ${fmt(plan.transport_plan.total_people)} people`} />
+        <SectionTitle icon={<CarOutlined />} title="Transport Plan"
+          sub={`${fmt(totalAmbulances)} ambulances · ${fmt(totalRescueUnits)} rescue units · ${fmt(totalPeople)} people`} />
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
           {[
-            { label: 'Total Buses',          value: plan.transport_plan.total_buses,       color: '#2563eb' },
-            { label: 'Total Ambulances',     value: plan.transport_plan.total_ambulances,  color: '#dc2626' },
-            { label: 'People to Evacuate',   value: plan.transport_plan.total_people,      color: '#7c3aed' },
-            { label: 'Vulnerable People',    value: plan.transport_plan.total_vulnerable,  color: '#9333ea' },
+            { label: 'Total Ambulances',    value: totalAmbulances,  color: '#dc2626' },
+            { label: 'Rescue Units Needed', value: totalRescueUnits, color: '#2563eb' },
+            { label: 'People to Evacuate',  value: totalPeople,      color: '#7c3aed' },
+            { label: 'Vulnerable People',   value: totalVulnerable,  color: '#9333ea' },
           ].map(s => (
             <div key={s.label} style={{ flex: '1 1 130px', background: '#f9fafb', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb' }}>
               <Text style={{ fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 2 }}>{s.label}</Text>
@@ -726,7 +727,7 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: '#f9fafb' }}>
-                {['Zone', 'Shelter', 'Buses', 'Ambulances', 'ETA'].map(h => (
+                {['Shelter', 'Ambulances', 'Rescue Units', 'ETA'].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', borderBottom: '1px solid #e5e7eb' }}>{h}</th>
                 ))}
               </tr>
@@ -734,10 +735,9 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
             <tbody>
               {plan.transport_plan.schedules.map((s, i) => (
                 <tr key={s.route_id ?? i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-                  <td style={{ padding: '8px 12px', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>{s.zone_name ?? '—'}</td>
                   <td style={{ padding: '8px 12px', color: '#374151', fontWeight: 500, borderBottom: '1px solid #f3f4f6' }}>{s.shelter_name ?? '—'}</td>
-                  <td style={{ padding: '8px 12px', borderBottom: '1px solid #f3f4f6' }}><span style={{ color: '#2563eb', fontWeight: 600 }}>{fmt(s.buses_needed)}</span></td>
                   <td style={{ padding: '8px 12px', borderBottom: '1px solid #f3f4f6' }}><span style={{ color: '#dc2626', fontWeight: 600 }}>{fmt(s.ambulances_needed)}</span></td>
+                  <td style={{ padding: '8px 12px', borderBottom: '1px solid #f3f4f6' }}><span style={{ color: '#2563eb', fontWeight: 600 }}>{fmt(s.rescue_units_needed ?? s.buses_needed ?? 0)}</span></td>
                   <td style={{ padding: '8px 12px', borderBottom: '1px solid #f3f4f6', color: '#6b7280' }}>{s.estimated_time_min} min</td>
                 </tr>
               ))}
@@ -746,18 +746,18 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         </div>
       </div>
 
-      {/* Traffic Info — only shown when segments are present */}
-      {plan.traffic_snapshot?.segments?.length > 0 && (
-      <div style={section}>
-        <SectionTitle icon={<CarOutlined />} title="Traffic Information" />
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Tag style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0' }}>
-            🟢 Live traffic data used
-          </Tag>
-          <Text style={{ fontSize: 12, color: '#9ca3af' }}>Mode: {plan.traffic_snapshot.mode}</Text>
-          <Text style={{ fontSize: 12, color: '#6b7280' }}>{plan.traffic_snapshot.segments.length} segments monitored</Text>
+      {/* Traffic Info */}
+      {(plan.traffic_snapshot?.segments?.length > 0) && (
+        <div style={section}>
+          <SectionTitle icon={<CarOutlined />} title="Traffic Information" />
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Tag style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0' }}>
+              🟢 Live traffic data used
+            </Tag>
+            <Text style={{ fontSize: 12, color: '#9ca3af' }}>Source: {plan.traffic_snapshot.source ?? plan.traffic_snapshot.mode ?? 'N/A'}</Text>
+            <Text style={{ fontSize: 12, color: '#6b7280' }}>{plan.traffic_snapshot.segments.length} segments monitored</Text>
+          </div>
         </div>
-      </div>
       )}
 
       {/* Allocations */}
@@ -765,9 +765,9 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         <SectionTitle icon={<TeamOutlined />} title="Resource Allocations" />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8, marginBottom: 10 }}>
           {[
-            { label: 'Ambulances Allocated', value: String(plan.allocations.ambulances_allocated), color: '#dc2626' },
-            { label: 'Buses Allocated',      value: String(plan.allocations.buses_allocated),      color: '#2563eb' },
-            { label: 'Allocation Confirmed', value: plan.allocations.allocation_confirmed ? 'Yes' : 'No', color: plan.allocations.allocation_confirmed ? '#16a34a' : '#6b7280' },
+            { label: 'Ambulances Allocated',    value: String(plan.allocations.ambulances_allocated),   color: '#dc2626' },
+            { label: 'Rescue Units Allocated',  value: String(rescueAllocated),                          color: '#2563eb' },
+            { label: 'Allocation Confirmed',    value: plan.allocations.allocation_confirmed ? 'Yes' : 'No', color: plan.allocations.allocation_confirmed ? '#16a34a' : '#6b7280' },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
               <Text style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 2 }}>{label}</Text>
@@ -783,15 +783,15 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         <SectionTitle icon={<TeamOutlined />} title="Plan Details" />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
           {[
-            { label: 'Plan Reference',   value: plan.plan_ref },
-            { label: 'Status',           value: plan.plan_status },
-            { label: 'Auto Approved',    value: plan.auto_approved ? 'Yes' : 'No' },
-            { label: 'Approved By',      value: plan.approved_by ?? (plan.auto_approved ? 'System (auto)' : '—') },
-            { label: 'Approved At',      value: fmtDate(plan.approved_at) },
-            { label: 'Activated At',     value: fmtDate(plan.activated_at) },
-            { label: 'Completed At',     value: fmtDate(plan.completed_at) },
-            { label: 'Created At',       value: fmtDate(plan.created_at) },
-            { label: 'Last Updated',     value: fmtDate(plan.updated_at) },
+            { label: 'Plan Reference', value: plan.plan_ref },
+            { label: 'Status',         value: plan.plan_status },
+            { label: 'Auto Approved',  value: plan.auto_approved ? 'Yes' : 'No' },
+            { label: 'Approved By',    value: plan.approved_by ?? (plan.auto_approved ? 'System (auto)' : '—') },
+            { label: 'Approved At',    value: fmtDate(plan.approved_at) },
+            { label: 'Activated At',   value: fmtDate(plan.activated_at) },
+            { label: 'Completed At',   value: fmtDate(plan.completed_at) },
+            { label: 'Created At',     value: fmtDate(plan.created_at) },
+            { label: 'Last Updated',   value: fmtDate(plan.updated_at) },
             ...(plan.notes ? [{ label: 'Notes', value: plan.notes }] : []),
           ].map(({ label, value }) => (
             <div key={label} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>

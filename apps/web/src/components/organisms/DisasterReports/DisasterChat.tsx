@@ -199,7 +199,7 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
         title: `💬 ${msg.sender_name}`,
         description: msg.message.length > 80 ? msg.message.slice(0, 77) + '…' : msg.message,
         severity: 'low',
-        timestamp: msg.sent_at ? new Date(msg.sent_at) : new Date(),
+        timestamp: msg.sent_at ? new Date(msg.sent_at.endsWith('Z') || msg.sent_at.includes('+') ? msg.sent_at : msg.sent_at + 'Z') : new Date(),
         read: false,
         raw: {
           event_type: 'chat.message',
