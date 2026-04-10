@@ -5,6 +5,7 @@
 //   added PhotoGallery and LogUpdates sub-page navigation via currentView state
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Card,
   Row,
@@ -17,6 +18,7 @@ import {
   Spin,
   Empty,
   Space,
+  Tooltip,
 } from 'antd';
 import {
   FireOutlined,
@@ -33,6 +35,7 @@ import {
   UnorderedListOutlined,
   EnvironmentFilled,
   SearchOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { getDisasterReports } from '../../../services';
 import apiClient from '../../../lib/axios';
@@ -46,16 +49,22 @@ import PhotoGallery from './PhotoGallery';
 import LogUpdates from './LogUpdates';
 import DeployedUnits from './DeployedUnits';
 import EvacuationPlanPage from './EvacuationPlanPage';
+import DisasterChat from './DisasterChat';
 import './DisasterReports.css';
 
 const { Search } = Input;
 
-type DisasterView = 'list' | 'photos' | 'logs' | 'units' | 'evacuation';
+type DisasterView = 'list' | 'photos' | 'logs' | 'units' | 'evacuation' | 'chat';
+
+// ── Chat history availability ─────────────────────────────────────────────────
+// Maps disaster ID → total_messages (-1 = not yet fetched, 0 = fetching, n = count)
+type ChatMeta = { total: number; fetching: boolean };
 
 
 
 
 const DisasterReports: React.FC = () => {
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<DisasterReport[]>([]);
   const [filteredReports, setFilteredReports] = useState<DisasterReport[]>([]);
@@ -76,6 +85,9 @@ const DisasterReports: React.FC = () => {
   // Evacuation plans: map of disaster_id → plan_id
   const [evacuationPlanMap, setEvacuationPlanMap] = useState<Record<string, string>>({});
 
+  // Chat history metadata per disaster (to enable/disable chat button)
+  const [chatMetaMap, setChatMetaMap] = useState<Record<string, ChatMeta>>({});
+
   // Modal state
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
   const [escalateModalOpen, setEscalateModalOpen] = useState(false);
@@ -86,6 +98,17 @@ const DisasterReports: React.FC = () => {
     fetchReports();
     fetchEvacuationPlans();
   }, []);
+
+  // Auto-open chat when navigated from a chat notification
+  useEffect(() => {
+    const disasterId = (location.state as any)?.openChatForDisasterId;
+    if (!disasterId || reports.length === 0) return;
+    const report = reports.find((r) => r.id === disasterId);
+    if (report) {
+      setSelectedReport(report);
+      setCurrentView('chat');
+    }
+  }, [location.state, reports]);
 
   const filterReports = useCallback(() => {
     let filtered = [...reports];
@@ -157,6 +180,35 @@ const DisasterReports: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── Fetch chat message count when a card is expanded ─────────────────────
+  const fetchChatMeta = useCallback(async (disasterId: string) => {
+    if (chatMetaMap[disasterId]) return; // already fetched or fetching
+    setChatMetaMap((prev) => ({ ...prev, [disasterId]: { total: 0, fetching: true } }));
+    try {
+      const res = await apiClient.get<{ total_messages: number }>(
+        API_ENDPOINTS.CHAT.HISTORY(disasterId),
+      );
+      const total = res.data?.total_messages ?? 0;
+      setChatMetaMap((prev) => ({ ...prev, [disasterId]: { total, fetching: false } }));
+    } catch {
+      // Network error — treat as unknown; don't block the button
+      setChatMetaMap((prev) => ({ ...prev, [disasterId]: { total: 0, fetching: false } }));
+    }
+  }, [chatMetaMap]);
+
+  // Trigger fetch whenever a card is expanded
+  useEffect(() => {
+    if (!expandedId) return;
+    fetchChatMeta(expandedId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedId]);
+
+  const openChat = (report: DisasterReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedReport(report);
+    setCurrentView('chat');
   };
 
   const openDispatchModal = (report: DisasterReport, e: React.MouseEvent) => {
@@ -296,6 +348,10 @@ const DisasterReports: React.FC = () => {
         onBack={() => { setCurrentView('list'); setSelectedEvacPlanId(null); }}
       />
     );
+  }
+
+  if (currentView === 'chat' && selectedReport) {
+    return <DisasterChat report={selectedReport} onBack={() => setCurrentView('list')} />;
   }
 
   // ─── Main list view ──────────────────────────────────────────────────────────
@@ -589,6 +645,14 @@ const DisasterReports: React.FC = () => {
                           <div className="admin-actions">
                             {(() => {
                               const isActionable = report.disasterStatus === 'ACTIVE' || report.disasterStatus === 'MONITORING';
+                              const chatMeta     = chatMetaMap[report.id];
+                              const chatFetching = chatMeta?.fetching ?? (expandedId === report.id && !chatMeta);
+                              const chatEnabled  = isActionable && (report.units ?? 0) > 0;
+                              const chatTooltip  = !isActionable
+                                ? 'Chat only available for active / monitoring disasters'
+                                : (report.units ?? 0) === 0
+                                ? 'No units assigned to this disaster'
+                                : undefined;
                               return (
                                 <>
                                   <Button
@@ -623,6 +687,17 @@ const DisasterReports: React.FC = () => {
                                   >
                                     Mark as Resolved
                                   </Button>
+                                  <Tooltip title={chatTooltip}>
+                                    <Button
+                                      icon={chatFetching ? <Spin size="small" /> : <MessageOutlined />}
+                                      block
+                                      disabled={!chatEnabled || chatFetching}
+                                      onClick={(e) => openChat(report, e)}
+                                      style={chatEnabled ? { borderColor: '#0ea5e9', color: '#0ea5e9' } : {}}
+                                    >
+                                      {chatFetching ? 'Checking chat…' : 'Open Chat'}
+                                    </Button>
+                                  </Tooltip>
                                 </>
                               );
                             })()}

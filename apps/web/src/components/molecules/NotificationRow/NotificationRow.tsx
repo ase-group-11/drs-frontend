@@ -5,7 +5,18 @@ import { SEVERITY_CONFIG } from '../../atoms/SeverityBadge';
 
 const { Text } = Typography;
 
-function formatTime(date: Date): string {
+function normalizeDate(n: AppNotification): Date {
+  // Backend sends UTC timestamps without 'Z'. Use raw.timestamp with Z
+  // normalization so "ago" is computed from the correct UTC time.
+  const raw = n.raw?.timestamp;
+  if (raw && typeof raw === 'string') {
+    return new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z');
+  }
+  return n.timestamp;
+}
+
+function formatTime(n: AppNotification): string {
+  const date = normalizeDate(n);
   const diff = Math.floor((Date.now() - date.getTime()) / 1000);
   if (diff < 60) return 'Just now';
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -60,7 +71,7 @@ const NotificationRow: React.FC<NotificationRowProps> = ({ notification: n, onCl
             {n.title}
           </Text>
           <Text style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
-            {formatTime(n.timestamp)}
+            {formatTime(n)}
           </Text>
         </div>
         <Text style={{ fontSize: 12, color: '#6b7280', display: 'block', marginTop: 2, lineHeight: 1.5 }}>

@@ -7,14 +7,27 @@ import { SEVERITY_CONFIG as SEV } from '../../atoms';
 
 // ─── Time formatting ──────────────────────────────────────────────────────────
 
-function formatFull(date: Date): string {
+function normalizeTimestamp(n: AppNotification): Date {
+  // Backend sends UTC timestamps without 'Z'. Normalize with Z so all
+  // time calculations are correct regardless of where the notification
+  // was created (disaster WS, chat bridge, etc.)
+  const raw = n.raw?.timestamp;
+  if (raw && typeof raw === 'string') {
+    return new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z');
+  }
+  return n.timestamp;
+}
+
+function formatFull(n: AppNotification): string {
+  const date = normalizeTimestamp(n);
   return date.toLocaleString('en-IE', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
   });
 }
 
-function formatAgo(date: Date): string {
+function formatAgo(n: AppNotification): string {
+  const date = normalizeTimestamp(n);
   const diff = Math.floor((Date.now() - date.getTime()) / 1000);
   if (diff < 60)   return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -270,7 +283,7 @@ const ActivityCard: React.FC<{ n: AppNotification; highlight: boolean }> = ({ n,
             {sev.label}
           </Tag>
           <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-            {formatAgo(n.timestamp)}
+            {formatAgo(n)}
           </div>
         </div>
       </div>
@@ -316,7 +329,7 @@ const ActivityCard: React.FC<{ n: AppNotification; highlight: boolean }> = ({ n,
 
       {/* Full timestamp at bottom */}
       <div style={{ marginTop: 10, fontSize: 11, color: '#6b7280', fontWeight: 500 }}>
-        {formatFull(n.timestamp)}
+        {formatFull(n)}
       </div>
     </div>
   );

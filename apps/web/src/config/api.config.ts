@@ -1,5 +1,6 @@
 export const API_CONFIG = {
-  BASE_URL: process.env.REACT_APP_API_URL,
+  BASE_URL:   process.env.REACT_APP_API_URL,
+  HEALTH_URL: process.env.REACT_APP_HEALTH_URL, // root base — no /api/v1
   TIMEOUT: 10000,
   HEADERS: {
     'Content-Type': 'application/json',
@@ -121,12 +122,17 @@ export const API_ENDPOINTS = {
     ACTIVATE: (id: string) => `/evacuations/${id}/activate`,
   },
 
+  // ── Chat ─────────────────────────────────────────────────────────────────────
+  CHAT: {
+    HISTORY: (disasterId: string) => `/chat/${disasterId}/history`,
+  },
+
   // ── Settings ─────────────────────────────────────────────────────────────────
   SETTINGS: {
-    GENERAL:        '/admin/settings/general',
-    NOTIFICATIONS:  '/admin/settings/notifications',
-    SECURITY:       '/admin/settings/security',
-    SYSTEM_STATUS:  '/admin/settings/system-status',
-    CHANGE_PASSWORD:'/emergency-team/change-password',
+    GENERAL:         '/admin/settings/general',
+    NOTIFICATIONS:   '/admin/settings/notifications',
+    SECURITY:        '/admin/settings/security',
+    CHANGE_PASSWORD: '/emergency-team/change-password',
+    HEALTH:          '/health/ready', // uses healthClient (REACT_APP_HEALTH_URL), not apiClient
   },
 };

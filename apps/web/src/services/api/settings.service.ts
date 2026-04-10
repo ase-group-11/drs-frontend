@@ -1,9 +1,9 @@
-import apiClient from '../../lib/axios';
+import apiClient, { healthClient } from '../../lib/axios';
 import { API_ENDPOINTS } from '../../config';
 import type {
   GeneralSettings,
   NotificationSettings,
-  SystemStatus,
+  HealthResponse,
   AdminApiResponse,
 } from '../../types';
 
@@ -17,7 +17,7 @@ export const getGeneralSettings = async (): Promise<AdminApiResponse<GeneralSett
 };
 
 export const saveGeneralSettings = async (
-  payload: GeneralSettings
+  payload: GeneralSettings,
 ): Promise<AdminApiResponse<GeneralSettings>> => {
   try {
     const response = await apiClient.put(API_ENDPOINTS.SETTINGS.GENERAL, payload);
@@ -37,7 +37,7 @@ export const getNotificationSettings = async (): Promise<AdminApiResponse<Notifi
 };
 
 export const saveNotificationSettings = async (
-  payload: NotificationSettings
+  payload: NotificationSettings,
 ): Promise<AdminApiResponse<NotificationSettings>> => {
   try {
     const response = await apiClient.put(API_ENDPOINTS.SETTINGS.NOTIFICATIONS, payload);
@@ -52,7 +52,6 @@ export const changeAdminPassword = async (payload: {
   newPassword: string;
 }): Promise<AdminApiResponse> => {
   try {
-    // team_member_id is required as a query param by the backend
     const storedUser = localStorage.getItem('user');
     const user = storedUser ? JSON.parse(storedUser) : null;
     const teamMemberId = user?.userId || user?.id || '';
@@ -72,9 +71,11 @@ export const changeAdminPassword = async (payload: {
   }
 };
 
-export const getSystemStatus = async (): Promise<AdminApiResponse<SystemStatus>> => {
+// Uses healthClient (REACT_APP_HEALTH_URL) — same pattern as all other calls,
+// just a different axios instance because the base URL has no /api/v1.
+export const getSystemStatus = async (): Promise<AdminApiResponse<HealthResponse>> => {
   try {
-    const response = await apiClient.get(API_ENDPOINTS.SETTINGS.SYSTEM_STATUS);
+    const response = await healthClient.get(API_ENDPOINTS.SETTINGS.HEALTH);
     return { success: true, message: 'System status fetched', data: response.data };
   } catch (error: any) {
     return { success: false, message: error?.response?.data?.detail || 'Failed to load system status' };

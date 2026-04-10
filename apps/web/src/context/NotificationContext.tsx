@@ -18,6 +18,7 @@ interface NotificationContextType {
   toggleSound: () => void;
   disconnect: () => void;
   reconnect: () => void;
+  pushNotification: (n: AppNotification) => void;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
