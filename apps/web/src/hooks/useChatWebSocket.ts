@@ -62,11 +62,11 @@ function saveToStorage(disasterId: string, messages: ChatMessage[]) {
         storageKey(disasterId),
         JSON.stringify({ messages: messages.slice(-50), savedAt: Date.now() }),
       );
-    } catch { /* quota exhausted — give up */ }
+    } catch { /* quota exhausted */ }
   }
 }
 
-// ─── Merge + dedup helpers ────────────────────────────────────────────────────
+// ─── Merge + dedup by id ──────────────────────────────────────────────────────
 
 export function mergeMessages(a: ChatMessage[], b: ChatMessage[]): ChatMessage[] {
   const seen = new Set<string>();
@@ -80,7 +80,7 @@ export function mergeMessages(a: ChatMessage[], b: ChatMessage[]): ChatMessage[]
   return result.sort((x, y) => x.seq - y.seq);
 }
 
-// ─── Decode JWT sub without a library ────────────────────────────────────────
+// ─── Decode JWT sub ───────────────────────────────────────────────────────────
 
 function getTokenSub(): string | null {
   try {
@@ -93,11 +93,21 @@ function getTokenSub(): string | null {
   }
 }
 
+function getTokenFullName(): string {
+  try {
+    const user = localStorage.getItem('user');
+    if (!user) return 'Me';
+    const parsed = JSON.parse(user);
+    return parsed.fullName ?? parsed.full_name ?? 'Me';
+  } catch {
+    return 'Me';
+  }
+}
+
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 export interface UseChatWebSocketOptions {
   disasterId: string;
-  /** Called for every inbound message from another user. Use to push a notification. */
   onNewMessage?: (msg: ChatMessage) => void;
 }
 
@@ -112,20 +122,20 @@ export function useChatWebSocket({
   disasterId,
   onNewMessage,
 }: UseChatWebSocketOptions): UseChatWebSocketReturn {
-  // Seed from localStorage so history survives navigation within the TTL window
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     loadChatFromStorage(disasterId),
   );
   const [connected, setConnected] = useState(false);
 
-  const wsRef          = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectCount = useRef(0);
-  const isMounted      = useRef(true);
-  const onNewMsgRef    = useRef(onNewMessage);
-  onNewMsgRef.current  = onNewMessage;
+  const wsRef           = useRef<WebSocket | null>(null);
+  const reconnectTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectCount  = useRef(0);
+  const isMounted       = useRef(true);
+  const hasConnected    = useRef(false);   // StrictMode guard
+  const onNewMsgRef     = useRef(onNewMessage);
+  onNewMsgRef.current   = onNewMessage;
 
-  const currentUserId = useRef<string | null>(getTokenSub());
+  const currentUserId   = useRef<string | null>(getTokenSub());
 
   const getWsUrl = useCallback((): string | null => {
     const token = localStorage.getItem('token');
@@ -141,14 +151,19 @@ export function useChatWebSocket({
     const url = getWsUrl();
     if (!url) { console.warn('[ChatWS] No token — skipping'); return; }
 
-    if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
+    // Close any stale socket without triggering the onclose reconnect logic
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
 
     console.log('[ChatWS] Connecting:', url);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (!isMounted.current) return;
+      if (!isMounted.current) { ws.close(); return; }
       console.log('[ChatWS] Connected ✓');
       setConnected(true);
       reconnectCount.current = 0;
@@ -164,15 +179,16 @@ export function useChatWebSocket({
           return;
         }
 
-        if (frame.type === 'system') {
-          // System join/leave messages — currently ignored in UI
-          return;
-        }
+        if (frame.type === 'system') return;
 
         if (frame.type === 'history') {
           const historyMsgs = frame.messages ?? [];
           setMessages((prev) => {
-            const merged = mergeMessages(historyMsgs, prev);
+            // Replace optimistic messages that now have real server ids
+            const merged = mergeMessages(
+              historyMsgs,
+              prev.filter((m) => m.id.startsWith('optimistic-')),
+            );
             saveToStorage(disasterId, merged);
             return merged;
           });
@@ -182,11 +198,20 @@ export function useChatWebSocket({
         if (frame.type === 'message') {
           const msg = frame as ChatMessage;
           setMessages((prev) => {
-            const merged = mergeMessages(prev, [msg]);
+            // Remove the optimistic placeholder for this message if it exists
+            // (match by message text + sender — the server doesn't echo our temp id)
+            const withoutOptimistic = prev.filter(
+              (m) => !(
+                m.id.startsWith('optimistic-') &&
+                m.message === msg.message &&
+                m.sender_id === msg.sender_id
+              )
+            );
+            const merged = mergeMessages(withoutOptimistic, [msg]);
             saveToStorage(disasterId, merged);
             return merged;
           });
-          // Only surface a notification for messages sent by someone else
+          // Notify only for other users' messages
           if (msg.sender_id !== currentUserId.current) {
             onNewMsgRef.current?.(msg);
           }
@@ -209,29 +234,69 @@ export function useChatWebSocket({
     ws.onerror = () => ws.close();
   }, [disasterId, getWsUrl]);
 
+  // StrictMode-safe: delay connect by 50ms so the cleanup from the first
+  // mount can cancel it before a socket opens (same pattern as useWebSocket.ts)
   useEffect(() => {
     isMounted.current = true;
-    connect();
+    if (hasConnected.current) return;
+
+    const initTimer = setTimeout(() => {
+      if (!isMounted.current) return;
+      hasConnected.current = true;
+      connect();
+    }, 50);
+
     return () => {
+      clearTimeout(initTimer);
       isMounted.current = false;
+      hasConnected.current = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null; }
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sendMessage = useCallback((text: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ message: text }));
-    } else {
-      console.warn('[ChatWS] Cannot send — socket not open');
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn('[ChatWS] Cannot send — socket not open (state:', ws?.readyState, ')');
+      return;
     }
-  }, []);
+
+    // Optimistic update — add immediately so the sender sees it instantly.
+    // The real echo from the server will replace this via the dedup logic above.
+    const optimistic: ChatMessage = {
+      id: `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      seq: Date.now(),           // high seq so it sorts to the bottom
+      message: text,
+      sent_at: new Date().toISOString(),
+      sender_id: currentUserId.current ?? 'me',
+      sender_name: getTokenFullName(),
+      sender_type: 'admin',
+      type: 'message',
+      disaster_id: disasterId,
+    };
+    setMessages((prev) => {
+      const next = mergeMessages(prev, [optimistic]);
+      saveToStorage(disasterId, next);
+      return next;
+    });
+
+    ws.send(JSON.stringify({ message: text }));
+  }, [disasterId]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-    reconnectCount.current = MAX_RECONNECTS; // prevent auto-reconnect
-    if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null; }
+    reconnectCount.current = MAX_RECONNECTS;
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
     setConnected(false);
   }, []);
 

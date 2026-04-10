@@ -1,27 +1,6 @@
 /* File: /web/src/components/organisms/DisasterReports/DisasterChat.css */
-
-/* ─── Page wrapper ─────────────────────────────────────────────────── */
-/*
-  admin-content has: margin: 88px 24px 24px
-  We escape the 24px side/bottom padding with negative margins,
-  and clamp height to exactly fill from content-top to viewport-bottom.
-  body.chat-open (set via JS) kills the outer scroll entirely.
-*/
-
-body.chat-open {
-  overflow: hidden;
-}
-
-.disaster-chat-page {
-  display: flex;
-  flex-direction: column;
-  /* Escape the 24px side/bottom margins of admin-content */
-  margin: -24px -24px -24px;
-  /* Fill exactly from where admin-content starts (88px from top) to viewport bottom */
-  height: calc(100vh - 88px);
-  background: #f8fafc;
-  overflow: hidden;
-}
+/* Layout (position, top, left, right, bottom, height) is handled inline   */
+/* in the component via ReactDOM.createPortal. Only inner styles live here. */
 
 /* ─── Header ───────────────────────────────────────────────────────── */
 
@@ -110,15 +89,12 @@ body.chat-open {
   scroll-behavior: smooth;
 }
 
+/* No visible scrollbar — scroll still works via wheel/trackpad/touch */
+.chat-messages-area {
+  scrollbar-width: none; /* Firefox */
+}
 .chat-messages-area::-webkit-scrollbar {
-  width: 5px;
-}
-.chat-messages-area::-webkit-scrollbar-track {
-  background: transparent;
-}
-.chat-messages-area::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
+  display: none; /* Chrome, Safari, Edge */
 }
 
 /* ─── Date divider ─────────────────────────────────────────────────── */
@@ -200,7 +176,6 @@ body.chat-open {
   border-radius: 16px;
   word-break: break-word;
   line-height: 1.5;
-  position: relative;
 }
 
 .bubble-self {
@@ -241,24 +216,9 @@ body.chat-open {
   text-align: center;
 }
 
-.chat-empty-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-  opacity: 0.6;
-}
-
-.chat-empty-text {
-  font-size: 16px;
-  font-weight: 600;
-  color: #374151;
-  margin: 0 0 4px;
-}
-
-.chat-empty-sub {
-  font-size: 13px;
-  color: #9ca3af;
-  margin: 0;
-}
+.chat-empty-icon  { font-size: 48px; margin-bottom: 12px; opacity: 0.6; }
+.chat-empty-text  { font-size: 16px; font-weight: 600; color: #374151; margin: 0 0 4px; }
+.chat-empty-sub   { font-size: 13px; color: #9ca3af; margin: 0; }
 
 /* ─── Input area ───────────────────────────────────────────────────── */
 
@@ -323,48 +283,15 @@ body.chat-open {
   margin-top: 6px;
   font-size: 11px;
   color: #9ca3af;
-  padding: 0 42px;
   text-align: center;
 }
 
 /* ─── Responsive ───────────────────────────────────────────────────── */
 
-/* Mobile: admin-content margin is 80px 12px 16px */
 @media (max-width: 768px) {
-  .disaster-chat-page {
-    margin: -16px -12px -16px;
-    height: calc(100vh - 80px);
-  }
-
-  .chat-header {
-    padding: 10px 14px;
-  }
-
-  .chat-messages-area {
-    padding: 12px 14px;
-  }
-
-  .chat-bubble-col {
-    max-width: 80%;
-  }
-
-  .chat-input-area {
-    padding: 10px 14px 12px;
-  }
-
-  .chat-disaster-name {
-    font-size: 14px;
-  }
-
-  .chat-input-hint {
-    padding: 0 8px;
-  }
-}
-
-/* Small mobile: admin-content margin is 80px 8px 16px */
-@media (max-width: 480px) {
-  .disaster-chat-page {
-    margin: -16px -8px -16px;
-    height: calc(100vh - 80px);
-  }
+  .chat-header          { padding: 10px 14px; }
+  .chat-messages-area   { padding: 12px 14px; }
+  .chat-bubble-col      { max-width: 80%; }
+  .chat-input-area      { padding: 10px 14px 12px; }
+  .chat-disaster-name   { font-size: 14px; }
 }

@@ -1,6 +1,7 @@
 // File: /web/src/components/organisms/DisasterReports/DisasterChat.tsx
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import {
   Button,
   Input,
@@ -38,8 +39,10 @@ function getTokenSub(): string | null {
 
 function formatTime(iso: string): string {
   try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // Backend sends UTC timestamps without 'Z' — append it so JS parses as UTC
+    // and toLocaleTimeString converts correctly to the browser's local timezone.
+    const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z';
+    return new Date(normalized).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';
   }
@@ -47,7 +50,8 @@ function formatTime(iso: string): string {
 
 function formatDate(iso: string): string {
   try {
-    const d = new Date(iso);
+    const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z';
+    const d = new Date(normalized);
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
@@ -60,7 +64,7 @@ function formatDate(iso: string): string {
 }
 
 function groupByDate(messages: ChatMessage[]): Array<{ date: string; messages: ChatMessage[] }> {
-  const groups: Map<string, ChatMessage[]> = new Map();
+  const groups = new Map<string, ChatMessage[]>();
   for (const msg of messages) {
     const key = formatDate(msg.sent_at);
     if (!groups.has(key)) groups.set(key, []);
@@ -79,18 +83,11 @@ function SenderAvatar({ msg, isSelf }: { msg: ChatMessage; isSelf: boolean }) {
     .slice(0, 2)
     .toUpperCase();
 
-  const bg = isSelf
-    ? '#7c3aed'
-    : msg.sender_type === 'unit'
-    ? '#0ea5e9'
-    : '#6b7280';
+  const bg = isSelf ? '#7c3aed' : msg.sender_type === 'unit' ? '#0ea5e9' : '#6b7280';
 
   return (
     <Tooltip title={msg.sender_name} placement={isSelf ? 'left' : 'right'}>
-      <Avatar
-        size={30}
-        style={{ background: bg, fontSize: 11, fontWeight: 700, flexShrink: 0 }}
-      >
+      <Avatar size={30} style={{ background: bg, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
         {initials}
       </Avatar>
     </Tooltip>
@@ -120,10 +117,7 @@ function MessageBubble({
         {!isSelf && showSender && (
           <div className="chat-sender-name">
             {msg.sender_name}
-            <Tag
-              className="chat-sender-tag"
-              color={msg.sender_type === 'unit' ? 'blue' : 'default'}
-            >
+            <Tag className="chat-sender-tag" color={msg.sender_type === 'unit' ? 'blue' : 'default'}>
               {msg.sender_type === 'unit' ? 'Unit' : 'Admin'}
             </Tag>
           </div>
@@ -162,18 +156,38 @@ interface DisasterChatProps {
   onBack: () => void;
 }
 
-const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
-  const [inputValue, setInputValue]   = useState('');
-  const [sending, setSending]         = useState(false);
-  const messagesEndRef                = useRef<HTMLDivElement>(null);
-  const inputRef                      = useRef<any>(null);
-  const currentUserId                 = useRef(getTokenSub());
-  const { pushNotification }          = useNotifications();
+const HEADER_HEIGHT = 64; // px — matches .admin-header height
 
-  // Lock outer page scroll while chat is mounted
+const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
+  const [inputValue, setInputValue] = useState('');
+  const [sending, setSending]       = useState(false);
+  const [siderLeft, setSiderLeft]   = useState(0);
+  const messagesEndRef              = useRef<HTMLDivElement>(null);
+  const inputRef                    = useRef<any>(null);
+  const currentUserId               = useRef(getTokenSub());
+  const { pushNotification }        = useNotifications();
+
+  // ── Read sidebar width so the portal can sit flush to its right edge ─────
   useEffect(() => {
-    document.body.classList.add('chat-open');
-    return () => document.body.classList.remove('chat-open');
+    const measure = () => {
+      const sider = document.querySelector<HTMLElement>('.admin-sider');
+      setSiderLeft(sider ? sider.offsetWidth : 0);
+    };
+    measure();
+
+    // Re-measure when sidebar collapses/expands (triggered by transition end)
+    const sider = document.querySelector<HTMLElement>('.admin-sider');
+    sider?.addEventListener('transitionend', measure);
+
+    // Lock outer scroll on both html and body — browser may route to either
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      sider?.removeEventListener('transitionend', measure);
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
   }, []);
 
   // ── Chat-message → AppNotification bridge ────────────────────────────────
@@ -207,7 +221,7 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
     onNewMessage: handleNewMessage,
   });
 
-  // ── Auto-scroll to bottom ────────────────────────────────────────────────
+  // ── Auto-scroll to bottom on new messages ────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -237,12 +251,24 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
     }
   };
 
-  // ── Group messages by date ───────────────────────────────────────────────
   const groups = groupByDate(messages);
 
-  // ── Render ───────────────────────────────────────────────────────────────
-  return (
-    <div className="disaster-chat-page">
+  // ── Portal style — fixed, below header, right of sidebar ─────────────────
+  const portalStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: HEADER_HEIGHT,
+    left: siderLeft,
+    right: 0,
+    bottom: 0,
+    zIndex: 80, // above content (1), below header (90) and sidebar (100)
+    display: 'flex',
+    flexDirection: 'column',
+    background: '#f8fafc',
+    overflow: 'hidden',
+  };
+
+  const content = (
+    <div style={portalStyle}>
       {/* ── Header ── */}
       <div className="chat-header">
         <Button
@@ -250,9 +276,7 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
           icon={<ArrowLeftOutlined />}
           onClick={onBack}
           className="chat-back-btn"
-        >
-          Back
-        </Button>
+        />
 
         <div className="chat-header-info">
           <div className="chat-header-title">
@@ -261,7 +285,9 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
           </div>
           <div className="chat-header-meta">
             <TeamOutlined style={{ fontSize: 12, color: '#6b7280' }} />
-            <span className="chat-meta-text">{report.units} unit{report.units !== 1 ? 's' : ''} assigned</span>
+            <span className="chat-meta-text">
+              {report.units} unit{report.units !== 1 ? 's' : ''} assigned
+            </span>
           </div>
         </div>
 
@@ -294,8 +320,8 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
               <div key={date}>
                 <DateDivider label={date} />
                 {groupMsgs.map((msg, idx) => {
-                  const isSelf = msg.sender_id === currentUserId.current;
-                  const prevMsg = groupMsgs[idx - 1];
+                  const isSelf    = msg.sender_id === currentUserId.current;
+                  const prevMsg   = groupMsgs[idx - 1];
                   const showSender = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                   return (
                     <MessageBubble
@@ -317,11 +343,7 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
       <div className="chat-input-area">
         <div className="chat-input-row">
           <div className="chat-input-avatar">
-            <Avatar
-              size={32}
-              icon={<UserOutlined />}
-              style={{ background: '#7c3aed', flexShrink: 0 }}
-            />
+            <Avatar size={32} icon={<UserOutlined />} style={{ background: '#7c3aed', flexShrink: 0 }} />
           </div>
 
           <Input.TextArea
@@ -329,7 +351,11 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={connected ? 'Type a message… (Enter to send, Shift+Enter for newline)' : 'Reconnecting…'}
+            placeholder={
+              connected
+                ? 'Type a message… (Enter to send, Shift+Enter for newline)'
+                : 'Reconnecting…'
+            }
             disabled={!connected}
             autoSize={{ minRows: 1, maxRows: 4 }}
             className="chat-textarea"
@@ -352,6 +378,9 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
       </div>
     </div>
   );
+
+  // Portal to document.body so it's outside all layout containers
+  return ReactDOM.createPortal(content, document.body);
 };
 
 export default DisasterChat;
