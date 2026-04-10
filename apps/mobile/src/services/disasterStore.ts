@@ -106,6 +106,9 @@ interface StoreState {
 
   // Active missions for this unit
   activeMissions:     ActiveMission[];
+
+  // Current unit status — updated by both ActiveMissions and UnitStatus screens
+  unitStatus:         string | null;
 }
 
 type Listener = () => void;
@@ -122,6 +125,7 @@ class DisasterStore {
     alerts:            [],
     vehicle:           { registered: false },
     activeMissions:    [],
+    unitStatus:        null,
   };
 
   private listeners: Set<Listener> = new Set();
@@ -319,6 +323,12 @@ class DisasterStore {
         m => m.id !== deploymentId && m.deployment_id !== deploymentId
       ),
     };
+    this.notify();
+  }
+
+  // ── Unit status ─────────────────────────────────────────────────────────
+  setUnitStatus(status: string) {
+    this.state = { ...this.state, unitStatus: status };
     this.notify();
   }
 }

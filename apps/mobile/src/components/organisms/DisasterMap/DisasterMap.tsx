@@ -20,7 +20,6 @@ import { colors } from '@theme/colors';
 import type { Disaster } from '../../../types/disaster';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN } from '@env';
-import Geolocation from '@react-native-community/geolocation';
 import { mapService } from '@services/mapService';
 import { wsService, WSAlert } from '@services/wsService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -61,6 +60,7 @@ export interface DisasterMapRef {
   updateMyVehicle:            (lon: number, lat: number, progressPct: number) => void;
   clearVehicle:               () => void;
   clearReroute:               () => void;
+  showEvacuationRoute:        (destLat: number, destLon: number, label: string) => void;
 }
 
 // --- Reroute Types -------------------------------------------------------
@@ -89,14 +89,7 @@ const CONGESTION_LABEL: Record<CongestionLevel, string> = {
   light: 'Light', moderate: 'Moderate', heavy: 'Heavy', severe: 'Severe',
 };
 
-// How fast the dot moves along the path (fraction of total length per ms)
-// light = fastest, severe = slowest crawl
-const CONGESTION_SPEED: Record<CongestionLevel, number> = {
-  light:    0.00018,
-  moderate: 0.00010,
-  heavy:    0.000055,
-  severe:   0.000025,
-};
+
 
 const CONGESTION_LEVELS: CongestionLevel[] = ['light', 'moderate', 'heavy', 'severe'];
 
@@ -192,28 +185,42 @@ const buildLinesGeoJSON = (
     })),
 });
 
-const buildDotsGeoJSON = (
-  positions: Record<string, [number, number]>,
-  segments:  TrafficSegment[],
+// Single GeoJSON with ALL segments — data-driven color from congestion_level property
+const buildAllSegmentsGeoJSON = (
+  segments: TrafficSegment[],
 ): GeoJSON.FeatureCollection => ({
   type: 'FeatureCollection',
-  features: segments.map(s => ({
-    type: 'Feature' as const,
-    id: `dot-${s.id}`,
-    geometry: {
-      type: 'Point' as const,
-      coordinates: positions[s.id] ?? s.coordinates[0],
-    },
-    properties: {
-      color: CONGESTION_COLOR[s.congestion_level],
-    },
-  })),
+  features: segments
+    .filter(s => s.coordinates.length >= 2)
+    .map(s => ({
+      type: 'Feature' as const,
+      id: s.id,
+      geometry: { type: 'LineString' as const, coordinates: s.coordinates },
+      properties: {
+        congestion_level: s.congestion_level,
+        line_color: CONGESTION_COLOR[s.congestion_level as CongestionLevel] ?? '#22c55e',
+        current_speed:   s.current_speed,
+        free_flow_speed: s.free_flow_speed,
+        road_name:       s.road_name,
+      },
+    })),
 });
+
+
 
 // --- Parse backend response -----------------------------------------------
 
+// Chain nearby segment endpoints to make continuous road lines.
+// TomTom returns independent segments — we sort them so that each segment's
+// end connects to the nearest next segment's start, reducing visual gaps.
 const parseTrafficSegments = (flow: any[]): TrafficSegment[] => {
+  // Each item from the backend is already a complete road segment polyline
+  // (TomTom returns all coordinates for one continuous road section per API call).
+  // We render each segment independently — no chaining needed.
+  // Chaining caused broken zigzag lines because road_name is "Unknown Road"
+  // for all segments, grouping unrelated roads together.
   const segments: TrafficSegment[] = [];
+
   for (let i = 0; i < flow.length; i++) {
     const item      = flow[i];
     const rawCoords = item?.coordinates ?? [];
@@ -238,8 +245,11 @@ const parseTrafficSegments = (flow: any[]): TrafficSegment[] => {
       road_name:        item.road_name        ?? 'Unknown road',
     });
   }
+
   return segments;
 };
+
+
 
 // -------------------------------------------------------------------------
 // Component
@@ -255,6 +265,8 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   const [userLocation, setUserLocation]       = useState<[number, number]>([-6.2603, 53.3498]);
   const userLocationRef = useRef<[number, number]>([-6.2603, 53.3498]); // always current for closures
   const [mapLoaded, setMapLoaded]             = useState(false);
+  const [styleLoaded, setStyleLoaded]         = useState(false); // true only after style fully loaded
+  const [styleKey, setStyleKey]               = useState(0); // incremented on style reload to force marker remount
   const pendingNavigateRef = useRef<{ destLat: number; destLon: number; label: string } | null>(null);
   const [trafficSegments, setTrafficSegments] = useState<TrafficSegment[]>([]);
   const [showTraffic, setShowTraffic]         = useState(true);
@@ -264,7 +276,6 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   const [disasterDetailLoading, setDisasterDetailLoading] = useState(false);
 
   // Dot positions: segmentId -> current [lon, lat]
-  const [dotPositions, setDotPositions]       = useState<Record<string, [number, number]>>({});
 
   // -- Destination search + reroute state --------------------------------
   const [searchText, setSearchText]           = useState('');
@@ -281,6 +292,9 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   // Vehicle simulation pin - Section 9: vehicle.location_updated WS event
   const [myVehiclePin, setMyVehiclePin]       = useState<[number,number] | null>(null);
   const [vehicleProgress, setVehicleProgress] = useState<number>(0);
+  const [carPosition, setCarPosition]         = useState<[number,number] | null>(null);
+  const carProgressRef                        = useRef<number>(0);
+  const carIntervalRef                        = useRef<ReturnType<typeof setInterval> | null>(null);
   // Reroute status - null=no event, 'safe'=not in assignments, 'affected'=assigned reroute
   const [rerouteStatus, setRerouteStatus]     = useState<null | 'safe' | 'affected'>(null);
   const [rerouteRouteData, setRerouteRouteData] = useState<{ time: number; dist: number } | null>(null);
@@ -293,15 +307,11 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   const originDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Animation progress: segmentId -> t (0->1, loops)
-  const progressRef  = useRef<Record<string, number>>({});
-  const segmentsRef  = useRef<TrafficSegment[]>([]);
-  const rafRef       = useRef<number | null>(null);
-  const lastTimeRef  = useRef<number | null>(null);
   const cameraRef    = useRef<MapboxGL.Camera>(null);
 
   // -- Location ---------------------------------------------------------
   useEffect(() => {
-    Geolocation.getCurrentPosition(
+    navigator.geolocation?.getCurrentPosition(
       ({ coords: { longitude, latitude } }) => {
         const pos: [number, number] = [longitude, latitude];
         setUserLocation(pos);
@@ -322,118 +332,62 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   }, []);
 
   const fetchTraffic = async () => {
-    console.log('[Traffic] Fetching 4 quadrants...');
+    console.log('[Traffic] Fetching highway traffic...');
     setTrafficLoading(true);
     try {
-      // Split Dublin into 4 quadrants - each gets a 5x5 TomTom grid
-      // Total: ~100 sample points spread evenly across the city
-      const quadrants = [
-        '53.33,-6.45,53.45,-6.25', // NW: Fingal, Blanchardstown, Airport
-        '53.33,-6.25,53.45,-6.05', // NE: Swords, Malahide, Clontarf
-        '53.20,-6.45,53.33,-6.25', // SW: Tallaght, Clondalkin, Rathfarnham
-        '53.20,-6.25,53.33,-6.05', // SE: City centre, Dun Laoghaire, Sandyford
-      ];
-
-      const results = await Promise.allSettled(
-        quadrants.map(b => mapService.getTraffic(b) as Promise<any>)
-      );
+      // Backend uses fixed Dublin highway points (M50, M1, M4, N7, N11 etc)
+      // and ignores the bounds param — so we only need ONE call, not 4.
+      // Sending the full Dublin bounding box for API compatibility.
+      const raw = await mapService.getTraffic('53.20,-6.45,53.45,-6.05') as any;
 
       const allSegs: TrafficSegment[] = [];
       const seenCoords = new Set<string>();
 
-      results.forEach((result, qi) => {
-        if (result.status !== 'fulfilled') return;
-        const raw = result.value;
-        if (!raw?.available || !Array.isArray(raw?.traffic?.flow)) return;
-
+      if (raw?.available && Array.isArray(raw?.traffic?.flow)) {
         const segs = parseTrafficSegments(raw.traffic.flow).map((s, si) => ({
           ...s,
-          id: `q${qi}-seg-${si}`,
+          id: `seg-${si}`,
         }));
 
         segs.forEach(s => {
-          // Deduplicate by first coordinate
-          const key = s.coordinates[0]?.join(',') ?? '';
+          const key = (s.road_name ?? '') + ':' + (s.coordinates[0]?.join(',') ?? '');
           if (key && !seenCoords.has(key)) {
             seenCoords.add(key);
             allSegs.push(s);
           }
         });
-      });
+      }
 
-      console.log(`Traffic: ${allSegs.length} road segments across Dublin`);
+      console.log(`Traffic: ${allSegs.length} API segments`);
 
-      const prog: Record<string, number> = { ...progressRef.current };
-      allSegs.forEach(s => {
-        if (prog[s.id] === undefined) {
-          prog[s.id] = Math.random(); // intentional: stagger traffic dash animation
-        }
-      });
-      progressRef.current = prog;
-      segmentsRef.current = allSegs;
+
       setTrafficSegments(allSegs);
 
     } catch (e) {
       console.warn('Traffic fetch error:', e);
-      segmentsRef.current = [];
       setTrafficSegments([]);
     } finally {
       setTrafficLoading(false);
     }
   };
 
-  // -- Animation loop (requestAnimationFrame, no Animated API) ----------
-  const animate = useCallback((timestamp: number) => {
-    if (lastTimeRef.current === null) lastTimeRef.current = timestamp;
-    const delta = timestamp - lastTimeRef.current;
-    lastTimeRef.current = timestamp;
-
-    const segs = segmentsRef.current;
-    if (segs.length === 0) {
-      rafRef.current = requestAnimationFrame(animate);
-      return;
-    }
-
-    const prog     = progressRef.current;
-    const newPositions: Record<string, [number, number]> = {};
-    let changed = false;
-
-    for (const seg of segs) {
-      const speed = CONGESTION_SPEED[seg.congestion_level];
-      let t = (prog[seg.id] ?? 0) + speed * delta;
-      if (t > 1) t = t - 1; // loop back to start
-      prog[seg.id] = t;
-
-      const pos = interpolate(seg.coordinates, t);
-      newPositions[seg.id] = pos;
-      changed = true;
-    }
-
-    if (changed) {
-      setDotPositions({ ...newPositions });
-    }
-
-    rafRef.current = requestAnimationFrame(animate);
-  }, []);
-
-  // Start / stop animation based on showTraffic + mapLoaded
+  // Car animation along responder route
   useEffect(() => {
-    if (showTraffic && mapLoaded) {
-      lastTimeRef.current = null;
-      rafRef.current = requestAnimationFrame(animate);
-    } else {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
+    if (carIntervalRef.current) { clearInterval(carIntervalRef.current); carIntervalRef.current = null; }
+    if (!rerouteOverlay || rerouteOverlay.length < 2) {
+      setCarPosition(null); carProgressRef.current = 0; return;
     }
-    return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
-  }, [showTraffic, mapLoaded, animate]);
+    carProgressRef.current = 0;
+    setCarPosition(rerouteOverlay[0]);
+    carIntervalRef.current = setInterval(() => {
+      carProgressRef.current += 0.0004;
+      if (carProgressRef.current > 1) carProgressRef.current = 0;
+      setCarPosition(interpolate(rerouteOverlay, carProgressRef.current));
+    }, 80);
+    return () => { if (carIntervalRef.current) { clearInterval(carIntervalRef.current); carIntervalRef.current = null; } };
+  }, [rerouteOverlay]);
+
+
 
   // -- Disasters ---------------------------------------------------------
   const validDisasters = disasters.filter(d => {
@@ -606,6 +560,44 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       setDestinationPin(null);
       setDestinationLabel('');
       setShowRoutes(false);
+    },
+
+    // Fetch Mapbox walking directions and draw on map — used by EvacuationPlansScreen
+    showEvacuationRoute: async (destLat: number, destLon: number, label: string) => {
+      console.log('[DisasterMap] showEvacuationRoute to:', destLat, destLon, label);
+      _doNavigateToScene(destLat, destLon, label);
+      try {
+        // Use Dublin center as origin — replace with real GPS if available
+        const userLon = -6.2603;
+        const userLat = 53.3498;
+        const url =
+          `https://api.mapbox.com/directions/v5/mapbox/walking/` +
+          `${userLon},${userLat};${destLon},${destLat}` +
+          `?geometries=geojson&overview=full` +
+          `&access_token=${EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN}`;
+        const res  = await fetch(url);
+        const data = await res.json();
+        const coords: [number, number][] = data?.routes?.[0]?.geometry?.coordinates ?? [];
+        if (coords.length > 1) {
+          const durationSec = data.routes[0].duration  ?? 0;
+          const distM       = data.routes[0].distance  ?? 0;
+          setRerouteOverlay(coords);
+          setRerouteDisasterId('evacuation');
+          setRerouteStatus('affected');
+          setRerouteRouteData({ time: durationSec, dist: distM });
+          setShowRoutes(true);
+          const lons = coords.map((p: [number, number]) => p[0]);
+          const lats = coords.map((p: [number, number]) => p[1]);
+          cameraRef.current?.fitBounds(
+            [Math.max(...lons), Math.max(...lats)],
+            [Math.min(...lons), Math.min(...lats)],
+            [80, 80, 260, 80], 1200,
+          );
+        }
+      } catch (e) {
+        console.warn('[DisasterMap] Walking route fetch failed:', e);
+        // Fallback: just fly to destination with no route overlay
+      }
     },
   }));
 
@@ -850,7 +842,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   };
 
   const handleZoomOut = () => {
-    const z = Math.max(zoom - 1, 11); setZoom(z);
+    const z = Math.max(zoom - 1, 5); setZoom(z);
     cameraRef.current?.setCamera({ zoomLevel: z, animationDuration: 300 });
   };
 
@@ -860,20 +852,21 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   };
 
   // Build GeoJSON for dots (all segments in one source)
-  const dotsGeoJSON = buildDotsGeoJSON(dotPositions, trafficSegments);
 
   // ---------------------------------------------------------------------
   return (
     <View style={styles.container}>
       <MapboxGL.MapView
         style={styles.map}
-        styleURL={`mapbox://styles/mapbox/${mapStyle}-v11`}
+        styleURL={mapStyle === 'dark' ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/light-v11'}
         logoEnabled={false}
         attributionEnabled={false}
         pitchEnabled
         rotateEnabled
         onDidFinishLoadingMap={() => {
           setMapLoaded(true);
+          setStyleLoaded(true);
+          setStyleKey(k => k + 1);
     console.log('[DisasterMap] Map loaded - checking pending navigation');
     if (pendingNavigateRef.current) {
       const { destLat, destLon, label } = pendingNavigateRef.current;
@@ -888,6 +881,8 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
         onDidFinishLoadingStyle={() => {
           // Fires every time the style (re)loads - including after light/dark switch
           setMapLoaded(true);
+          setStyleLoaded(true); // composite source layers now available
+          setStyleKey(k => k + 1); // force markers to remount with fresh Mapbox anchoring
     console.log('[DisasterMap] Map loaded - checking pending navigation');
     if (pendingNavigateRef.current) {
       const { destLat, destLon, label } = pendingNavigateRef.current;
@@ -908,8 +903,8 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
         />
         <MapboxGL.UserLocation visible showsUserHeadingIndicator androidRenderMode="normal" />
 
-        {/* -- 3D layers -- */}
-        {mapLoaded && (
+        {/* -- 3D layers (gated on styleLoaded — composite source must exist) -- */}
+        {styleLoaded && (
           <>
             <MapboxGL.FillExtrusionLayer
               id="building-extrusion" sourceID="composite" sourceLayerID="building"
@@ -931,14 +926,40 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
           </>
         )}
 
-        {/* -- Traffic road lines (static, one source per level) -- */}
-        {mapLoaded && showTraffic && CONGESTION_LEVELS.map(level => {
-          const geojson = buildLinesGeoJSON(trafficSegments, level);
-          if (geojson.features.length === 0) return null;
+        {/* -- Unified traffic layer --
+             Layer 1: Mapbox traffic tileset for Dublin — all roads, live data
+             Layer 2: Backend API segments in IDENTICAL style — replaces Mapbox color on covered roads
+             Both layers use exactly the same lineWidth/lineOpacity so they look uniform -- */}
+        {mapLoaded && showTraffic && (
+          <MapboxGL.VectorSource
+            id="mapbox-traffic-src"
+            url="mapbox://mapbox.mapbox-traffic-v1"
+          >
+            {/* Dublin bounds filter: lon -6.45→-6.05, lat 53.20→53.45 */}
+            {(['low','moderate','heavy','severe'] as const).map(cLevel => (
+              <MapboxGL.LineLayer
+                key={`mb-${cLevel}`}
+                id={`mb-traffic-${cLevel}`}
+                sourceLayerID="traffic"
+                filter={['==', 'congestion', cLevel]}
+                style={{
+                  lineColor:   cLevel === 'low' ? '#22c55e' : cLevel === 'moderate' ? '#eab308' : cLevel === 'heavy' ? '#f97316' : '#ef4444',
+                  lineWidth:   ['interpolate', ['linear'], ['zoom'], 10, 2, 13, 4, 16, 8],
+                  lineOpacity: 0.85,
+                  lineCap:    'round',
+                  lineJoin:   'round',
+                }}
+              />
+            ))}
+          </MapboxGL.VectorSource>
+        )}
+
+        {/* Backend API segments — identical style to Mapbox layer, painted on top to replace color */}
+        {mapLoaded && showTraffic && trafficSegments.length > 0 && (() => {
+          const geojson = buildAllSegmentsGeoJSON(trafficSegments);
           return (
             <MapboxGL.ShapeSource
-              key={`line-src-${level}`}
-              id={`line-src-${level}`}
+              id="traffic-lines-src"
               shape={geojson}
               onPress={(e) => {
                 const p = e.features?.[0]?.properties;
@@ -954,61 +975,22 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
                 });
               }}
             >
-              {/* Glow */}
+              {/* Exact same style as Mapbox base — replaces, not overlays */}
               <MapboxGL.LineLayer
-                id={`line-glow-${level}`}
+                id="traffic-glow"
                 style={{
-                  lineColor:   CONGESTION_COLOR[level],
-                  lineWidth:   8,
-                  lineOpacity: 0.2,
-                  lineCap:    'round',
-                  lineJoin:   'round',
-                }}
-              />
-              {/* Solid line */}
-              <MapboxGL.LineLayer
-                id={`line-main-${level}`}
-                style={{
-                  lineColor:   CONGESTION_COLOR[level],
-                  lineWidth:   3.5,
-                  lineOpacity: 0.8,
+                  lineColor:   ['get', 'line_color'],
+                  lineWidth:   ['interpolate', ['linear'], ['zoom'], 10, 2, 13, 4, 16, 8],
+                  lineOpacity: 0.85,
                   lineCap:    'round',
                   lineJoin:   'round',
                 }}
               />
             </MapboxGL.ShapeSource>
           );
-        })}
+        })()}
 
-        {/* -- Animated dots - single ShapeSource updated each frame -- */}
-        {mapLoaded && showTraffic && trafficSegments.length > 0 && (
-          <MapboxGL.ShapeSource
-            id="traffic-dots"
-            shape={dotsGeoJSON}
-          >
-            {/* Outer glow ring */}
-            <MapboxGL.CircleLayer
-              id="dot-glow"
-              style={{
-                circleRadius:      9,
-                circleColor:       ['get', 'color'],
-                circleOpacity:     0.3,
-                circleBlur:        0.8,
-              }}
-            />
-            {/* Inner solid dot */}
-            <MapboxGL.CircleLayer
-              id="dot-core"
-              style={{
-                circleRadius:       5,
-                circleColor:        ['get', 'color'],
-                circleOpacity:      1,
-                circleStrokeWidth:  1.5,
-                circleStrokeColor:  '#ffffff',
-              }}
-            />
-          </MapboxGL.ShapeSource>
-        )}
+
 
         {/* Route lines drawn ONLY from WS reroute.triggered - see rerouteOverlay below */}
 
@@ -1034,6 +1016,14 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
         )}
 
         {/* -- Vehicle simulation pin - Section 9: vehicle.location_updated -- */}
+        {carPosition && isResponder && (
+          <MapboxGL.MarkerView id="route-car" coordinate={carPosition}>
+            <View style={styles.routeCar}>
+              <Text style={{ fontSize: 16, lineHeight: 20 }}>🚒</Text>
+            </View>
+          </MapboxGL.MarkerView>
+        )}
+
         {myVehiclePin && (
           <MapboxGL.MarkerView id="my-vehicle-pin" coordinate={myVehiclePin}>
             <View style={styles.vehiclePin}>
@@ -1068,32 +1058,25 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
           </MapboxGL.ShapeSource>
         )}
 
-        {/* Dismiss reroute button */}
-        {rerouteOverlay && (
-          <MapboxGL.MarkerView id="reroute-dismiss" coordinate={rerouteOverlay[Math.floor(rerouteOverlay.length / 2)]}>
-            <TouchableOpacity
-              style={{ backgroundColor: '#F97316', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}
-              onPress={() => { setRerouteOverlay(null); setRerouteDisasterId(null); }}
-            >
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>✕ Clear Reroute</Text>
-            </TouchableOpacity>
-          </MapboxGL.MarkerView>
-        )}
 
-
-        {/* -- Disaster markers -- */}
+        {/* -- Disaster markers — key includes styleKey so they remount after style switch -- */}
         {validDisasters.map(d => (
           <MapboxGL.MarkerView
-            key={d.id}
+            key={`${d.id}-${styleKey}`}
             id={`m-${d.id}`}
             coordinate={[Number(d.location.longitude), Number(d.location.latitude)]}
+            anchor={{ x: 0.5, y: 0.5 }}
+            allowOverlap
           >
             <TouchableOpacity
               style={[styles.marker, { borderColor: getSeverityColor(d.severity) }]}
               onPress={() => handleMarkerPress(d)}
-              activeOpacity={0.7}
+              activeOpacity={0.75}
             >
               <Text style={styles.markerIcon}>{getDisasterIcon(d.type)}</Text>
+              {(d.severity?.toLowerCase() === 'critical') && (
+                <View style={styles.markerCriticalDot} />
+              )}
             </TouchableOpacity>
           </MapboxGL.MarkerView>
         ))}
@@ -1333,8 +1316,8 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
         </View>
       ) : null}
 
-      {/* -- Route Info Card -- */}
-      {showRoutes && (
+      {/* -- Route Info Card -- citizen only */}
+      {showRoutes && !isResponder && (
         <View style={styles.routeCard}>
           <View style={styles.routeCardHeader}>
             <Text style={styles.routeCardTitle}>
@@ -1435,17 +1418,34 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
             <Path d="M12 5v14M5 12h14" stroke="#1F2937" strokeWidth={2.5} strokeLinecap="round" />
           </Svg>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.btn} onPress={handleZoomOut}>
-          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M5 12h14" stroke="#1F2937" strokeWidth={2.5} strokeLinecap="round" />
-          </Svg>
-        </TouchableOpacity>
+        {/* Zoom-out row — with Clear Route button beside it for responders */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity style={styles.btn} onPress={handleZoomOut}>
+            <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+              <Path d="M5 12h14" stroke="#1F2937" strokeWidth={2.5} strokeLinecap="round" />
+            </Svg>
+          </TouchableOpacity>
+          {isResponder && rerouteOverlay && (
+            <TouchableOpacity
+              style={styles.clearRouteBtn}
+              onPress={() => {
+                setRerouteOverlay(null); setRerouteDisasterId(null);
+                setRerouteStatus(null); setRerouteRouteData(null);
+                setDestinationPin(null); setDestinationLabel('');
+                setShowRoutes(false);
+                setCarPosition(null); carProgressRef.current = 0;
+              }}
+            >
+              <Text style={styles.clearRouteBtnTxt}>✕ Clear Route</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Right controls */}
       <View style={styles.rightControls}>
         <TouchableOpacity style={styles.btn}
-          onPress={() => { setMapLoaded(false); setMapStyle(p => p === 'light' ? 'dark' : 'light'); }}>
+          onPress={() => { setStyleLoaded(false); setMapStyle(p => p === 'light' ? 'dark' : 'light'); }}>
           <Text style={styles.emoji}>{mapStyle === 'dark' ? '☀️' : '🌙'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.btn} onPress={handle3DToggle}>
@@ -1479,16 +1479,16 @@ const styles = StyleSheet.create({
   map:       { flex: 1 },
 
   marker: {
-    width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFF',
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff',
     justifyContent: 'center', alignItems: 'center', borderWidth: 3,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35, shadowRadius: 8, elevation: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 6, elevation: 10,
   },
   markerPulse: {
-    position: 'absolute', width: 68, height: 68, borderRadius: 34,
-    opacity: 0.25,
+    position: 'absolute', width: 64, height: 64, borderRadius: 32,
+    opacity: 0.2,
   },
-  markerIcon: { fontSize: 28, textAlign: 'center' },
+  markerIcon: { fontSize: 26, textAlign: 'center' },
   markerCriticalDot: {
     position: 'absolute', top: 0, right: 0,
     width: 14, height: 14, borderRadius: 7,
@@ -1844,6 +1844,23 @@ const styles = StyleSheet.create({
   },
   disasterSheetBtnTxt: {
     color: '#fff', fontSize: 13, fontWeight: '700', letterSpacing: 0.3,
+  },
+  routeCar: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: '#DC2626',
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35, shadowRadius: 4, elevation: 6,
+  },
+  clearRouteBtn: {
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 24, borderWidth: 1.5,
+    borderColor: '#DC2626', backgroundColor: '#FFF5F5',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12, shadowRadius: 3, elevation: 3,
+  },
+  clearRouteBtnTxt: {
+    color: '#DC2626', fontSize: 13, fontWeight: '700',
   },
 });
 

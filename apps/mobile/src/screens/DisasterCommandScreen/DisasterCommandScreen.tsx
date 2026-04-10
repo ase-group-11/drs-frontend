@@ -1,12 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/DisasterCommandScreen/DisasterCommandScreen.tsx
-//
-// Clean list of active disasters from the global store.
-// Tap a disaster → navigates to DisasterDetail screen (full detail page).
+// FIXED: Added loading state + error UI
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, StatusBar, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, ScrollView, StyleSheet, StatusBar, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
@@ -43,6 +41,8 @@ const formatAgo = (iso?: string) => {
 export const DisasterCommandScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
 
   // Subscribe to store
   const [, forceRender] = useState(0);
@@ -54,13 +54,20 @@ export const DisasterCommandScreen: React.FC = () => {
   const { activeDisasters, resolvedDisasters } = disasterStore.getState();
   const allDisasters = [...activeDisasters, ...resolvedDisasters];
 
-  const onRefresh = async () => {
-    setRefreshing(true);
+  const fetchDisasters = async () => {
+    setError('');
     try {
       const data = await authRequest<any>(API.disasters.active());
       const list = data?.disasters ?? (Array.isArray(data) ? data : []);
       disasterStore.setActiveDisasters(list);
-    } catch {}
+    } catch (e: any) {
+      setError(e.message || 'Failed to load disasters. Pull to refresh.');
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchDisasters();
     setRefreshing(false);
   };
 
@@ -69,14 +76,29 @@ export const DisasterCommandScreen: React.FC = () => {
       <StatusBar barStyle="light-content" backgroundColor={RED} />
 
       <View style={S.header}>
-        <TouchableOpacity style={S.hBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={S.hBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
             <Path d="M19 12H5M12 19l-7-7 7-7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
         </TouchableOpacity>
         <Text style={S.headerTitle}>Disaster Command</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity style={S.hBtn} onPress={onRefresh} activeOpacity={0.7}>
+          {refreshing
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={{ color: '#fff', fontSize: 20, lineHeight: 26 }}>↻</Text>
+          }
+        </TouchableOpacity>
       </View>
+
+      {/* ✅ Error banner */}
+      {!!error && (
+        <View style={S.errorBanner}>
+          <Text style={S.errorText}>{error}</Text>
+          <TouchableOpacity onPress={onRefresh}>
+            <Text style={S.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -168,23 +190,26 @@ export const DisasterCommandScreen: React.FC = () => {
 };
 
 const S = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8FAFC' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: RED, paddingHorizontal: 16, paddingVertical: 14 },
+  safe:        { flex: 1, backgroundColor: '#F8FAFC' },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: RED, paddingHorizontal: 16, paddingVertical: 14 },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  hBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8, marginBottom: 8 },
-  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
-  sevBar: { width: 4, height: '100%' as any, borderRadius: 2, marginRight: 10 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 },
-  dtype: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
-  pill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  pillTxt: { fontSize: 10, fontWeight: '800' },
-  addr: { fontSize: 13, color: '#6B7280' },
-  meta: { fontSize: 11, color: '#9CA3AF' },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  falseBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#EF4444' },
-  falseTxt: { fontSize: 10, fontWeight: '800', color: '#EF4444' },
-  empty: { padding: 32, backgroundColor: '#fff', borderRadius: 16, alignItems: 'center', marginTop: 20 },
+  hBtn:        { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  errorBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FEE2E2', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderLeftWidth: 3, borderLeftColor: RED },
+  errorText:   { color: '#991B1B', fontSize: 13, flex: 1 },
+  retryText:   { color: RED, fontWeight: '700', fontSize: 13, marginLeft: spacing.md },
+  sectionLabel:{ fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8, marginBottom: 8 },
+  card:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
+  sevBar:      { width: 4, height: '100%' as any, borderRadius: 2, marginRight: 10 },
+  titleRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 },
+  dtype:       { fontSize: 15, fontWeight: '700', color: '#1F2937' },
+  pill:        { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  pillTxt:     { fontSize: 10, fontWeight: '800' },
+  addr:        { fontSize: 13, color: '#6B7280' },
+  meta:        { fontSize: 11, color: '#9CA3AF' },
+  statusDot:   { width: 8, height: 8, borderRadius: 4 },
+  falseBadge:  { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#EF4444' },
+  falseTxt:    { fontSize: 10, fontWeight: '800', color: '#EF4444' },
+  empty:       { padding: 32, backgroundColor: '#fff', borderRadius: 16, alignItems: 'center', marginTop: 20 },
 });
 
 export default DisasterCommandScreen;

@@ -1,10 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/components/organisms/MapHeader/MapHeader.tsx
-// FIXED - Proper layout with SafeArea constraints
+// FIXED: SafeAreaView from react-native-safe-area-context (not react-native)
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
@@ -14,7 +15,7 @@ interface MapHeaderProps {
   location: string;
   notificationCount?: number;
   userInitials?: string;
-  avatarColor?: string;   // defaults to colors.primary (blue), pass '#DC2626' for responder
+  avatarColor?: string;
   onMenuPress: () => void;
   onNotificationPress: () => void;
   onAvatarPress: () => void;
@@ -32,8 +33,7 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.container}>
-        {/* Left: Menu Button (3 lines) */}
-        <TouchableOpacity style={styles.iconButton} onPress={onMenuPress}>
+        <TouchableOpacity style={styles.iconButton} onPress={onMenuPress} activeOpacity={0.7}>
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
             <Path
               d="M3 12h18M3 6h18M3 18h18"
@@ -44,7 +44,6 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
           </Svg>
         </TouchableOpacity>
 
-        {/* Center: Location */}
         <View style={styles.locationContainer}>
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
             <Path
@@ -67,10 +66,8 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
           </Text>
         </View>
 
-        {/* Right: Notification + Profile */}
         <View style={styles.rightContainer}>
-          {/* Notification Bell */}
-          <TouchableOpacity style={styles.iconButton} onPress={onNotificationPress}>
+          <TouchableOpacity style={styles.iconButton} onPress={onNotificationPress} activeOpacity={0.7}>
             <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
               <Path
                 d="M18 8A6 6 0 106 8c0 7-3 9-3 9h18s-3-2-3-9zM13.73 21a2 2 0 01-3.46 0"
@@ -89,8 +86,11 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
             )}
           </TouchableOpacity>
 
-          {/* Profile Avatar */}
-          <TouchableOpacity style={[styles.avatar, avatarColor ? { backgroundColor: avatarColor } : {}]} onPress={onAvatarPress}>
+          <TouchableOpacity
+            style={[styles.avatar, avatarColor ? { backgroundColor: avatarColor } : {}]}
+            onPress={onAvatarPress}
+            activeOpacity={0.7}
+          >
             <Text variant="bodyMedium" color="white" style={styles.avatarText}>
               {userInitials}
             </Text>
@@ -115,8 +115,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     height: 56,
   },
-  
-  // Left Menu Button
   iconButton: {
     width: 40,
     height: 40,
@@ -125,8 +123,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.gray100,
   },
-  
-  // Center Location
   locationContainer: {
     flex: 1,
     flexDirection: 'row',
@@ -138,15 +134,11 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
     fontWeight: '600',
   },
-  
-  // Right Container
   rightContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  
-  // Notification Badge
   badge: {
     position: 'absolute',
     top: -2,
@@ -163,8 +155,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  
-  // Profile Avatar
   avatar: {
     width: 40,
     height: 40,

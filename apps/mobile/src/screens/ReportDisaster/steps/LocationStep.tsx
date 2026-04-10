@@ -10,7 +10,6 @@ import {
   ActivityIndicator, Alert, FlatList,
 } from 'react-native';
 import MapboxGL from '@rnmapbox/maps';
-import Geolocation from '@react-native-community/geolocation';
 import { Text } from '@atoms/Text';
 import { Button } from '@atoms/Button';
 import { colors } from '@theme/colors';
@@ -167,7 +166,7 @@ export const LocationStep: React.FC<LocationStepProps> = ({ initialLocation, onN
   const handleUseCurrentLocation = () => {
     setGettingLocation(true);
     handleClearSearch();
-    Geolocation.getCurrentPosition(
+    navigator.geolocation?.getCurrentPosition(
       async ({ coords }) => {
         const address = await reverseGeocode(coords.latitude, coords.longitude);
         const newLoc: Location = {

@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: babel.config.js
-// UPDATED - Added react-native-dotenv plugin
+// UPDATED - Added react-native-dotenv plugin + reanimated plugin (MUST BE LAST)
 // ═══════════════════════════════════════════════════════════════════════════
 
 module.exports = {
@@ -30,7 +30,6 @@ module.exports = {
         },
       },
     ],
-    // ✅ NEW: Add this plugin to load .env files
     [
       'module:react-native-dotenv',
       {
@@ -42,5 +41,7 @@ module.exports = {
         allowUndefined: true,
       },
     ],
+    // ✅ MUST BE LAST — Reanimated requires this
+    'react-native-reanimated/plugin',
   ],
 };

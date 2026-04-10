@@ -24,6 +24,7 @@ import { Text }          from '@atoms/Text';
 import { spacing }       from '@theme/spacing';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { authRequest, authService, getUserUnitInfo } from '@services/authService';
+import { disasterStore } from '@services/disasterStore';
 import { API } from '@services/apiConfig';
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -40,14 +41,16 @@ type UnitStatus =
   | 'offline';
 
 interface StatusOption {
-  value:       UnitStatus;
-  label:       string;
-  description: string;
-  color:       string;
-  bg:          string;
-  icon:        string;
-  // Statuses that can legitimately transition TO this status
-  allowedFrom: UnitStatus[];
+  value:            UnitStatus;
+  label:            string;
+  description:      string;
+  color:            string;
+  bg:               string;
+  icon:             string;
+  allowedFrom:      UnitStatus[];
+  // When true, user cannot change away from this status in UnitStatusScreen
+  // (must use Active Missions screen instead)
+  lockedWhenCurrent?: boolean;
 }
 
 const STATUS_OPTIONS: StatusOption[] = [
@@ -67,7 +70,9 @@ const STATUS_OPTIONS: StatusOption[] = [
     color:       '#2563EB',
     bg:          '#DBEAFE',
     icon:        '🚒',
+    // ✅ Cannot transition FROM deployed here — use Active Missions screen instead
     allowedFrom: ['available'],
+    lockedWhenCurrent: true,
   },
   {
     value:       'on_scene',
@@ -76,7 +81,9 @@ const STATUS_OPTIONS: StatusOption[] = [
     color:       '#7C3AED',
     bg:          '#EDE9FE',
     icon:        '🎯',
+    // ✅ Cannot transition FROM on_scene here — use Active Missions screen instead
     allowedFrom: ['deployed'],
+    lockedWhenCurrent: true,
   },
   {
     value:       'returning',
@@ -210,17 +217,43 @@ export const UnitStatusScreen: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // ✅ Subscribe to disasterStore — when ActiveMissions updates unit status,
+  // reflect it immediately here without needing a manual refresh
+  useEffect(() => {
+    const unsub = disasterStore.subscribe(() => {
+      const storeStatus = disasterStore.getState().unitStatus;
+      if (storeStatus && storeStatus !== selectedStatus) {
+        setSelectedStatus(storeStatus as UnitStatus);
+        // Also update the unit object so the banner reflects the change
+        setUnit((prev: any) => prev ? { ...prev, unit_status: storeStatus } : prev);
+      }
+    });
+    return unsub;
+  }, [selectedStatus]);
+
   // ── Handle status tap ────────────────────────────────────────────────────
   const handleStatusTap = (status: UnitStatus) => {
     if (status === selectedStatus) return;
     const current = selectedStatus ?? 'available';
-    const option  = STATUS_MAP[status];
+    const currentOption = STATUS_MAP[current];
+
+    // ✅ If currently deployed or on_scene, block changes — must use Active Missions
+    if (currentOption?.lockedWhenCurrent) {
+      Alert.alert(
+        '🚒 Use Active Missions',
+        `Your unit is currently "${currentOption.label}". To update your status during an active mission, go to Active Missions and use the Update Status button there.`,
+        [{ text: 'Got it' }]
+      );
+      return;
+    }
+
+    const option = STATUS_MAP[status];
 
     // Check if transition is allowed
     if (!option.allowedFrom.includes(current as UnitStatus)) {
       Alert.alert(
         'Invalid Transition',
-        `You cannot change from "${STATUS_MAP[current]?.label ?? current}" to "${option.label}" directly.\n\nValid transitions from ${STATUS_MAP[current]?.label ?? current}: ${STATUS_MAP[current] ? STATUS_OPTIONS.filter(s => s.allowedFrom.includes(current as UnitStatus)).map(s => s.label).join(', ') : 'none'}`,
+        `You cannot change from "${STATUS_MAP[current]?.label ?? current}" to "${option.label}" directly.\n\nValid transitions: ${STATUS_OPTIONS.filter(s => s.allowedFrom.includes(current as UnitStatus)).map(s => s.label).join(', ') || 'none'}`,
         [{ text: 'OK' }]
       );
       return;
@@ -244,6 +277,8 @@ export const UnitStatusScreen: React.FC = () => {
       // Refresh full unit data after update
       const updated = await authRequest<any>(API.units.byId(unitId));
       setUnit(updated);
+      // ✅ Sync to global store so other screens reflect immediately
+      disasterStore.setUnitStatus(pendingStatus);
       Alert.alert('✅ Status Updated', `Unit status changed to "${STATUS_MAP[pendingStatus]?.label}".`);
     } catch (e: any) {
       Alert.alert('Update Failed', e.message || 'Could not update status. Please try again.');
@@ -382,9 +417,17 @@ export const UnitStatusScreen: React.FC = () => {
         {/* ── Update Status ── */}
         <View style={S.card}>
           <Text style={S.cardTitle}>Update Status</Text>
-          <Text style={S.cardSubtitle}>
-            Tap a status to update. Only valid transitions from your current status are highlighted.
-          </Text>
+          {STATUS_MAP[selectedStatus ?? 'available']?.lockedWhenCurrent ? (
+            <View style={S.lockedBanner}>
+              <Text style={S.lockedBannerText}>
+                🔒 Status changes are managed through <Text style={{ fontWeight: '800' }}>Active Missions</Text> while deployed or on scene.
+              </Text>
+            </View>
+          ) : (
+            <Text style={S.cardSubtitle}>
+              Tap a status to update. Only valid transitions from your current status are highlighted.
+            </Text>
+          )}
 
           <View style={S.statusGrid}>
             {STATUS_OPTIONS.map(opt => {
@@ -616,6 +659,8 @@ const S = StyleSheet.create({
   confirmCancelTxt: { color: '#6B7280', fontWeight: '600', fontSize: 15 },
   confirmOk:   { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   confirmOkTxt:{ color: '#fff', fontWeight: '700', fontSize: 15 },
+  lockedBanner:{ backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, marginBottom: 14, borderLeftWidth: 3, borderLeftColor: '#2563EB' },
+  lockedBannerText:{ fontSize: 13, color: '#1E40AF', lineHeight: 18 },
 });
 
 export default UnitStatusScreen;

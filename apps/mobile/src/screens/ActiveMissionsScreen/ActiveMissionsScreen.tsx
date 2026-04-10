@@ -72,6 +72,26 @@ const STATUS_OPTIONS = [
   { id: 'COMPLETED',   emoji: '✅', label: 'Completed',   desc: 'Task finished' },
 ];
 
+// Parse UTC ISO timestamp from backend (may be missing Z suffix)
+const parseUTCTimestamp = (ts: string): Date => {
+  if (!ts) return new Date();
+  const normalized = ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z';
+  return new Date(normalized);
+};
+const formatChatTime = (ts: string): string =>
+  parseUTCTimestamp(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+const sortMessages = (msgs: ChatMessage[]): ChatMessage[] =>
+  [...msgs].sort((a, b) => {
+    // Sort purely by timestamp (UTC-corrected) — oldest first
+    const ta = parseUTCTimestamp(a.timestamp).getTime();
+    const tb = parseUTCTimestamp(b.timestamp).getTime();
+    if (ta !== tb) return ta - tb;
+    // Tiebreak by seq if timestamps are identical
+    if (a.seq != null && b.seq != null) return a.seq - b.seq;
+    return 0;
+  });
+
 const formatAgo = (iso: string) => {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return 'just now';
@@ -121,6 +141,7 @@ export const ActiveMissionsScreen: React.FC = () => {
   const chatWsRef   = useRef<WebSocket | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const chatDisasterRef = useRef<string | null>(null);
+  const isCompletedRef  = useRef<boolean>(false); // ref so useEffect reads fresh value
 
   // Subscribe to disasterStore so any external mission changes reflect immediately
   useEffect(() => {
@@ -137,9 +158,10 @@ export const ActiveMissionsScreen: React.FC = () => {
     return unsub;
   }, []);
 
-  // WS
+  // WS — subscribe to alerts only, do NOT connect/disconnect the singleton
+  // wsService lifecycle is owned by HomeScreen; calling disconnect() here
+  // would kill the connection for the entire app when navigating back.
   useEffect(() => {
-    wsService.connect(true);
     const unsub = wsService.onAlert((alert) => {
       if (['disaster.dispatched', 'disaster.verified', 'disaster.updated', 'disaster.resolved',
            'disaster.false_alarm', 'disaster.unit_completed', 'coordination.team_assigned'].includes(alert.event_type)) {
@@ -148,7 +170,7 @@ export const ActiveMissionsScreen: React.FC = () => {
       if (alert.event_type === 'disaster.backup_requested') Alert.alert('🆘 BACKUP', alert.message, [{ text: 'OK' }]);
       if (alert.event_type === 'evacuation.triggered') Alert.alert('🚨 EVACUATION', alert.message ?? '', [{ text: 'View', onPress: () => navigation.navigate('EvacuationPlans' as any) }, { text: 'OK' }]);
     });
-    return () => { unsub(); wsService.disconnect(); };
+    return () => { unsub(); }; // only unsubscribe, never disconnect
   }, []);
 
   useEffect(() => {
@@ -217,20 +239,16 @@ export const ActiveMissionsScreen: React.FC = () => {
     setDetailTab('details');
     setDetailLoading(true);
     setIsCompletedMission(fromCompleted);
+    isCompletedRef.current = fromCompleted; // update ref immediately for useEffect
     setMessages([]);
     setChatError(null);
+
     try {
       const detail = await disasterService.getDeploymentDetail(m.id);
       setMissionDetail(detail);
     } catch { setMissionDetail(null); }
     setDetailLoading(false);
-    // For completed missions: fetch read-only history via REST
-    // For active missions: connect WebSocket for live chat
-    if (fromCompleted) {
-      loadChatHistory(m.disaster_id);
-    } else {
-      loadChat(m.disaster_id);
-    }
+    // WS connection is managed by useEffect on selectedMission below
   };
 
   const navigateToDisaster = (m: Mission) => {
@@ -239,175 +257,193 @@ export const ActiveMissionsScreen: React.FC = () => {
 
   // ── Chat — real WebSocket via /ws/chat/{disaster_id} ───────────────
 
-  const disconnectChat = () => {
+  // ── Chat WS refs — StrictMode-safe (same pattern as admin web hook) ─────
+  const isChatMounted    = useRef(false);
+  const hasConnectedRef  = useRef(false);
+  const reconnectTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectCount   = useRef(0);
+  const MAX_RECONNECTS   = 10;
+  const RECONNECT_DELAY  = 3000;
+
+  const disconnectChat = useCallback(() => {
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+    reconnectCount.current = MAX_RECONNECTS;
     if (chatWsRef.current) {
-      chatWsRef.current.onclose = null; // prevent reconnect loop
+      chatWsRef.current.onclose = null;
       chatWsRef.current.close();
       chatWsRef.current = null;
     }
     setChatConnected(false);
     setChatConnecting(false);
     chatDisasterRef.current = null;
-  };
+  }, []);
 
-  const connectChat = async (disasterId: string) => {
-    // Already connected to same disaster — skip
-    if (chatDisasterRef.current === disasterId && chatWsRef.current?.readyState === WebSocket.OPEN) return;
-    // Disconnect from previous disaster chat first
-    disconnectChat();
+  const connectChat = useCallback(async (disasterId: string) => {
+    if (!isChatMounted.current) return;
+    // Close any stale socket without triggering onclose reconnect
+    if (chatWsRef.current) {
+      chatWsRef.current.onclose = null;
+      chatWsRef.current.close();
+      chatWsRef.current = null;
+    }
+    const token = await AsyncStorage.getItem('@auth/access_token');
+    if (!token) { setChatError('Not authenticated.'); return; }
+    // Re-check after async token fetch — component might have unmounted
+    if (!isChatMounted.current) return;
 
+    const url = `${WS_URL}${API.chat.ws(disasterId)}?token=${token}`;
+    console.log('[Chat WS] Connecting:', url.replace(token, token.slice(0,16)+'...'));
+    const ws = new WebSocket(url);
+    chatWsRef.current = ws;
+    chatDisasterRef.current = disasterId;
     setChatConnecting(true);
     setChatError(null);
-    setMessages([]);
 
-    try {
-      // Always fetch a fresh token — expired tokens cause 1006 silent rejection
-      let token = await AsyncStorage.getItem('@auth/access_token');
-      if (!token) { setChatError('Not authenticated. Please log in again.'); setChatConnecting(false); return; }
-
-      // Verify token is not expired by checking its expiry if possible
-      // Use the full disaster ID (not sliced) for the WS path
-      console.log('[Chat WS] disaster_id:', disasterId);
-
-      const url = `${WS_URL}${API.chat.ws(disasterId)}?token=${token}`;
-      console.log('[Chat WS] Connecting to:', url.replace(token, token.slice(0, 16) + '...'));
-      const ws  = new WebSocket(url);
-      chatWsRef.current    = ws;
-      chatDisasterRef.current = disasterId;
-
-      // Connection timeout — if no onopen within 10s, treat as failure
-      const timeoutId = setTimeout(() => {
-        if (ws.readyState !== WebSocket.OPEN) {
-          console.warn('[Chat WS] Connection timeout after 10s');
-          ws.close();
-          setChatConnecting(false);
-          setChatError('Connection timed out. Check your network and tap Reconnect.');
-        }
-      }, 10000);
-
-      ws.onopen = () => {
-        clearTimeout(timeoutId);
-        setChatConnected(true);
-        setChatConnecting(false);
-        setChatError(null);
-        console.log('[Chat WS] Connected to disaster:', disasterId);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          // History on connect
-          if (data.type === 'history') {
-            const hist: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
-              id:          m.id,
-              seq:         m.seq,
-              sender:      m.sender_name ?? 'Unknown',
-              senderId:    m.sender_id   ?? '',
-              sender_type: m.sender_type ?? 'unit',
-              text:        m.message     ?? '',
-              timestamp:   m.sent_at     ?? new Date().toISOString(),
-              type:        'message',
-            }));
-            setMessages(hist);
-            if (data.members_online != null) setMembersOnline(data.members_online);
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
-            return;
-          }
-
-          // System messages (join/leave)
-          if (data.type === 'system') {
-            setMessages(prev => [...prev, {
-              id:        `sys-${Date.now()}`,
-              sender:    'System',
-              senderId:  'system',
-              text:      data.message ?? '',
-              timestamp: data.sent_at ?? new Date().toISOString(),
-              isSystem:  true,
-              type:      'system',
-            }]);
-            return;
-          }
-
-          // Error from server
-          if (data.type === 'error') {
-            setChatError(data.message ?? 'Chat error');
-            return;
-          }
-
-          // Ping — respond with pong
-          if (data.type === 'ping') {
-            ws.send(JSON.stringify({ type: 'ping' }));
-            return;
-          }
-
-          // Regular chat message broadcast
-          if (data.type === 'message') {
-            setMessages(prev => {
-              // Deduplicate by id (server echoes back our own messages)
-              if (prev.some(m => m.id === data.id)) return prev;
-              return [...prev, {
-                id:          data.id,
-                seq:         data.seq,
-                sender:      data.sender_name ?? 'Unknown',
-                senderId:    data.sender_id   ?? '',
-                sender_type: data.sender_type ?? 'unit',
-                text:        data.message     ?? '',
-                timestamp:   data.sent_at     ?? new Date().toISOString(),
-                type:        'message',
-              }];
-            });
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
-          }
-        } catch { /* non-JSON frame — ignore */ }
-      };
-
-      ws.onerror = (e: any) => {
-        clearTimeout(timeoutId);
-        setChatConnecting(false);
-        setChatConnected(false);
-        console.warn('[Chat WS] onerror:', e?.message ?? e);
-        // onclose fires right after onerror with a more specific code — let it set the message
-      };
-
-      ws.onclose = (e) => {
-        clearTimeout(timeoutId);
-        setChatConnected(false);
-        setChatConnecting(false);
-        console.log('[Chat WS] closed — code:', e.code, 'reason:', e.reason, 'disaster:', disasterId);
-
-        const reason = (e.reason ?? '').toLowerCase();
-        const is403  = e.code === 1006 && reason.includes('403');
-        const is401  = e.code === 1006 && (reason.includes('401') || reason.includes('unauthorized'));
-
-        if (e.code === 4001 || is401) {
-          setChatError('Authentication failed. Please log out and log back in.');
-        } else if (e.code === 4003) {
-          setChatError('Access denied — you are not assigned to this disaster.');
-        } else if (e.code === 4004) {
-          setChatError('Disaster not found. It may have been resolved.');
-        } else if (e.code === 4009) {
-          setChatError('Chat is closed — this disaster is no longer active.');
-        } else if (is403) {
-          // Server returned 403 before completing WS handshake.
-          // This means the backend does not consider this user assigned to the disaster.
-          // Fall back to read-only REST history so messages are still visible.
-          setChatError('Live chat unavailable — loading message history instead.');
-          loadChatHistory(disasterId);
-        } else if (e.code === 1006) {
-          setChatError('Connection failed. Check your network and tap Reconnect.');
-        } else if (e.code !== 1000) {
-          setChatError(`Connection closed (code ${e.code}). Tap Reconnect to try again.`);
-        }
-        // code 1000 = normal close, no error message needed
-      };
-
-    } catch (e: any) {
-      setChatError(e.message || 'Failed to connect to chat.');
+    ws.onopen = () => {
+      if (!thisWsActive()) { ws.close(); return; }
+      console.log('[Chat WS] Connected ✓ disaster:', disasterId);
+      setChatConnected(true);
       setChatConnecting(false);
-    }
-  };
+      setChatError(null);
+      reconnectCount.current = 0;
+    };
 
+    // Capture mounted state at connection time — each WS instance checks its own flag
+    const thisWsActive = () => isChatMounted.current && chatWsRef.current === ws;
+
+    ws.onmessage = (event) => {
+      // Log every raw frame so we can confirm messages arrive at JS layer
+      console.log('[Chat WS] RAW frame received:', event.data?.slice(0, 120));
+      if (!thisWsActive()) {
+        console.warn('[Chat WS] Frame received but connection no longer active — ignoring');
+        return;
+      }
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'history') {
+          const hist: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
+            id: m.id, seq: m.seq,
+            sender: m.sender_name ?? 'Unknown', senderId: m.sender_id ?? '',
+            sender_type: m.sender_type ?? 'unit',
+            text: m.message ?? '', timestamp: m.sent_at ?? new Date().toISOString(),
+            type: 'message',
+          }));
+          setMessages(sortMessages(hist));
+          if (data.members_online != null) setMembersOnline(data.members_online);
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
+          return;
+        }
+
+        if (data.type === 'system') {
+          setMessages(prev => [...prev, {
+            id: `sys-${Date.now()}`, sender: 'System', senderId: 'system',
+            text: data.message ?? '', timestamp: data.sent_at ?? new Date().toISOString(),
+            isSystem: true, type: 'system',
+          }]);
+          return;
+        }
+
+        if (data.type === 'error') {
+          setChatError(data.message ?? 'Chat error');
+          if (data.code === 4003) loadChatHistory(disasterId);
+          return;
+        }
+
+        if (data.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'ping' }));
+          return;
+        }
+
+        if (data.type === 'message') {
+          console.log('[Chat WS] ▶ Message from:', data.sender_name, '—', data.message);
+          if (!thisWsActive()) { console.warn('[Chat WS] Message arrived after disconnect'); return; }
+          setMessages(prev => {
+            if (prev.some(m => m.id === data.id)) return prev;
+            return sortMessages([...prev, {
+              id: data.id, seq: data.seq,
+              sender: data.sender_name ?? 'Unknown', senderId: data.sender_id ?? '',
+              sender_type: data.sender_type ?? 'unit',
+              text: data.message ?? '', timestamp: data.sent_at ?? new Date().toISOString(),
+              type: 'message',
+            }]);
+          });
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+        }
+      } catch { /* non-JSON — ignore */ }
+    };
+
+    ws.onerror = () => ws.close();
+
+    ws.onclose = (e) => {
+      if (!isChatMounted.current) return; // full unmount — skip
+      setChatConnected(false);
+      setChatConnecting(false);
+      console.log('[Chat WS] Closed code:', e.code, 'reason:', e.reason);
+      const reason = (e.reason ?? '').toLowerCase();
+      const is403 = e.code === 1006 && reason.includes('403');
+      const is401 = e.code === 1006 && (reason.includes('401') || reason.includes('unauthorized'));
+
+      if (e.code === 4001 || is401) {
+        setChatError('Authentication failed. Please log out and log back in.');
+      } else if (e.code === 4003 || is403) {
+        setChatError('You are not assigned to this disaster. Showing message history.');
+        loadChatHistory(disasterId);
+      } else if (e.code === 4004) {
+        setChatError('Disaster not found.');
+      } else if (e.code === 4009) {
+        setChatError('Chat is closed — disaster no longer active.');
+      } else if (e.code === 1000) {
+        // Normal close — do nothing
+      } else {
+        // Unexpected drop — auto-reconnect (same as admin web)
+        if (reconnectCount.current < MAX_RECONNECTS) {
+          reconnectCount.current += 1;
+          console.log('[Chat WS] Reconnecting in 3s... attempt', reconnectCount.current);
+          reconnectTimer.current = setTimeout(() => {
+            if (isChatMounted.current) connectChat(disasterId);
+          }, RECONNECT_DELAY);
+        } else {
+          setChatError('Connection lost. Tap Reconnect to try again.');
+        }
+      }
+    };
+  }, []);
+
+  // ── WS lifecycle — StrictMode-safe (50ms guard, same as admin web) ───────
+  useEffect(() => {
+    if (!selectedMission || isCompletedRef.current) {
+      if (!selectedMission) disconnectChat();
+      if (selectedMission && isCompletedRef.current) loadChatHistory(selectedMission.disaster_id);
+      return;
+    }
+
+    isChatMounted.current   = true;
+    hasConnectedRef.current = false;
+    reconnectCount.current  = 0;
+
+    // 50ms delay prevents double-connect in React dev StrictMode
+    const initTimer = setTimeout(() => {
+      if (!isChatMounted.current || hasConnectedRef.current) return;
+      hasConnectedRef.current = true;
+      setMessages([]);
+      connectChat(selectedMission.disaster_id);
+    }, 50);
+
+    return () => {
+      clearTimeout(initTimer);
+      isChatMounted.current   = false;
+      hasConnectedRef.current = false;
+      if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+      if (chatWsRef.current) {
+        chatWsRef.current.onclose = null;
+        chatWsRef.current.close();
+        chatWsRef.current = null;
+      }
+      setChatConnected(false);
+      setChatConnecting(false);
+    };
+  }, [selectedMission?.id]);
   const loadChat = (disasterId: string) => {
     connectChat(disasterId);
   };
@@ -428,7 +464,7 @@ export const ActiveMissionsScreen: React.FC = () => {
         timestamp:   m.sent_at     ?? new Date().toISOString(),
         type:        'message',
       }));
-      setMessages(hist);
+      setMessages(sortMessages(hist));
       if (hist.length > 0) {
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
       }
@@ -519,7 +555,7 @@ export const ActiveMissionsScreen: React.FC = () => {
           )}
           <Text style={[S.bubbleText, isMe && { color: '#fff' }]}>{item.text}</Text>
           <Text style={[S.bubbleTime, isMe && { color: 'rgba(255,255,255,0.65)' }]}>
-            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {formatChatTime(item.timestamp)}
           </Text>
         </View>
       );

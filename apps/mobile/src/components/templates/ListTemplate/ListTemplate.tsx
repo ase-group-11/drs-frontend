@@ -1,5 +1,9 @@
+// FILE: src/components/templates/ListTemplate/ListTemplate.tsx
+// FIXED: SafeAreaView from react-native-safe-area-context (not react-native)
+
 import React from 'react';
-import { View, StyleSheet, SafeAreaView, StatusBar } from 'react-native';
+import { View, StyleSheet, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@theme/colors';
 
 export interface ListTemplateProps {
@@ -13,7 +17,7 @@ export interface ListTemplateProps {
 export const ListTemplate: React.FC<ListTemplateProps> = ({
   header, tabs, sectionHeader, list, footer,
 }) => (
-  <SafeAreaView style={styles.safe}>
+  <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
     <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
     {header}
     {tabs}

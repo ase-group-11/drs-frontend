@@ -18,6 +18,13 @@ buildscript {
     }
 }
 
+// ✅ Read local.properties for secret keys
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+}
+
 allprojects {
     repositories {
         google()
@@ -31,7 +38,10 @@ allprojects {
             }
             credentials {
                 username = "mapbox"
-                password = project.properties['MAPBOX_DOWNLOADS_TOKEN'] ?: ""
+                // ✅ Reads from local.properties → falls back to gradle.properties → empty string
+                password = localProperties['MAPBOX_DOWNLOADS_TOKEN']
+                        ?: project.properties['MAPBOX_DOWNLOADS_TOKEN']
+                        ?: ""
             }
         }
     }

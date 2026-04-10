@@ -79,19 +79,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   const [responderData, setResponderData]         = useState<any>(null);
   const [missionCount, setMissionCount]           = useState(0);
   const mapRef      = useRef<any>(null);
-  const pendingNav  = useRef<{ lat: number; lon: number; label: string } | null>(null);
+  const pendingNav       = useRef<{ lat: number; lon: number; label: string } | null>(null);
+  const pendingEvacRoute = useRef<{ lat: number; lon: number; label: string } | null>(null);
 
   // Store params immediately when they arrive (before screen is focused)
   useEffect(() => {
     const params = route?.params as any;
+    if (!params) return;
+
     if (params?.flyToLat && params?.flyToLon) {
       console.log('[HomeScreen] Storing pending nav params:', params.flyToLat, params.flyToLon);
-      pendingNav.current = {
-        lat:   params.flyToLat,
-        lon:   params.flyToLon,
-        label: params.flyToLabel ?? 'Incident Location',
-      };
+      if (params?.evacuationRoute) {
+        // Get Directions — store as evacuation route (walk directions)
+        pendingEvacRoute.current = {
+          lat:   params.flyToLat,
+          lon:   params.flyToLon,
+          label: params.flyToLabel ?? 'Evacuation Point',
+        };
+      } else {
+        // View on Map — fly to location
+        pendingNav.current = {
+          lat:   params.flyToLat,
+          lon:   params.flyToLon,
+          label: params.flyToLabel ?? 'Incident Location',
+        };
+      }
     }
+
     // Reroute from AlertsScreen: geometry already fetched, just apply to map
     if (params?.reroutePts && params.reroutePts.length > 1) {
       console.log('[HomeScreen] Received reroutePts from AlertsScreen:', params.reroutePts.length);
@@ -109,19 +123,48 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
   // Fire navigation when screen comes into focus AND map ref is ready
   useFocusEffect(useCallback(() => {
-    if (!pendingNav.current) return;
-    const nav = pendingNav.current;
-    pendingNav.current = null;
-    // Longer delay — map needs time after screen transition to be interactive
-    const t = setTimeout(() => {
-      console.log('[HomeScreen] useFocusEffect firing navigateToScene, mapRef:', !!mapRef.current);
-      if (mapRef.current?.navigateToScene) {
-        mapRef.current.navigateToScene(nav.lat, nav.lon, nav.label);
-      } else {
-        console.warn('[HomeScreen] mapRef.current.navigateToScene not available');
+    // Reconnect WS if it dropped while screen was not focused
+    if (!wsService.connected) {
+      AsyncStorage.getItem('@auth/user_role').then(role => {
+        console.log('[HomeScreen] WS not connected on focus — reconnecting as', role);
+        wsService.connect(role === 'responder');
+      });
+    }
+
+    // Retry loop — params useEffect and useFocusEffect race each other.
+    // Poll every 200ms until mapRef is ready and pending action is consumed.
+    let attempts = 0;
+    const MAX_ATTEMPTS = 20; // 4 seconds total
+
+    const interval = setInterval(() => {
+      attempts += 1;
+      if (attempts > MAX_ATTEMPTS) {
+        clearInterval(interval);
+        return;
       }
-    }, 1200);
-    return () => clearTimeout(t);
+
+      // View on Map — fly to location
+      if (pendingNav.current && mapRef.current?.navigateToScene) {
+        const nav = pendingNav.current;
+        pendingNav.current = null;
+        console.log('[HomeScreen] navigateToScene:', nav.lat, nav.lon);
+        mapRef.current.navigateToScene(nav.lat, nav.lon, nav.label);
+        clearInterval(interval);
+        return;
+      }
+
+      // Get Directions — show walking route
+      if (pendingEvacRoute.current && mapRef.current?.showEvacuationRoute) {
+        const evac = pendingEvacRoute.current;
+        pendingEvacRoute.current = null;
+        console.log('[HomeScreen] showEvacuationRoute:', evac.lat, evac.lon);
+        mapRef.current.showEvacuationRoute(evac.lat, evac.lon, evac.label);
+        clearInterval(interval);
+        return;
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
   }, []));
 
   useEffect(() => {
