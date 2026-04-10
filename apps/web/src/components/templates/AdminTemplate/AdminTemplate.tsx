@@ -129,8 +129,19 @@ const AdminTemplateInner: React.FC<AdminTemplateProps> = ({
   soundEnabledRef.current = soundEnabled;
 
   const handleNotificationClick = useCallback((n: AppNotification) => {
-    setScrollToId(n.id);
     setPanelOpen(false);
+
+    // Chat notifications → open the chat for that disaster directly
+    if (n.eventType === 'chat.message') {
+      const disasterId = n.raw?.data?.disaster_id;
+      if (disasterId) {
+        navigate('/admin/disaster-reports', { state: { openChatForDisasterId: disasterId } });
+        return;
+      }
+    }
+
+    // All other notifications → system activity with scroll
+    setScrollToId(n.id);
     navigate('/admin/dashboard', { state: { scrollToId: n.id } });
   }, [setScrollToId, navigate]);
 

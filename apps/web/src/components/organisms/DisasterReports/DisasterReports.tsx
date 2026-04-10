@@ -5,6 +5,7 @@
 //   added PhotoGallery and LogUpdates sub-page navigation via currentView state
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Card,
   Row,
@@ -63,6 +64,7 @@ type ChatMeta = { total: number; fetching: boolean };
 
 
 const DisasterReports: React.FC = () => {
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<DisasterReport[]>([]);
   const [filteredReports, setFilteredReports] = useState<DisasterReport[]>([]);
@@ -96,6 +98,17 @@ const DisasterReports: React.FC = () => {
     fetchReports();
     fetchEvacuationPlans();
   }, []);
+
+  // Auto-open chat when navigated from a chat notification
+  useEffect(() => {
+    const disasterId = (location.state as any)?.openChatForDisasterId;
+    if (!disasterId || reports.length === 0) return;
+    const report = reports.find((r) => r.id === disasterId);
+    if (report) {
+      setSelectedReport(report);
+      setCurrentView('chat');
+    }
+  }, [location.state, reports]);
 
   const filterReports = useCallback(() => {
     let filtered = [...reports];
