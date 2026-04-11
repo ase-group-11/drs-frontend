@@ -682,22 +682,13 @@ const EvacuationPlanPage: React.FC<Props> = ({ report, planId, onBack }) => {
         <SectionTitle icon={<HomeOutlined />} title="Evacuation Shelters" sub="Available shelters and capacity" />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
           {plan.shelters_with_capacity.map(shelter => {
-            const occupancy = shelter.current_occupancy ?? 0;
-            const available = shelter.available ?? shelter.capacity;
-            const usedPct = Math.round((occupancy / shelter.capacity) * 100);
-            const availPct = 100 - usedPct;
             return (
               <div key={shelter.shelter_id} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
                 <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827', display: 'block', marginBottom: 6 }}>🏟️ {shelter.name}</Text>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ fontSize: 12, color: '#6b7280' }}>Available: <strong style={{ color: '#16a34a' }}>{fmt(available)}</strong></Text>
                   <Text style={{ fontSize: 12, color: '#6b7280' }}>Capacity: <strong>{fmt(shelter.capacity)}</strong></Text>
                 </div>
                 {shelter._dist_km != null && <Text style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>📍 {shelter._dist_km.toFixed(1)} km away</Text>}
-                <Progress percent={availPct} strokeColor="#16a34a" trailColor="#fee2e2" strokeWidth={6} showInfo={false} />
-                <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 4, display: 'block' }}>
-                  {availPct}% space available{occupancy > 0 && ` · ${fmt(occupancy)} currently sheltering`}
-                </Text>
               </div>
             );
           })}

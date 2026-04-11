@@ -171,20 +171,20 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
   useEffect(() => {
     const measure = () => {
       const sider = document.querySelector<HTMLElement>('.admin-sider');
-      setSiderLeft(sider ? sider.offsetWidth : 0);
+      setSiderLeft(sider && sider.offsetWidth > 0 ? sider.offsetWidth : 0);
     };
     measure();
 
-    // Re-measure when sidebar collapses/expands (triggered by transition end)
     const sider = document.querySelector<HTMLElement>('.admin-sider');
     sider?.addEventListener('transitionend', measure);
+    window.addEventListener('resize', measure);
 
-    // Lock outer scroll on both html and body — browser may route to either
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';
 
     return () => {
       sider?.removeEventListener('transitionend', measure);
+      window.removeEventListener('resize', measure);
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
@@ -221,6 +221,7 @@ const DisasterChat: React.FC<DisasterChatProps> = ({ report, onBack }) => {
     onNewMessage: handleNewMessage,
   });
 
+  // Signal to global monitor that this chat is open — suppresses duplicate toasts
   // ── Auto-scroll to bottom on new messages ────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
