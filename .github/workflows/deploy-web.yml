@@ -40,6 +40,7 @@ jobs:
         env:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
           REACT_APP_HEALTH_URL: ${{ secrets.REACT_APP_HEALTH_URL }}
+          REACT_APP_MAPBOX_TOKEN: ${{ secrets.REACT_APP_MAPBOX_TOKEN }}
         run: npm run build
 
       - name: Install SSH key
