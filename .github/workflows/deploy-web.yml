@@ -55,7 +55,9 @@ jobs:
         with:
           context: apps/web
           push: true
-          tags: ghcr.io/ase-group-11/drs-frontend:${{ github.sha }}
+          tags: |
+            ghcr.io/ase-group-11/drs-frontend:${{ github.sha }}
+            ghcr.io/ase-group-11/drs-frontend:latest
           build-args: |
             REACT_APP_API_URL=${{ secrets.REACT_APP_API_URL }}
             REACT_APP_HEALTH_URL=${{ secrets.REACT_APP_HEALTH_URL }}
