@@ -61,7 +61,7 @@ jobs:
             apps/web/build/ \
             ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:~/drs-app/frontend/
 
-      - name: Reload nginx
+      - name: Verify files on VM
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
-            "sudo nginx -t && sudo systemctl reload nginx"
+            "ls ~/drs-app/frontend/"
