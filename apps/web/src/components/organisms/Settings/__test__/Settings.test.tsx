@@ -51,9 +51,24 @@ async function clickTab(label: RegExp) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+
+  // FIX: The Settings component accesses health.services.postgresql (and redis,
+  // rabbitmq, tomtom) via SERVICE_CONFIGS. The old mock returned a flat shape
+  // { databaseStatus, apiStatus } which has no .services property, causing
+  // "Cannot read properties of undefined (reading 'postgresql')" at render time.
+  // The mock must match the real HealthResponse type from settings.types.ts.
   getSystemStatus.mockResolvedValue({
     success: true,
-    data: { databaseStatus: 'Operational', apiStatus: 'Operational' },
+    data: {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: {
+        postgresql: { status: 'healthy' },
+        redis:      { status: 'healthy' },
+        rabbitmq:   { status: 'healthy' },
+        tomtom:     { status: 'healthy', circuit_breaker: 'closed' },
+      },
+    },
   });
 });
 

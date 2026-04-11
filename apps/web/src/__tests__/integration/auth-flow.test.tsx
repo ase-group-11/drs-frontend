@@ -8,6 +8,12 @@
  * localStorage, so there is no way to get a non-admin into authenticated
  * state using the real AuthProvider. Those scenarios are covered by the
  * unit-level routing.test.tsx which mocks useAuth directly.
+ *
+ * FIX: Added mapbox-gl mock. AppRouter renders the full app including
+ * DisasterReports, which statically imports mapbox-gl. In a jsdom environment
+ * mapbox-gl attempts to access WebGL/canvas APIs that don't exist, causing a
+ * native exception that crashes the Jest worker process entirely (manifests as
+ * "Jest worker encountered 4 child process exceptions, exceeding retry limit").
  */
 
 import React from 'react';
@@ -17,6 +23,54 @@ import { MemoryRouter } from 'react-router-dom';
 import { ConfigProvider, App as AntApp } from 'antd';
 
 jest.setTimeout(20000);
+
+// ─── Mock mapbox-gl ───────────────────────────────────────────────────────────
+// FIX: AppRouter statically imports components that use mapbox-gl (e.g.
+// DisasterReports). Without this mock, mapbox-gl's native bindings crash the
+// Jest worker process before any test runs — no assertion failure, just a
+// hard worker exit with "4 child process exceptions, exceeding retry limit".
+jest.mock('mapbox-gl', () => ({
+  Map:               jest.fn().mockImplementation(() => ({
+    on:            jest.fn(),
+    off:           jest.fn(),
+    remove:        jest.fn(),
+    addControl:    jest.fn(),
+    removeControl: jest.fn(),
+    addSource:     jest.fn(),
+    removeSource:  jest.fn(),
+    addLayer:      jest.fn(),
+    removeLayer:   jest.fn(),
+    getSource:     jest.fn(),
+    getLayer:      jest.fn(),
+    flyTo:         jest.fn(),
+    fitBounds:     jest.fn(),
+    resize:        jest.fn(),
+    setCenter:     jest.fn(),
+    isStyleLoaded: jest.fn(() => true),
+  })),
+  NavigationControl: jest.fn().mockImplementation(() => ({})),
+  FullscreenControl: jest.fn().mockImplementation(() => ({})),
+  ScaleControl:      jest.fn().mockImplementation(() => ({})),
+  GeolocateControl:  jest.fn().mockImplementation(() => ({})),
+  Marker:            jest.fn().mockImplementation(() => ({
+    setLngLat: jest.fn().mockReturnThis(),
+    addTo:     jest.fn().mockReturnThis(),
+    remove:    jest.fn(),
+  })),
+  Popup:             jest.fn().mockImplementation(() => ({
+    setLngLat: jest.fn().mockReturnThis(),
+    setHTML:   jest.fn().mockReturnThis(),
+    addTo:     jest.fn().mockReturnThis(),
+    remove:    jest.fn(),
+  })),
+  LngLatBounds:      jest.fn().mockImplementation(() => ({
+    extend:    jest.fn().mockReturnThis(),
+    isEmpty:   jest.fn(() => false),
+    getCenter: jest.fn(() => ({ lng: 0, lat: 0 })),
+  })),
+  accessToken: '',
+  supported:   jest.fn(() => true),
+}));
 
 // ─── Mock all external API calls ──────────────────────────────────────────────
 
@@ -54,6 +108,22 @@ jest.mock('../../lib/axios', () => ({
     post:   jest.fn(),
     put:    jest.fn(),
     delete: jest.fn(),
+  },
+  // FIX: Also mock healthClient so getSystemStatus() doesn't throw when the
+  // Settings page is rendered as part of the full app.
+  healthClient: {
+    get: jest.fn().mockResolvedValue({
+      data: {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+          postgresql: { status: 'healthy' },
+          redis:      { status: 'healthy' },
+          rabbitmq:   { status: 'healthy' },
+          tomtom:     { status: 'healthy' },
+        },
+      },
+    }),
   },
 }));
 
@@ -114,14 +184,47 @@ function renderApp(initialPath = '/') {
 
 // ─── Setup ─────────────────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getSystemStatus, getUsers, getTeams } = require('../../services') as {
+  getSystemStatus: jest.Mock;
+  getUsers:        jest.Mock;
+  getTeams:        jest.Mock;
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
+
   logout.mockImplementation(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('refreshToken');
   });
+
+  // FIX: Dashboard.tsx calls getSystemStatus() on mount and does `res.success`
+  // immediately. With a bare jest.fn() (returns undefined), this throws:
+  //   "TypeError: Cannot read properties of undefined (reading 'success')"
+  // That uncaught error in an async effect crashes the Node worker process,
+  // producing "Jest worker encountered 4 child process exceptions".
+  getSystemStatus.mockResolvedValue({
+    success: true,
+    data: {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: {
+        postgresql: { status: 'healthy' },
+        redis:      { status: 'healthy' },
+        rabbitmq:   { status: 'healthy' },
+        tomtom:     { status: 'healthy' },
+      },
+    },
+  });
+
+  // Guard the other service mocks too — Dashboard also fires apiClient.get()
+  // calls for disasters, units, and users on mount. The axios mock already
+  // returns safe empty shapes, but these service-level mocks need to not throw.
+  getUsers.mockResolvedValue({ success: true, data: { users: [], total_count: 0 } });
+  getTeams.mockResolvedValue({ success: true, data: { units: [], total_count: 0 } });
 });
 
 // ─── Unauthenticated redirects ─────────────────────────────────────────────────
