@@ -52,14 +52,14 @@ jobs:
       - name: Create frontend directory on VM
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
-            "sudo mkdir -p /var/www/drs-frontend && sudo chown ${{ secrets.VM_USER }}:${{ secrets.VM_USER }} /var/www/drs-frontend"
+            "mkdir -p ~/drs-app/frontend"
 
       - name: Sync build to VM
         run: |
           rsync -az --delete \
             -e "ssh -o StrictHostKeyChecking=no" \
             apps/web/build/ \
-            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/var/www/drs-frontend/
+            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:~/drs-app/frontend/
 
       - name: Reload nginx
         run: |
