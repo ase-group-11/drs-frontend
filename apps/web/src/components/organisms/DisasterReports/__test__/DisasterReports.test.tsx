@@ -3,6 +3,12 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+// FIX: Import MemoryRouter alongside the antd App component.
+// DisasterReports calls useLocation() at the top level, which requires a Router
+// ancestor in the component tree. antd's <App> does NOT provide one.
+// Every test that renders <DisasterReports /> was crashing with:
+//   "useLocation() may be used only in the context of a <Router> component."
+import { MemoryRouter } from 'react-router-dom';
 import { App } from 'antd';
 
 // Slow integration-style tests need more than the default 5 s
@@ -134,7 +140,15 @@ const makeUnit = (overrides: Partial<any> = {}): any => ({
   ...overrides,
 });
 
-const renderWithApp = (ui: React.ReactElement) => render(<App>{ui}</App>);
+// FIX: Wrap with MemoryRouter so useLocation() inside DisasterReports has a
+// Router context. antd's <App> is kept for its message/notification context,
+// but it never provided a Router — that was the root cause of all 37 failures.
+const renderWithApp = (ui: React.ReactElement) =>
+  render(
+    <MemoryRouter>
+      <App>{ui}</App>
+    </MemoryRouter>
+  );
 
 beforeEach(() => {
   jest.clearAllMocks();

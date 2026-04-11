@@ -26,7 +26,10 @@ import {
   getSystemStatus,
 } from '../settings.service';
 
-// ─── Mock the configured axios instance ──────────────────────────────────────
+// ─── Mock the configured axios instances ─────────────────────────────────────
+// FIX: healthClient must be mocked alongside the default apiClient.
+// getSystemStatus() uses healthClient (different base URL), not apiClient.
+// Without this, healthClient.get is undefined and every call returns success: false.
 jest.mock('../../../lib/axios', () => ({
   __esModule: true,
   default: {
@@ -35,10 +38,18 @@ jest.mock('../../../lib/axios', () => ({
     put:    jest.fn(),
     delete: jest.fn(),
   },
+  healthClient: {
+    get:    jest.fn(),
+    post:   jest.fn(),
+    put:    jest.fn(),
+    delete: jest.fn(),
+  },
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const mockApiClient = require('../../../lib/axios').default;
+const mockApiClient    = require('../../../lib/axios').default;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const mockHealthClient = require('../../../lib/axios').healthClient;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -316,11 +327,13 @@ describe('saveNotificationSettings()', () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// getSystemStatus()  —  no backend endpoint yet
+// getSystemStatus()
+// FIX: uses mockHealthClient (not mockApiClient) because the service calls
+// healthClient.get(), which points to a different base URL (REACT_APP_HEALTH_URL).
 // ══════════════════════════════════════════════════════════════════════════════
 describe('getSystemStatus()', () => {
   it('returns an object with databaseStatus field', async () => {
-    mockApiClient.get.mockResolvedValueOnce({
+    mockHealthClient.get.mockResolvedValueOnce({
       data: { databaseStatus: 'Operational', apiStatus: 'Healthy', version: 'v1.0' },
     });
 
@@ -331,7 +344,7 @@ describe('getSystemStatus()', () => {
   });
 
   it('returns an object with apiStatus field', async () => {
-    mockApiClient.get.mockResolvedValueOnce({
+    mockHealthClient.get.mockResolvedValueOnce({
       data: { databaseStatus: 'Operational', apiStatus: 'Healthy', version: 'v1.0' },
     });
 
@@ -341,7 +354,7 @@ describe('getSystemStatus()', () => {
   });
 
   it('never throws on API failure', async () => {
-    mockApiClient.get.mockRejectedValueOnce(new Error('Network Error'));
+    mockHealthClient.get.mockRejectedValueOnce(new Error('Network Error'));
 
     await expect(getSystemStatus()).resolves.not.toThrow();
   });
