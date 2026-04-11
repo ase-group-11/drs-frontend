@@ -1,0 +1,66 @@
+name: Deploy Frontend Web to VM
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/deploy-web.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Run tests
+        working-directory: apps/web
+        env:
+          CI: true
+        run: npm test -- --coverage --watchAll=false
+
+      - name: Build
+        working-directory: apps/web
+        env:
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+          REACT_APP_HEALTH_URL: ${{ secrets.REACT_APP_HEALTH_URL }}
+        run: npm run build
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: unnecessary
+
+      - name: Create frontend directory on VM
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+            "sudo mkdir -p /var/www/drs-frontend && sudo chown ${{ secrets.VM_USER }}:${{ secrets.VM_USER }} /var/www/drs-frontend"
+
+      - name: Sync build to VM
+        run: |
+          rsync -az --delete \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            apps/web/build/ \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/var/www/drs-frontend/
+
+      - name: Reload nginx
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+            "sudo nginx -t && sudo systemctl reload nginx"
