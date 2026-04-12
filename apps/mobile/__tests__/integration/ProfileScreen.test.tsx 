@@ -1,0 +1,130 @@
+/**
+ * INTEGRATION TESTS — ProfileScreen
+ *
+ * Tests user data loading from authService,
+ * back navigation, logout with navigation reset.
+ */
+
+import React from 'react';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
+
+const mockGoBack = jest.fn();
+const mockReset  = jest.fn();
+const mockNavigate = jest.fn();
+
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({
+    goBack:   mockGoBack,
+    reset:    mockReset,
+    navigate: mockNavigate,
+  }),
+}));
+
+jest.mock('@services/authService', () => ({
+  authService: {
+    getStoredUser: jest.fn(),
+    logout:        jest.fn(),
+  },
+}));
+
+jest.mock('@organisms/ProfileMenu', () => ({
+  ProfileMenu: ({ name, phone, onLogout, onNavigate }: any) => {
+    const { View, Text, TouchableOpacity } = require('react-native');
+    return (
+      <View testID="profile-menu">
+        <Text testID="profile-name">{name}</Text>
+        <Text testID="profile-phone">{phone}</Text>
+        <TouchableOpacity testID="logout-btn" onPress={onLogout}>
+          <Text>Logout</Text>
+        </TouchableOpacity>
+        <TouchableOpacity testID="nav-settings" onPress={() => onNavigate('Settings')}>
+          <Text>Settings</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  },
+}));
+
+jest.mock('@atoms/Text', () => ({
+  Text: ({ children, ...p }: any) => {
+    const { Text } = require('react-native');
+    return <Text {...p}>{children}</Text>;
+  },
+}));
+
+jest.mock('react-native-svg', () => {
+  const { View } = require('react-native');
+  return { Svg: View, Path: View };
+});
+
+import { ProfileScreen } from '@screens/ProfileScreen/ProfileScreen';
+import { authService }  from '@services/authService';
+
+const mockGetStoredUser = authService.getStoredUser as jest.Mock;
+const mockLogout        = authService.logout        as jest.Mock;
+
+beforeEach(() => jest.clearAllMocks());
+
+describe('ProfileScreen — user data', () => {
+  it('renders ProfileMenu with loaded user name', async () => {
+    mockGetStoredUser.mockResolvedValue({
+      full_name:    'Jane Doe',
+      phone_number: '+353871234567',
+    });
+    const { getByTestId } = render(<ProfileScreen />);
+    await waitFor(() =>
+      expect(getByTestId('profile-name').props.children).toBe('Jane Doe')
+    );
+  });
+
+  it('renders user phone number', async () => {
+    mockGetStoredUser.mockResolvedValue({
+      full_name:    'Jane Doe',
+      phone_number: '+353871234567',
+    });
+    const { getByTestId } = render(<ProfileScreen />);
+    await waitFor(() =>
+      expect(getByTestId('profile-phone').props.children).toBe('+353871234567')
+    );
+  });
+
+  it('renders default user when no stored user', async () => {
+    mockGetStoredUser.mockResolvedValue(null);
+    const { getByTestId } = render(<ProfileScreen />);
+    await waitFor(() =>
+      expect(getByTestId('profile-name').props.children).toBe('John Doe')
+    );
+  });
+});
+
+describe('ProfileScreen — logout', () => {
+  it('calls authService.logout and resets navigation on logout', async () => {
+    mockGetStoredUser.mockResolvedValue({
+      full_name: 'Jane Doe', phone_number: '+353871234567',
+    });
+    mockLogout.mockResolvedValue(undefined);
+
+    const { getByTestId } = render(<ProfileScreen />);
+    await waitFor(() => getByTestId('logout-btn'));
+    fireEvent.press(getByTestId('logout-btn'));
+
+    await waitFor(() => {
+      expect(mockLogout).toHaveBeenCalled();
+      expect(mockReset).toHaveBeenCalledWith(
+        expect.objectContaining({ routes: expect.arrayContaining([{ name: 'Auth' }]) })
+      );
+    });
+  });
+});
+
+describe('ProfileScreen — navigation', () => {
+  it('navigates to Settings when menu item pressed', async () => {
+    mockGetStoredUser.mockResolvedValue({
+      full_name: 'Jane Doe', phone_number: '+353871234567',
+    });
+    const { getByTestId } = render(<ProfileScreen />);
+    await waitFor(() => getByTestId('nav-settings'));
+    fireEvent.press(getByTestId('nav-settings'));
+    expect(mockNavigate).toHaveBeenCalledWith('Settings');
+  });
+});
