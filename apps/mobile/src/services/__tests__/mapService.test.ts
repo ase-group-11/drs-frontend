@@ -3,7 +3,10 @@ import { mapService } from '../mapService';
 const { authRequest } = require('../authService');
 
 const BOUNDS = '51,-7,55,-5';
-const MOCK_D = { id: 'd1', disaster_type: 'FIRE', latitude: 53.3, longitude: -6.2, severity: 'HIGH', status: 'active', created_at: new Date().toISOString(), location_address: 'Dublin' };
+const MOCK_D = {
+  id: 'd1', disaster_type: 'FIRE', latitude: 53.3, longitude: -6.2,
+  severity: 'HIGH', status: 'active', created_at: new Date().toISOString(), location_address: 'Dublin',
+};
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -40,7 +43,11 @@ describe('mapService.getTraffic', () => {
   it('calls the traffic endpoint with bounds', async () => {
     authRequest.mockResolvedValueOnce({ data: [] });
     await mapService.getTraffic(BOUNDS);
-    expect(authRequest).toHaveBeenCalledWith(expect.stringContaining(`/live-map/traffic?bounds=${BOUNDS}`));
+    // ✅ authRequest called with (url, options) — use expect.anything() for second arg
+    expect(authRequest).toHaveBeenCalledWith(
+      expect.stringContaining(`/live-map/traffic?bounds=${BOUNDS}`),
+      expect.anything()
+    );
   });
 });
 
@@ -48,6 +55,9 @@ describe('mapService.getPendingDisasters', () => {
   it('calls the pending disasters endpoint', async () => {
     authRequest.mockResolvedValueOnce([]);
     await mapService.getPendingDisasters();
-    expect(authRequest).toHaveBeenCalledWith(expect.stringContaining('/live-map/pending-disasters'));
+    expect(authRequest).toHaveBeenCalledWith(
+      expect.stringContaining('/live-map/pending-disasters'),
+      expect.anything()
+    );
   });
 });

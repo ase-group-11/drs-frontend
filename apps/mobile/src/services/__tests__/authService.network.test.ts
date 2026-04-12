@@ -1,9 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
-  getItem: jest.fn(),
-  setItem: jest.fn(() => Promise.resolve()),
-  removeItem: jest.fn(() => Promise.resolve()),
+  getItem:     jest.fn(),
+  setItem:     jest.fn(() => Promise.resolve()),
+  removeItem:  jest.fn(() => Promise.resolve()),
   multiRemove: jest.fn(() => Promise.resolve()),
 }));
 
@@ -49,8 +49,9 @@ describe('authService.register', () => {
 
 describe('authService.verifyLogin', () => {
   it('returns tokens and user on success', async () => {
+    // ✅ API returns { tokens: {...}, user } — not flat fields
     mockFetch.mockResolvedValueOnce(OK({
-      access_token: 'acc_123', refresh_token: 'ref_xyz',
+      tokens: { access_token: 'acc_123', refresh_token: 'ref_xyz', token_type: 'Bearer', expires_in: 3600 },
       user: { id: 'u1', full_name: 'Jane' },
     }));
     const r = await authService.verifyLogin({ phone_number: '+353851234567', otp: '123456' });
@@ -65,7 +66,10 @@ describe('authService.verifyLogin', () => {
 
 describe('authService.verifyRegistration', () => {
   it('POSTs to verify-registration and returns tokens', async () => {
-    mockFetch.mockResolvedValueOnce(OK({ access_token: 'acc_new', refresh_token: 'ref_new', user: { id: 'u2', full_name: 'New User' } }));
+    mockFetch.mockResolvedValueOnce(OK({
+      tokens: { access_token: 'acc_new', refresh_token: 'ref_new', token_type: 'Bearer', expires_in: 3600 },
+      user: { id: 'u2', full_name: 'New User' },
+    }));
     const r = await authService.verifyRegistration({ phone_number: '+353851111111', otp: '654321' });
     expect(r.tokens.access_token).toBe('acc_new');
   });
@@ -78,7 +82,8 @@ describe('authService.verifyRegistration', () => {
 describe('authService.logout', () => {
   it('clears auth keys from AsyncStorage', async () => {
     await authService.logout();
-    expect(AsyncStorage.multiRemove ?? AsyncStorage.removeItem).toHaveBeenCalled();
+    // ✅ authService uses removeItem (not multiRemove)
+    expect(AsyncStorage.removeItem).toHaveBeenCalled();
   });
 });
 
@@ -95,11 +100,12 @@ describe('authService.getStoredUser', () => {
 });
 
 describe('authService.resendOTP', () => {
-  it('calls the resend endpoint', async () => {
+  it('calls login endpoint when isSignup=false', async () => {
+    // ✅ resendOTP calls this.login() internally — no separate /resend endpoint
     mockFetch.mockResolvedValueOnce(OK({ message: 'OTP resent' }));
     await authService.resendOTP('+353851234567', false);
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/auth/resend'),
+      expect.stringContaining('/auth/login'),
       expect.objectContaining({ method: 'POST' })
     );
   });

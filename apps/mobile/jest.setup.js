@@ -68,12 +68,17 @@ jest.mock('@theme/colors', () => ({
     textPrimary: '#111827', textSecondary: '#6B7280',
     textDisabled: '#D1D5DB', textPlaceholder: '#9CA3AF',
     border: '#E5E7EB', errorBg: '#FEF2F2',
+    background: '#FFFFFF',                  // ← ADD
+    backgroundSecondary: '#F5F5F5',         // ← ADD
+    success: '#22C55E',                     // ← ADD
+    navy: '#1E3A5F',                        // ← ADD
   },
 }));
 
 jest.mock('@theme/spacing', () => ({
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32 },
   borderRadius: { sm: 4, md: 8, lg: 12, xl: 16 },
+  shadows: {},
 }));
 
 jest.mock('@theme/typography', () => ({
