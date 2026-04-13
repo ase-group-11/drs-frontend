@@ -1,6 +1,6 @@
 // File: /web/src/components/templates/AdminTemplate/AdminTemplate.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Menu, Avatar, Badge, Dropdown, Button, Drawer, App } from 'antd';
+import { Layout, Menu, Avatar, Badge, Dropdown, Button, Drawer } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   DashboardOutlined,
@@ -14,14 +14,10 @@ import {
   LogoutOutlined,
   DownOutlined,
   CloseOutlined,
-  ExclamationCircleOutlined,
-  CheckCircleOutlined,
-  InfoCircleOutlined,
-  WarningOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../../hooks';
 import type { AppNotification } from '../../../hooks/useWebSocket';
-import { NotificationProvider, useNotifications } from '../../../context/NotificationContext';
+import { useNotifications } from '../../../context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
 import NotificationPanel from '../../organisms/Notifications/NotificationPanel';
 import './AdminTemplate.css';
@@ -38,78 +34,7 @@ const MOBILE_BREAKPOINT = 768;
 
 // ─── Severity → toast icon ────────────────────────────────────────────────────
 
-// ─── Severity → colour dot ────────────────────────────────────────────────────
-
-const SEVERITY_DOT: Record<AppNotification['severity'], string> = {
-  critical: '#ef4444',
-  high:     '#f97316',
-  medium:   '#eab308',
-  low:      '#3b82f6',
-  info:     '#22c55e',
-};
-
-function severityIcon(severity: AppNotification['severity']) {
-  switch (severity) {
-    case 'critical': return <ExclamationCircleOutlined style={{ color: '#ef4444' }} />;
-    case 'high':     return <WarningOutlined           style={{ color: '#f97316' }} />;
-    case 'medium':   return <WarningOutlined           style={{ color: '#eab308' }} />;
-    case 'low':      return <InfoCircleOutlined        style={{ color: '#3b82f6' }} />;
-    default:         return <CheckCircleOutlined       style={{ color: '#22c55e' }} />;
-  }
-}
-
-// ─── Notification sound via Web Audio API (no external files needed) ─────────
-
-function playNotificationSound(severity: AppNotification['severity']) {
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-
-    const configs: Record<AppNotification['severity'], { freq: number; freq2: number; duration: number; gain: number }> = {
-      critical: { freq: 880, freq2: 660, duration: 0.6, gain: 0.4 },
-      high:     { freq: 660, freq2: 550, duration: 0.4, gain: 0.3 },
-      medium:   { freq: 520, freq2: 440, duration: 0.3, gain: 0.25 },
-      low:      { freq: 440, freq2: 400, duration: 0.2, gain: 0.2 },
-      info:     { freq: 400, freq2: 380, duration: 0.2, gain: 0.15 },
-    };
-
-    const { freq, freq2, duration, gain } = configs[severity];
-
-    const osc = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-
-    osc.connect(gainNode);
-    gainNode.connect(ctx.destination);
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(freq2, ctx.currentTime + duration * 0.6);
-
-    gainNode.gain.setValueAtTime(gain, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + duration);
-
-    // For critical, add a second beep
-    if (severity === 'critical') {
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.3);
-      osc2.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.9);
-      gain2.gain.setValueAtTime(0.4, ctx.currentTime + 0.3);
-      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9);
-      osc2.start(ctx.currentTime + 0.3);
-      osc2.stop(ctx.currentTime + 0.9);
-    }
-
-    osc.onended = () => ctx.close();
-  } catch {
-    // Browser may block AudioContext before user interaction — silently ignore
-  }
-}
+// ─── Severity → colour dot (now in router/index.tsx) ──────────────────────────
 
 const AdminTemplateInner: React.FC<AdminTemplateProps> = ({
   children,
@@ -123,10 +48,7 @@ const AdminTemplateInner: React.FC<AdminTemplateProps> = ({
   const { user, logout }                        = useAuth();
   const navigate                                = useNavigate();
 
-  const { notifications, connected, unreadCount, markAllRead, clearAll, setScrollToId, soundEnabled } = useNotifications();
-
-  // Keep module-level ref in sync so the bridge callback can read it
-  soundEnabledRef.current = soundEnabled;
+  const { notifications, connected, unreadCount, markAllRead, clearAll, setScrollToId } = useNotifications();
 
   const handleNotificationClick = useCallback((n: AppNotification) => {
     setPanelOpen(false);
@@ -493,63 +415,11 @@ const AdminTemplateInner: React.FC<AdminTemplateProps> = ({
   );
 };
 
-// Module-level ref so the bridge (outside NotificationProvider) can read soundEnabled
-const soundEnabledRef = { current: true };
-
-// Bridge: reads toast from App context and passes handler into NotificationProvider
-const AdminTemplateWithNotifications: React.FC<AdminTemplateProps> = (props) => {
-  const { notification: toast } = App.useApp();
-
-  const handleNotification = useCallback((n: AppNotification) => {
-    if (n.eventType === 'vehicle.location_updated') return;
-
-    // Sound gated by soundEnabled from context — read via ref to avoid stale closure
-    if (soundEnabledRef.current) playNotificationSound(n.severity);
-
-    const dot = SEVERITY_DOT[n.severity];
-    const isCritical = n.severity === 'critical';
-
-    toast.open({
-      message: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%',
-            background: dot, flexShrink: 0, display: 'inline-block',
-          }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#111827', lineHeight: 1.5 }}>
-            {n.title}
-          </span>
-        </div>
-      ),
-      placement: 'topRight',
-      duration: isCritical ? 0 : 5,
-      icon: severityIcon(n.severity),
-      style: {
-        padding: '14px 36px 14px 14px',
-        borderRadius: 10,
-        boxShadow: '0 2px 10px rgba(0,0,0,0.09)',
-        width: 300,
-        minWidth: 300,
-        maxWidth: 300,
-        borderLeft: `3px solid ${dot}`,
-        background: '#ffffff',
-        overflow: 'hidden',
-      },
-    });
-  }, [toast]);
-
-  return (
-    <NotificationProvider onNotification={handleNotification}>
-      <AdminTemplateInner {...props} />
-    </NotificationProvider>
-  );
-};
-
-// Wrap in App context so toast works
+// NotificationProvider now lives in the router (src/router/index.tsx) so it
+// persists across admin page navigation instead of remounting per-page.
+// AdminTemplate is a pure layout shell — it reads from the context via useNotifications().
 const AdminTemplate: React.FC<AdminTemplateProps> = (props) => (
-  <App>
-    <AdminTemplateWithNotifications {...props} />
-  </App>
+  <AdminTemplateInner {...props} />
 );
 
 export default AdminTemplate;
