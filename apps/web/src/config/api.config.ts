@@ -96,7 +96,7 @@ export const API_ENDPOINTS = {
     GET:           (id: string) => `/users/${id}`,
     DELETE:        (id: string) => `/users/${id}`,
     UPDATE_STATUS: (id: string) => `/users/${id}/status`,
-    UPDATE:        (id: string) => `/users/${id}/`,
+    UPDATE:        (id: string) => `/users/${id}`,
     DEPARTMENT_MAP:'/users/department-map',
   },
 

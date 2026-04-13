@@ -93,6 +93,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('drs_notifications');
     // Clear all chat history — keyed as drs_chat_<disasterId>
     Object.keys(localStorage).filter(k => k.startsWith('drs_chat_')).forEach(k => localStorage.removeItem(k));
+    // Clear notification toggle prefs — always reset to ON for the next login
+    localStorage.removeItem('drs_notif_socket');
+    localStorage.removeItem('drs_notif_sound');
     navigate('/login');
   };
 
