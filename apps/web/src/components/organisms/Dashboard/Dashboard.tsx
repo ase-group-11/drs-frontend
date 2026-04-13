@@ -134,11 +134,23 @@ const Dashboard: React.FC = () => {
       // ── KPI: Active Disasters from /disasters/all ─────────────────────────
       const disasters: DisasterRaw[] = disastersRes.data?.disasters ?? [];
       setAllDisasters(disasters);
-      const activeDis = disasters.filter(
-        (d) => d.disaster_status === 'ACTIVE' || d.disaster_status === 'MONITORING'
-      );
-      const criticalActive = activeDis.filter((d) => d.severity === 'CRITICAL').length;
-      setActiveDisasters(activeDis.length);
+
+      // Prefer the server-side summary so the count is accurate even when the
+      // backend paginates and only a subset of records is in `disasters`.
+      // Fall back to local filtering only if the summary is absent.
+      const serverSummary = disastersRes.data?.summary;
+      const activeDisCount = serverSummary
+        ? (serverSummary.active ?? 0) + (serverSummary.monitoring ?? 0)
+        : disasters.filter(
+            (d) => d.disaster_status === 'ACTIVE' || d.disaster_status === 'MONITORING'
+          ).length;
+      const criticalActive = serverSummary
+        ? (serverSummary.critical ?? 0)
+        : disasters.filter(
+            (d) => (d.disaster_status === 'ACTIVE' || d.disaster_status === 'MONITORING')
+                && d.severity === 'CRITICAL'
+          ).length;
+      setActiveDisasters(activeDisCount);
       setCriticalActiveDisasters(criticalActive);
 
       // ── KPI: Emergency Teams from /emergency-units/ ───────────────────────
