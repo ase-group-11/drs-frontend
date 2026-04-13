@@ -20,51 +20,8 @@ export type ChatWsFrame =
   | { type: 'history'; disaster_id: string; count: number; messages: ChatMessage[] }
   | ChatMessage;
 
-// ─── Local-storage persistence (10-minute TTL) ────────────────────────────────
-
-const CHAT_TTL_MS       = 10 * 60 * 1000;
 const RECONNECT_DELAY   = 3_000;
 const MAX_RECONNECTS    = 10;
-
-function storageKey(disasterId: string) {
-  return `drs_chat_${disasterId}`;
-}
-
-interface StoredChatData {
-  messages: ChatMessage[];
-  savedAt: number;
-}
-
-export function loadChatFromStorage(disasterId: string): ChatMessage[] {
-  try {
-    const raw = localStorage.getItem(storageKey(disasterId));
-    if (!raw) return [];
-    const data: StoredChatData = JSON.parse(raw);
-    if (Date.now() - data.savedAt > CHAT_TTL_MS) {
-      localStorage.removeItem(storageKey(disasterId));
-      return [];
-    }
-    return data.messages;
-  } catch {
-    return [];
-  }
-}
-
-function saveToStorage(disasterId: string, messages: ChatMessage[]) {
-  try {
-    localStorage.setItem(
-      storageKey(disasterId),
-      JSON.stringify({ messages, savedAt: Date.now() } satisfies StoredChatData),
-    );
-  } catch {
-    try {
-      localStorage.setItem(
-        storageKey(disasterId),
-        JSON.stringify({ messages: messages.slice(-50), savedAt: Date.now() }),
-      );
-    } catch { /* quota exhausted */ }
-  }
-}
 
 // ─── Merge + dedup by id ──────────────────────────────────────────────────────
 
@@ -127,9 +84,7 @@ export function useChatWebSocket({
   disasterId,
   onNewMessage,
 }: UseChatWebSocketOptions): UseChatWebSocketReturn {
-  const [messages, setMessages] = useState<ChatMessage[]>(() =>
-    loadChatFromStorage(disasterId),
-  );
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [connected, setConnected] = useState(false);
 
   const wsRef           = useRef<WebSocket | null>(null);
@@ -141,6 +96,7 @@ export function useChatWebSocket({
   onNewMsgRef.current   = onNewMessage;
 
   const currentUserId   = useRef<string | null>(getTokenSub());
+  const disasterIdRef   = useRef(disasterId);
 
   const getWsUrl = useCallback((): string | null => {
     const token = localStorage.getItem('token');
@@ -190,12 +146,10 @@ export function useChatWebSocket({
           const historyMsgs = frame.messages ?? [];
           setMessages((prev) => {
             // Replace optimistic messages that now have real server ids
-            const merged = mergeMessages(
+            return mergeMessages(
               historyMsgs,
               prev.filter((m) => m.id.startsWith('optimistic-')),
             );
-            saveToStorage(disasterId, merged);
-            return merged;
           });
           return;
         }
@@ -212,9 +166,7 @@ export function useChatWebSocket({
                 m.sender_id === msg.sender_id
               )
             );
-            const merged = mergeMessages(withoutOptimistic, [msg]);
-            saveToStorage(disasterId, merged);
-            return merged;
+            return mergeMessages(withoutOptimistic, [msg]);
           });
           // Notify only for other users' messages
           if (msg.sender_id !== currentUserId.current) {
@@ -237,7 +189,7 @@ export function useChatWebSocket({
     };
 
     ws.onerror = () => ws.close();
-  }, [disasterId, getWsUrl]);
+  }, [getWsUrl]);
 
   // StrictMode-safe: delay connect by 50ms so the cleanup from the first
   // mount can cancel it before a socket opens (same pattern as useWebSocket.ts)
@@ -283,16 +235,12 @@ export function useChatWebSocket({
       sender_name: getTokenFullName(),
       sender_type: 'admin',
       type: 'message',
-      disaster_id: disasterId,
+      disaster_id: disasterIdRef.current,
     };
-    setMessages((prev) => {
-      const next = mergeMessages(prev, [optimistic]);
-      saveToStorage(disasterId, next);
-      return next;
-    });
+    setMessages((prev) => mergeMessages(prev, [optimistic]));
 
     ws.send(JSON.stringify({ message: text }));
-  }, [disasterId]);
+  }, []);
 
   const disconnect = useCallback(() => {
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);

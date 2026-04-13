@@ -16,8 +16,6 @@ interface NotificationContextType {
   soundEnabled: boolean;
   toggleSocket: () => void;
   toggleSound: () => void;
-  disconnect: () => void;
-  reconnect: () => void;
   pushNotification: (n: AppNotification) => void;
 }
 
@@ -44,20 +42,20 @@ export const NotificationManager: React.FC<NotificationManagerProps> = ({
   );
   const [scrollToId,    setScrollToId]    = useState<string | null>(null);
 
-  const ws = useWebSocket({ onNotification });
+  const ws = useWebSocket({ onNotification, socketEnabled });
 
   const toggleSocket = useCallback(() => {
-    setSocketEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem('drs_notif_socket', String(next));
-      if (prev) {
-        ws.disconnect();
-      } else {
-        ws.reconnect();
-      }
-      return next;
-    });
-  }, [ws]);
+    // Read current value from closure — callback is recreated whenever socketEnabled changes
+    const next = !socketEnabled;
+    localStorage.setItem('drs_notif_socket', String(next));
+    setSocketEnabled(next);
+    // Side effects outside the state updater (updater must be pure)
+    if (next) {
+      ws.reconnect();
+    } else {
+      ws.disconnect();
+    }
+  }, [socketEnabled, ws]);
 
   const toggleSound = useCallback(() => {
     setSoundEnabled((prev) => {
@@ -69,7 +67,13 @@ export const NotificationManager: React.FC<NotificationManagerProps> = ({
 
   return (
     <NotificationContext.Provider value={{
-      ...ws,
+      // Explicit — don't spread ws so internal ws methods never leak onto the public interface
+      notifications:    ws.notifications,
+      connected:        ws.connected,
+      unreadCount:      ws.unreadCount,
+      markAllRead:      ws.markAllRead,
+      clearAll:         ws.clearAll,
+      pushNotification: ws.pushNotification,
       scrollToId,
       setScrollToId,
       socketEnabled,

@@ -198,15 +198,17 @@ function saveToStorage(notifications: AppNotification[]) {
 
 interface UseWebSocketOptions {
   onNotification?: (n: AppNotification) => void;
+  /** When false the socket will not connect on mount (default: true). */
+  socketEnabled?: boolean;
 }
 
-export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
+export function useWebSocket({ onNotification, socketEnabled = true }: UseWebSocketOptions = {}) {
   // Initialise from localStorage so notifications survive page refresh
   const [notifications, setNotifications] = useState<AppNotification[]>(() => loadFromStorage());
   const [connected, setConnected]         = useState(false);
-  const [unreadCount, setUnreadCount]     = useState<number>(
-    () => loadFromStorage().filter((n) => !n.read).length
-  );
+
+  // Derived — single source of truth, can never drift from notifications
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const wsRef           = useRef<WebSocket | null>(null);
   const reconnectTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -235,7 +237,9 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
       return;
     }
 
-    console.log('[WS] Connecting to:', url);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[WS] Connecting to:', url.replace(/token=[^&]+/, 'token=[REDACTED]'));
+    }
 
     // Close existing connection cleanly
     if (wsRef.current) {
@@ -278,7 +282,6 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
           saveToStorage(next);
           return next;
         });
-        setUnreadCount((c) => c + 1);
         onNotifRef.current?.(notification);
       } catch (err) {
         console.error('[WS] Failed to parse message:', err, event.data);
@@ -311,6 +314,9 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
     isMounted.current = true;
     if (hasConnected.current) return;
 
+    // Respect the caller's socketEnabled flag — don't open a socket if disabled
+    if (!socketEnabled) return;
+
     // Small delay lets StrictMode's cleanup cancel this before a socket opens
     const initTimer = setTimeout(() => {
       if (!isMounted.current) return;
@@ -339,7 +345,6 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
       saveToStorage(next);
       return next;
     });
-    setUnreadCount((c) => c + 1);
     onNotifRef.current?.(n);
   }, []);
 
@@ -349,12 +354,10 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
       saveToStorage(next);
       return next;
     });
-    setUnreadCount(0);
   }, []);
 
   const clearAll = useCallback(() => {
     setNotifications([]);
-    setUnreadCount(0);
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -540,8 +543,7 @@ export function useWebSocket({ onNotification }: UseWebSocketOptions = {}) {
       const n = parseEvent(raw);
       if (!n) { console.warn('[WS] parseEvent returned null for:', eventType); return; }
       setNotifications((prev) => { const next = [n, ...prev].slice(0, MAX_NOTIFICATIONS); saveToStorage(next); return next; });
-      setUnreadCount((c) => c + 1);
-      onNotifRef.current?.(n);
+        onNotifRef.current?.(n);
       console.log('[WS] Injected realistic test notification:', n);
     };
 
