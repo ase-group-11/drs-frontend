@@ -91,8 +91,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     Object.keys(localStorage).filter(k => k.startsWith('drs_vehicle_')).forEach(k => localStorage.removeItem(k));
     // Clear notifications — should not carry over to next user session
     localStorage.removeItem('drs_notifications');
-    // Clear all chat history — keyed as drs_chat_<disasterId>
-    Object.keys(localStorage).filter(k => k.startsWith('drs_chat_')).forEach(k => localStorage.removeItem(k));
+    // Chat history is stored server-side (Redis → DB) — no client localStorage to clear
     // Clear notification toggle prefs — always reset to ON for the next login
     localStorage.removeItem('drs_notif_socket');
     localStorage.removeItem('drs_notif_sound');
