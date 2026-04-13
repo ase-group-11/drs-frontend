@@ -69,7 +69,7 @@ const NotificationsTab: React.FC = () => {
           Notification Settings
         </Text>
         <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 24 }}>
-          These settings are session-only and reset to ON on every login.
+          These settings persist across navigation and page refreshes. They reset to ON on every logout.
         </Text>
 
         <ToggleRow

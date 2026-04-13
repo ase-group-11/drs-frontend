@@ -34,26 +34,37 @@ export const NotificationManager: React.FC<NotificationManagerProps> = ({
   children,
   onNotification,
 }) => {
-  // Both default to ON — session-only, never persisted, always ON after login
-  const [socketEnabled, setSocketEnabled] = useState(true);
-  const [soundEnabled,  setSoundEnabled]  = useState(true);
+  // Default ON when the key is absent (fresh login). If the user explicitly
+  // turned a toggle OFF in a previous navigation, localStorage holds 'false'.
+  const [socketEnabled, setSocketEnabled] = useState<boolean>(
+    () => localStorage.getItem('drs_notif_socket') !== 'false'
+  );
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(
+    () => localStorage.getItem('drs_notif_sound') !== 'false'
+  );
   const [scrollToId,    setScrollToId]    = useState<string | null>(null);
 
   const ws = useWebSocket({ onNotification });
 
   const toggleSocket = useCallback(() => {
     setSocketEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem('drs_notif_socket', String(next));
       if (prev) {
         ws.disconnect();
       } else {
         ws.reconnect();
       }
-      return !prev;
+      return next;
     });
   }, [ws]);
 
   const toggleSound = useCallback(() => {
-    setSoundEnabled((prev) => !prev);
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem('drs_notif_sound', String(next));
+      return next;
+    });
   }, []);
 
   return (
