@@ -24,6 +24,9 @@ const mockMatchMedia = (query: string) => ({
 // Re-apply before every test so the mock survives any per-test resets.
 beforeEach(() => {
   (window as any).matchMedia = jest.fn().mockImplementation(mockMatchMedia);
+  // Clear notification toggle keys so localStorage state never bleeds between tests
+  localStorage.removeItem('drs_notif_socket');
+  localStorage.removeItem('drs_notif_sound');
 });
 
 // ─── ResizeObserver (used by Ant Design tooltips / dropdowns) ────────────────
