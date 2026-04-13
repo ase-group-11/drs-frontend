@@ -410,6 +410,7 @@ const UserManagement: React.FC = () => {
             <Select value={roleFilter} onChange={setRoleFilter} style={{ width: '100%' }} popupClassName="um-filter-dropdown">
               <Select.Option value="all">All Roles</Select.Option>
               <Select.Option value="ADMIN">Admin</Select.Option>
+              <Select.Option value="STAFF">Staff</Select.Option>
               <Select.Option value="RESIDENT">Citizen</Select.Option>
             </Select>
           </Col>

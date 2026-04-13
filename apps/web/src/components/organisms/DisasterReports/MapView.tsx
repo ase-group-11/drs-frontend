@@ -38,7 +38,6 @@ const UNIT_STATUS_COLOR: Record<string, string> = {
 // Route colours: first is "assigned/best", rest are alternates
 const ROUTE_COLORS = ['#22d3ee', '#f59e0b', '#8b5cf6', '#ec4899', '#22c55e', '#f97316'];
 
-type StatusFilter = 'ALL' | 'ACTIVE' | 'MONITORING' | 'RESOLVED' | 'ARCHIVED';
 type MapStyle = 'streets' | 'dark' | 'satellite';
 
 interface BlockedRoad {
@@ -174,11 +173,10 @@ const MapView: React.FC<MapViewProps> = ({
   const [mapReady,        setMapReady]        = useState(false);
   const [mapError,        setMapError]        = useState('');
   const [styleMode,       setStyleMode]       = useState<MapStyle>('dark');
-  const [statusFilter,    setStatusFilter]    = useState<StatusFilter>('ACTIVE');
+  const statusFilter = 'ACTIVE';
   const [drawerReport,    setDrawerReport]    = useState<DisasterReport | null>(null);
   const [drawerUnit,      setDrawerUnit]      = useState<EmergencyUnit | null>(null);
   const [is3D,            setIs3D]            = useState(false);
-  const [filterOpen,      setFilterOpen]      = useState(false);
   const [mapCtrlOpen,     setMapCtrlOpen]     = useState(false);
   const [showStations,    setShowStations]    = useState(true);
   const [units,           setUnits]           = useState<EmergencyUnit[]>([]);
@@ -201,9 +199,7 @@ const MapView: React.FC<MapViewProps> = ({
 
   const isDark = styleMode === 'dark';
 
-  const visibleReports = reports.filter(r =>
-    statusFilter === 'ALL' ? true : r.disasterStatus === statusFilter
-  );
+  const visibleReports = reports.filter(r => r.disasterStatus === statusFilter);
 
   // ── Layer management ────────────────────────────────────────────────────────
   // Track sources and layers separately to avoid removal order issues
@@ -913,7 +909,6 @@ const MapView: React.FC<MapViewProps> = ({
     setRerouteMode(true);
   }, [reroutePlans, clearRerouteLayers, renderMarkers]);
 
-  useEffect(() => { boundsSetRef.current = false; }, [statusFilter]);
   useEffect(() => { if (!rerouteMode) renderMarkers(); }, [renderMarkers, rerouteMode]);
 
   // Fetch user details for all vehicle IDs in the active reroute plan
@@ -1085,40 +1080,7 @@ const MapView: React.FC<MapViewProps> = ({
 
       {/* ── FILTER DROPDOWN — hidden in reroute mode ── */}
       {!rerouteMode && (() => {
-        const activeFilter = [
-          { key:'ACTIVE', label:'Active', color:'#ef4444' },
-          { key:'MONITORING', label:'Monitoring', color:'#f59e0b' },
-          { key:'RESOLVED', label:'Resolved', color:'#22c55e' },
-          { key:'ARCHIVED', label:'Archived', color:'#cbd5e1' },
-          { key:'ALL', label:'All', color:'#22d3ee' },
-        ].find(f => f.key === statusFilter)!;
-        const count = statusFilter === 'ALL' ? reports.length : reports.filter(r => r.disasterStatus === statusFilter).length;
-        return (
-          <div style={{ position:'absolute', top:12, left:12, zIndex:10 }}>
-            <button onClick={() => { setFilterOpen(o => !o); setMapCtrlOpen(false); }} style={btnStyle({ height:34, padding:'0 12px', borderRadius:10, border:`1px solid ${filterOpen ? 'rgba(34,211,238,0.5)' : 'rgba(34,211,238,0.2)'}`, background:'rgba(10,15,30,0.88)', backdropFilter:'blur(12px)', color:'#f1f5f9', cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:8, letterSpacing:'0.04em', boxShadow: filterOpen ? '0 0 16px rgba(34,211,238,0.2)' : '0 2px 10px rgba(0,0,0,0.4)', transition:'all 0.15s' })}>
-              <span style={{ width:8, height:8, borderRadius:'50%', background:activeFilter.color, display:'inline-block', boxShadow:`0 0 6px ${activeFilter.color}`, flexShrink:0 }} />
-              {activeFilter.label}
-              {count > 0 && <span style={{ background:`${activeFilter.color}30`, color:activeFilter.color, border:`1px solid ${activeFilter.color}50`, borderRadius:20, padding:'1px 7px', fontSize:10, fontWeight:800 }}>{count}</span>}
-              <span style={{ color:'rgba(34,211,238,0.6)', fontSize:10, marginLeft:2 }}>{filterOpen ? '▲' : '▼'}</span>
-            </button>
-            {filterOpen && (
-              <div style={{ position:'absolute', top:38, left:0, background:'rgba(8,12,24,0.96)', backdropFilter:'blur(16px)', border:'1px solid rgba(34,211,238,0.2)', borderRadius:10, boxShadow:'0 8px 32px rgba(0,0,0,0.5)', padding:'6px', minWidth:180, zIndex:20 }}>
-                {[{ key:'ACTIVE', label:'Active', color:'#ef4444' }, { key:'MONITORING', label:'Monitoring', color:'#f59e0b' }, { key:'RESOLVED', label:'Resolved', color:'#22c55e' }, { key:'ARCHIVED', label:'Archived', color:'#cbd5e1' }, { key:'ALL', label:'All disasters', color:'#22d3ee' }].map(({ key, label, color }) => {
-                  const cnt = key === 'ALL' ? reports.length : reports.filter(r => r.disasterStatus === key).length;
-                  const active = statusFilter === key;
-                  return (
-                    <button key={key} onClick={() => { setStatusFilter(key as StatusFilter); setFilterOpen(false); }} style={btnStyle({ width:'100%', padding:'8px 10px', borderRadius:7, border:'none', cursor:'pointer', background: active ? `${color}18` : 'transparent', display:'flex', alignItems:'center', gap:10 })} onMouseOver={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'; }} onMouseOut={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}>
-                      <span style={{ width:8, height:8, borderRadius:'50%', background:color, display:'inline-block', flexShrink:0, boxShadow: active ? `0 0 8px ${color}` : 'none' }} />
-                      <span style={{ flex:1, fontSize:12, fontWeight: active ? 700 : 500, color: active ? '#f1f5f9' : '#94a3b8', textAlign:'left', letterSpacing:'0.03em' }}>{label}</span>
-                      <span style={{ fontSize:11, fontWeight:700, color: active ? color : '#475569', background: active ? `${color}20` : 'rgba(255,255,255,0.05)', borderRadius:20, padding:'1px 7px' }}>{cnt}</span>
-                      {active && <span style={{ color, fontSize:10 }}>✓</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
+        return null;
       })()}
 
       {/* ── MAP CONTROLS — hidden in reroute mode ── */}
@@ -1126,8 +1088,8 @@ const MapView: React.FC<MapViewProps> = ({
         const styleMeta: Record<MapStyle, {icon:string;label:string}> = { streets: { icon:'☀️', label:'Light' }, dark: { icon:'🌙', label:'Dark' }, satellite: { icon:'🛰️', label:'Satellite' } };
         const cur = styleMeta[styleMode];
         return (
-          <div style={{ position:'absolute', top:12, left:198, zIndex:10 }}>
-            <button onClick={() => { setMapCtrlOpen(o => !o); setFilterOpen(false); }} style={btnStyle({ height:34, padding:'0 12px', borderRadius:10, border:`1px solid ${mapCtrlOpen ? 'rgba(34,211,238,0.5)' : 'rgba(34,211,238,0.2)'}`, background:'rgba(10,15,30,0.88)', backdropFilter:'blur(12px)', color:'#f1f5f9', cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:7, letterSpacing:'0.04em', boxShadow: mapCtrlOpen ? '0 0 16px rgba(34,211,238,0.2)' : '0 2px 10px rgba(0,0,0,0.4)', transition:'all 0.15s' })}>
+          <div style={{ position:'absolute', top:12, left:12, zIndex:10 }}>
+            <button onClick={() => setMapCtrlOpen(o => !o)} style={btnStyle({ height:34, padding:'0 12px', borderRadius:10, border:`1px solid ${mapCtrlOpen ? 'rgba(34,211,238,0.5)' : 'rgba(34,211,238,0.2)'}`, background:'rgba(10,15,30,0.88)', backdropFilter:'blur(12px)', color:'#f1f5f9', cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:7, letterSpacing:'0.04em', boxShadow: mapCtrlOpen ? '0 0 16px rgba(34,211,238,0.2)' : '0 2px 10px rgba(0,0,0,0.4)', transition:'all 0.15s' })}>
               <span style={{ fontSize:14 }}>{cur.icon}</span>
               <span>{cur.label}</span>
               {is3D && <span style={{ background:'rgba(34,211,238,0.15)', color:'#22d3ee', border:'1px solid rgba(34,211,238,0.3)', borderRadius:6, padding:'1px 6px', fontSize:9, fontWeight:800 }}>3D</span>}
@@ -1169,8 +1131,8 @@ const MapView: React.FC<MapViewProps> = ({
         );
       })()}
 
-      {(filterOpen || mapCtrlOpen) && (
-        <div style={{ position:'absolute', inset:0, zIndex:9 }} onClick={() => { setFilterOpen(false); setMapCtrlOpen(false); }} />
+      {mapCtrlOpen && (
+        <div style={{ position:'absolute', inset:0, zIndex:9 }} onClick={() => setMapCtrlOpen(false)} />
       )}
 
       {/* ── SEVERITY LEGEND — hidden in reroute mode ── */}
