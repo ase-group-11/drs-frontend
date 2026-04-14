@@ -278,6 +278,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   // Citizens only — responders use a separate deployment location endpoint.
   useEffect(() => {
     if (isResponder) return; // responders handled separately
+    if (locationDenied) return; // don't send Dublin defaults when permission is denied
     const [lon, lat] = citizenLocation;
     // Send immediately on location change
     wsService.updateLocation(lat, lon);
@@ -286,7 +287,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       wsService.updateLocation(lat, lon);
     }, 30_000);
     return () => clearInterval(interval);
-  }, [citizenLocation, isResponder]);
+  }, [citizenLocation, isResponder, locationDenied]);
 
   useEffect(() => {
     if (selectedFilter === 'all') {
@@ -408,11 +409,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     // to the disasterStore, which triggers the store subscription above.
     // No need to call loadDisasters() here — store is the single source of truth.
 
-    // disaster.cleared / disaster.resolved — roads reopened, clear reroute overlay
+    // disaster.cleared / disaster.resolved — roads reopened, clear reroute overlay and banners
     if (alert.event_type === 'disaster.cleared' || alert.event_type === 'disaster.resolved') {
       mapRef.current?.clearReroute?.();
       setCitizenRouteActive(false);
       setResponderRouteActive(false);
+      setPendingReroute(null);
+      setActiveAlert(null);
     }
 
     // Citizen reroute — citizen-integration.md Section 8

@@ -207,7 +207,7 @@ export const AlertsScreen: React.FC = () => {
     // ── Evacuation → EvacuationPlans ──────────────────────────────────────
     // Both roles — citizens need to evacuate, responders manage the plan
     if (et.startsWith('evacuation.')) {
-      navigation.navigate('EvacuationPlans' as any);
+      navigation.navigate('EvacuationPlans' as any, disasterId ? { disasterId } : undefined);
       return;
     }
 

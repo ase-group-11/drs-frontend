@@ -36,6 +36,7 @@ import { wsService } from '@services/wsService';
 import { mapActionStore } from '@services/mapActionStore';
 import { formatTime, formatDate } from '@utils/formatters';
 import { API } from '@services/apiConfig';
+import { useUserLocation } from '@hooks/useUserLocation';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -671,7 +672,12 @@ export const EvacuationPlansScreen: React.FC = () => {
   const [isResponder, setIsResponder]     = useState(false);
   // isManager removed — only 'staff' role exists; all responders can approve/activate
   const [view, setView]                   = useState<'list' | 'detail'>('list');
-  const [userLocation, setUserLocation]   = useState<UserLocation | null>(null);
+
+  // Use the same location hook as HomeScreen — works on both iOS and Android
+  const { location: gpsLocation } = useUserLocation();
+  const userLocation: UserLocation | null = gpsLocation
+    ? { lat: gpsLocation[1], lon: gpsLocation[0] }
+    : null;
 
   useEffect(() => {
     loadAll();
@@ -680,16 +686,6 @@ export const EvacuationPlansScreen: React.FC = () => {
     AsyncStorage.getItem('@auth/user_role').then(role => {
       setIsResponder(role === 'responder');
     });
-
-    // Get citizen GPS location for nearest zone calculation
-    // navigator.geolocation is patched by React Native core (no extra package needed)
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        () => { /* silent — nearest zone calc falls back gracefully */ },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-      );
-    }
 
     const unsub = wsService.onAlert((alert) => {
       if (alert.event_type === 'evacuation.triggered') loadAll();

@@ -82,9 +82,11 @@ export const ReportDisasterScreen = () => {
       if (!user) throw new Error('You must be logged in to submit a report.');
 
       // Validate coordinates before submission
-      const lat = reportData.location?.latitude;
-      const lon = reportData.location?.longitude;
-      if (!lat || !lon || isNaN(Number(lat)) || isNaN(Number(lon))) {
+      const lat = Number(reportData.location?.latitude);
+      const lon = Number(reportData.location?.longitude);
+      if (!reportData.location?.latitude || !reportData.location?.longitude ||
+          isNaN(lat) || isNaN(lon) ||
+          lat < -90 || lat > 90 || lon < -180 || lon > 180) {
         throw new Error('Invalid location — please go back and select a valid address on the map.');
       }
 
