@@ -8,7 +8,7 @@
 // Navigation param:  { disasterId: string }
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   ScrollView,
@@ -19,10 +19,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import Svg, { Path, Circle } from 'react-native-svg';
+import MapboxGL from '@rnmapbox/maps';
+import { EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN } from '@env';
 
 import { Text } from '@atoms/Text';
 import { spacing } from '@theme/spacing';
@@ -30,6 +33,9 @@ import { authRequest, authService } from '@services/authService';
 import { API } from '@services/apiConfig';
 import { disasterService, RerouteOverrideRequest } from '@services/disasterService';
 import { formatShortDateTime } from '@utils/formatters';
+import { wsService } from '@services/wsService';
+
+MapboxGL.setAccessToken(EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN);
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -104,6 +110,24 @@ const PRIORITIES: { value: Priority; label: string; color: string }[] = [
 
 const fmtIso = formatShortDateTime;
 
+/** Convert backend [lat, lon][] to Mapbox [lon, lat][] */
+const toMapboxCoords = (points: number[][]): [number, number][] =>
+  (points ?? [])
+    .filter(p => Array.isArray(p) && p.length >= 2)
+    .map(p => [p[1], p[0]] as [number, number]);
+
+const buildLineGeoJSON = (allCoords: [number, number][][]) => ({
+  type: 'FeatureCollection' as const,
+  features: allCoords
+    .filter(c => c.length >= 2)
+    .map((coords, i) => ({
+      type: 'Feature' as const,
+      id: String(i),
+      geometry: { type: 'LineString' as const, coordinates: coords },
+      properties: {},
+    })),
+});
+
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 const BackArrow = ({ onPress }: { onPress: () => void }) => (
@@ -148,11 +172,32 @@ export const RerouteOverrideScreen: React.FC = () => {
   const [routeId,      setRouteId]      = useState('');
   const [priority,     setPriority]     = useState<Priority>('high');
 
-  const [submitting, setSubmitting] = useState(false);
-  const [result,     setResult]     = useState<{ routes_recomputed: number } | null>(null);
-  const [submitErr,  setSubmitErr]  = useState('');
+  const [submitting,      setSubmitting]      = useState(false);
+  const [result,          setResult]          = useState<{ routes_recomputed: number } | null>(null);
+  const [submitErr,       setSubmitErr]       = useState('');
+  const [manualSegmentId, setManualSegmentId] = useState('');
 
   const selectedType = OVERRIDE_TYPES.find(t => t.value === overrideType)!;
+
+  // ── Mini-map refs & derived geometry ────────────────────────────────────
+  const miniMapCameraRef = useRef<MapboxGL.Camera>(null);
+
+  const blockedRoadsCoords = useMemo(() =>
+    (plan?.blocked_roads ?? [])
+      .map((r: any) => toMapboxCoords(r.points ?? []))
+      .filter((c: [number, number][]) => c.length >= 2),
+    [plan],
+  );
+
+  const chosenRoutesCoords = useMemo(() =>
+    (plan?.chosen_routes ?? [])
+      .map((r: any) => toMapboxCoords(r.points ?? []))
+      .filter((c: [number, number][]) => c.length >= 2),
+    [plan],
+  );
+
+  const blockedRoadsGeoJSON = useMemo(() => buildLineGeoJSON(blockedRoadsCoords), [blockedRoadsCoords]);
+  const chosenRoutesGeoJSON = useMemo(() => buildLineGeoJSON(chosenRoutesCoords), [chosenRoutesCoords]);;
 
   // ── Load current plan ────────────────────────────────────────────────────
   const loadPlan = useCallback(async () => {
@@ -180,17 +225,44 @@ export const RerouteOverrideScreen: React.FC = () => {
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
+  // Reload plan each time this screen regains focus
+  useFocusEffect(useCallback(() => {
+    loadPlan();
+  }, [loadPlan]));
+
+  // Subscribe to WS events that indicate plan data has changed
+  useEffect(() => {
+    const REFRESH_EVENTS = ['reroute.triggered', 'route.updated', 'disaster.cleared', 'disaster.resolved'];
+    const unsub = wsService.onAlert((alert: any) => {
+      if (
+        REFRESH_EVENTS.includes(alert.event_type) &&
+        (alert.data?.disaster_id === disasterId || !alert.data?.disaster_id)
+      ) {
+        loadPlan();
+      }
+    });
+    return unsub;
+  }, [disasterId, loadPlan]);
+
   // Reset optional fields when type changes
   useEffect(() => {
     setSegmentId('');
     setRouteId('');
+    setManualSegmentId('');
   }, [overrideType]);
 
   // ── Submit ───────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    // For close_lane use the manually entered segment ID; for open_lane use picker selection
+    const effectiveSegmentId = overrideType === 'close_lane' ? manualSegmentId : segmentId;
+
     // Validate
-    if (selectedType.needsSegment && !segmentId.trim()) {
-      setSubmitErr('Please select a road from the list above.');
+    if (selectedType.needsSegment && !effectiveSegmentId.trim()) {
+      setSubmitErr(
+        overrideType === 'close_lane'
+          ? 'Please enter a road segment ID to force-close.'
+          : 'Please select a road from the list above.',
+      );
       return;
     }
     if (selectedType.needsRoute && !routeId.trim()) {
@@ -224,8 +296,8 @@ export const RerouteOverrideScreen: React.FC = () => {
                 type:        overrideType,
                 operator_id: user.id,
                 priority:    priority,
-                ...(segmentId.trim() && { segment_id: segmentId.trim() }),
-                ...(routeId.trim()   && { route_id:   routeId.trim()   }),
+                ...(effectiveSegmentId.trim() && { segment_id: effectiveSegmentId.trim() }),
+                ...(routeId.trim()            && { route_id:   routeId.trim()           }),
               };
 
               const res = await disasterService.submitRerouteOverride(payload);
@@ -306,90 +378,141 @@ export const RerouteOverrideScreen: React.FC = () => {
           )}
 
           {!planLoad && plan && (
-            <View style={S.card}>
-              {/* Status badge */}
-              <View style={S.planHeader}>
-                <View style={[S.statusBadge, { backgroundColor: GREEN + '18' }]}>
-                  <View style={[S.statusDot, { backgroundColor: GREEN }]} />
-                  <Text style={[S.statusText, { color: GREEN }]}>
-                    {(plan.status ?? 'active').toUpperCase()}
-                  </Text>
+            <>
+              {/* ── Mini-map ── */}
+              <View style={S.miniMapContainer}>
+                <MapboxGL.MapView
+                  style={S.miniMap}
+                  styleURL="mapbox://styles/mapbox/dark-v11"
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  pitchEnabled={false}
+                  rotateEnabled={false}
+                  logoEnabled={false}
+                  attributionEnabled={false}
+                  onDidFinishLoadingMap={() => {
+                    const allPts: [number, number][] = [
+                      ...blockedRoadsCoords.flat(),
+                      ...chosenRoutesCoords.flat(),
+                    ];
+                    if (allPts.length >= 2) {
+                      const lons = allPts.map(p => p[0]);
+                      const lats = allPts.map(p => p[1]);
+                      miniMapCameraRef.current?.fitBounds(
+                        [Math.max(...lons), Math.max(...lats)],
+                        [Math.min(...lons), Math.min(...lats)],
+                        [32, 32, 32, 32],
+                        0,
+                      );
+                    } else if (plan.disaster_lat && plan.disaster_lng) {
+                      miniMapCameraRef.current?.setCamera({
+                        centerCoordinate: [plan.disaster_lng, plan.disaster_lat],
+                        zoomLevel: 13,
+                        animationDuration: 0,
+                      });
+                    }
+                  }}
+                >
+                  <MapboxGL.Camera
+                    ref={miniMapCameraRef}
+                    defaultSettings={{
+                      centerCoordinate: [plan.disaster_lng ?? -6.26, plan.disaster_lat ?? 53.35],
+                      zoomLevel: 12,
+                    }}
+                  />
+
+                  {/* Blocked roads — red */}
+                  {blockedRoadsGeoJSON.features.length > 0 && (
+                    <MapboxGL.ShapeSource id="mini-blocked-roads" shape={blockedRoadsGeoJSON}>
+                      <MapboxGL.LineLayer
+                        id="mini-blocked-roads-line"
+                        style={{ lineColor: RED, lineWidth: 3, lineOpacity: 0.9 }}
+                      />
+                    </MapboxGL.ShapeSource>
+                  )}
+
+                  {/* Chosen routes — orange */}
+                  {chosenRoutesGeoJSON.features.length > 0 && (
+                    <MapboxGL.ShapeSource id="mini-chosen-routes" shape={chosenRoutesGeoJSON}>
+                      <MapboxGL.LineLayer
+                        id="mini-chosen-routes-line"
+                        style={{ lineColor: ORANGE, lineWidth: 3, lineOpacity: 0.9 }}
+                      />
+                    </MapboxGL.ShapeSource>
+                  )}
+
+                  {/* Disaster pin */}
+                  {plan.disaster_lat != null && plan.disaster_lng != null && (
+                    <MapboxGL.PointAnnotation
+                      id="mini-disaster-pin"
+                      coordinate={[plan.disaster_lng, plan.disaster_lat]}
+                    >
+                      <View style={S.disasterPin}>
+                        <Text style={{ fontSize: 18, lineHeight: 22 }}>⚠️</Text>
+                      </View>
+                    </MapboxGL.PointAnnotation>
+                  )}
+                </MapboxGL.MapView>
+
+                {/* Legend */}
+                <View style={S.miniMapLegend}>
+                  <View style={S.legendItem}>
+                    <View style={[S.legendDot, { backgroundColor: RED }]} />
+                    <Text style={S.legendText}>Blocked</Text>
+                  </View>
+                  <View style={S.legendItem}>
+                    <View style={[S.legendDot, { backgroundColor: ORANGE }]} />
+                    <Text style={S.legendText}>Routes</Text>
+                  </View>
                 </View>
-                <Text style={S.planMeta}>
-                  Since {fmtIso(plan.created_at)}
-                </Text>
               </View>
 
-              {/* Stats row */}
-              <View style={S.statsRow}>
-                <StatBox
-                  value={String(plan.vehicles_affected ?? 0)}
-                  label="Vehicles"
-                  color={ORANGE}
-                />
-                <StatBox
-                  value={String(
-                    Array.isArray(plan.chosen_routes)
-                      ? plan.chosen_routes.length
-                      : 0,
-                  )}
-                  label="Routes"
-                  color={BLUE}
-                />
-                <StatBox
-                  value={String(
-                    Array.isArray(plan.blocked_roads)
-                      ? plan.blocked_roads.length
-                      : 0,
-                  )}
-                  label="Blocked"
-                  color={RED}
-                />
-              </View>
-
-              {/* Trigger source */}
-              {plan.trigger_source && (
-                <View style={S.metaRow}>
-                  <Text style={S.metaKey}>Triggered by</Text>
-                  <Text style={S.metaVal}>{plan.trigger_source}</Text>
-                </View>
-              )}
-
-              {/* Plan ID */}
-              {plan.id && (
-                <View style={S.metaRow}>
-                  <Text style={S.metaKey}>Plan ID</Text>
-                  <Text style={[S.metaVal, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11 }]}>
-                    {plan.id}
-                  </Text>
-                </View>
-              )}
-
-              {/* Active routes list */}
-              {Array.isArray(plan.chosen_routes) && plan.chosen_routes.length > 0 && (
-                <>
-                  <Text style={[S.metaKey, { marginTop: 12, marginBottom: 6 }]}>Active Routes</Text>
-                  {plan.chosen_routes.slice(0, 4).map((r: any, i: number) => (
-                    <View key={r.route_id ?? i} style={S.routeRow}>
-                      <View style={[S.routeDot, { backgroundColor: BLUE }]} />
-                      <Text style={S.routeId} numberOfLines={1}>
-                        {r.route_id ?? `Route ${i + 1}`}
-                      </Text>
-                      {r.travel_time_seconds != null && (
-                        <Text style={S.routeMeta}>
-                          ~{Math.round(r.travel_time_seconds / 60)} min
-                        </Text>
-                      )}
-                    </View>
-                  ))}
-                  {plan.chosen_routes.length > 4 && (
-                    <Text style={[S.metaVal, { marginTop: 4 }]}>
-                      +{plan.chosen_routes.length - 4} more routes
+              {/* ── Compact stats + metadata card ── */}
+              <View style={S.card}>
+                <View style={S.planHeader}>
+                  <View style={[S.statusBadge, { backgroundColor: GREEN + '18' }]}>
+                    <View style={[S.statusDot, { backgroundColor: GREEN }]} />
+                    <Text style={[S.statusText, { color: GREEN }]}>
+                      {(plan.status ?? 'active').toUpperCase()}
                     </Text>
-                  )}
-                </>
-              )}
-            </View>
+                  </View>
+                  <Text style={S.planMeta}>Since {fmtIso(plan.created_at)}</Text>
+                </View>
+
+                <View style={S.statsRow}>
+                  <StatBox
+                    value={String(plan.vehicles_affected ?? 0)}
+                    label="Vehicles"
+                    color={ORANGE}
+                  />
+                  <StatBox
+                    value={String(Array.isArray(plan.chosen_routes) ? plan.chosen_routes.length : 0)}
+                    label="Routes"
+                    color={BLUE}
+                  />
+                  <StatBox
+                    value={String(Array.isArray(plan.blocked_roads) ? plan.blocked_roads.length : 0)}
+                    label="Blocked"
+                    color={RED}
+                  />
+                </View>
+
+                {plan.trigger_source && (
+                  <View style={S.metaRow}>
+                    <Text style={S.metaKey}>Triggered by</Text>
+                    <Text style={S.metaVal}>{plan.trigger_source}</Text>
+                  </View>
+                )}
+                {plan.id && (
+                  <View style={S.metaRow}>
+                    <Text style={S.metaKey}>Plan ID</Text>
+                    <Text style={[S.metaVal, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11 }]}>
+                      {plan.id}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </>
           )}
 
           {/* ── Override Type ────────────────────────────────────────── */}
@@ -426,67 +549,98 @@ export const RerouteOverrideScreen: React.FC = () => {
             <>
               <SectionTitle>SELECT ROAD</SectionTitle>
               <View style={S.card}>
-                <Text style={S.inputLabel}>
-                  Road to {overrideType === 'close_lane' ? 'close' : 're-open'}
-                  <Text style={{ color: RED }}> *</Text>
-                </Text>
 
-                {plan && Array.isArray(plan.blocked_roads) && plan.blocked_roads.length > 0 ? (
+                {overrideType === 'close_lane' ? (
+                  /* close_lane: manual text entry — blocked_roads are already closed */
                   <>
-                    <Text style={S.pickerHint}>
-                      Tap a road from the current reroute plan:
+                    <Text style={S.inputLabel}>
+                      Road Segment ID to force-close
+                      <Text style={{ color: RED }}> *</Text>
                     </Text>
-                    {plan.blocked_roads.map((road: any, i: number) => {
-                      const id     = road.segment_id ?? road.id ?? road;
-                      const name   = road.road_name ?? road.name ?? `Road ${i + 1}`;
-                      const active = segmentId === String(id);
-                      return (
-                        <TouchableOpacity
-                          key={String(id) + i}
-                          style={[S.pickerRow, active && S.pickerRowActive]}
-                          onPress={() => setSegmentId(String(id))}
-                          activeOpacity={0.75}
-                        >
-                          <View style={[S.pickerDot, { backgroundColor: active ? RED : '#D1D5DB' }]} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={[S.pickerLabel, active && { color: RED }]}>
-                              {name}
-                            </Text>
-                          </View>
-                          {active && <Text style={{ color: RED, fontSize: 16 }}>✓</Text>}
-                        </TouchableOpacity>
-                      );
-                    })}
+                    <Text style={S.pickerHint}>
+                      Enter the segment ID of the road you want to close. Contact your GIS operator
+                      or the command dashboard for segment IDs.
+                    </Text>
+                    <TextInput
+                      style={[S.textInput, manualSegmentId.length > 0 && S.textInputActive]}
+                      value={manualSegmentId}
+                      onChangeText={setManualSegmentId}
+                      placeholder="e.g. seg-00123"
+                      placeholderTextColor="#9CA3AF"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    {manualSegmentId.length > 0 && (
+                      <Text style={[S.hint, { color: RED, marginTop: 6 }]}>
+                        ⚠️  This will immediately close the segment for all traffic.
+                      </Text>
+                    )}
                   </>
                 ) : (
-                  <View style={S.noplanRow}>
-                    <Text style={{ fontSize: 22, lineHeight: 30 }}>🚦</Text>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={S.noplanTitle}>No Blocked Roads in Current Plan</Text>
-                      <Text style={S.noplanSub}>
-                        Contact command for road details, or trigger a reroute plan first.
-                      </Text>
-                    </View>
-                  </View>
+                  /* open_lane: show currently blocked roads — these can be re-opened */
+                  <>
+                    <Text style={S.inputLabel}>
+                      Blocked road to re-open
+                      <Text style={{ color: RED }}> *</Text>
+                    </Text>
+
+                    {plan && Array.isArray(plan.blocked_roads) && plan.blocked_roads.length > 0 ? (
+                      <>
+                        <Text style={S.pickerHint}>
+                          Tap a currently blocked road from the active reroute plan:
+                        </Text>
+                        {plan.blocked_roads.map((road: any, i: number) => {
+                          const id     = road.segment_id ?? road.id ?? road;
+                          const name   = road.road_name ?? road.name ?? `Road ${i + 1}`;
+                          const active = segmentId === String(id);
+                          return (
+                            <TouchableOpacity
+                              key={String(id) + i}
+                              style={[S.pickerRow, active && S.pickerRowActive]}
+                              onPress={() => setSegmentId(String(id))}
+                              activeOpacity={0.75}
+                            >
+                              <View style={[S.pickerDot, { backgroundColor: active ? RED : '#D1D5DB' }]} />
+                              <View style={{ flex: 1 }}>
+                                <Text style={[S.pickerLabel, active && { color: RED }]}>{name}</Text>
+                              </View>
+                              {active && <Text style={{ color: RED, fontSize: 16 }}>✓</Text>}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <View style={S.noplanRow}>
+                        <Text style={{ fontSize: 22, lineHeight: 30 }}>🚦</Text>
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={S.noplanTitle}>No Blocked Roads in Current Plan</Text>
+                          <Text style={S.noplanSub}>
+                            Contact command for road details, or trigger a reroute plan first.
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {segmentId.length > 0 && (
+                      <View style={[S.selectedBadge, { marginTop: 10 }]}>
+                        <Text style={S.selectedBadgeText}>
+                          {(() => {
+                            if (!plan?.blocked_roads) return 'Road selected';
+                            const road = plan.blocked_roads.find(
+                              (r: any) => String(r.segment_id ?? r.id ?? r) === segmentId,
+                            );
+                            return road?.road_name ?? road?.name ?? 'Road selected';
+                          })()}
+                        </Text>
+                        <TouchableOpacity onPress={() => setSegmentId('')}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Text style={{ color: RED, fontSize: 13, fontWeight: '700' }}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
                 )}
 
-                {segmentId.length > 0 && (
-                  <View style={[S.selectedBadge, { marginTop: 10 }]}>
-                    <Text style={S.selectedBadgeText}>
-                      {(() => {
-                        if (!plan?.blocked_roads) return 'Road selected';
-                        const road = plan.blocked_roads.find(
-                          (r: any) => String(r.segment_id ?? r.id ?? r) === segmentId
-                        );
-                        return road?.road_name ?? road?.name ?? 'Road selected';
-                      })()}
-                    </Text>
-                    <TouchableOpacity onPress={() => setSegmentId('')}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={{ color: RED, fontSize: 13, fontWeight: '700' }}>✕</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
               </View>
             </>
           )}
@@ -825,6 +979,35 @@ const S = StyleSheet.create({
     fontSize: 11, color: '#9CA3AF', textAlign: 'center',
     lineHeight: 16, paddingHorizontal: spacing.sm,
   },
+
+  // Mini-map
+  miniMapContainer: {
+    height: 210,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  miniMap: { flex: 1 },
+  miniMapLegend: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot:  { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: '#fff', fontSize: 10, fontWeight: '600' },
+  disasterPin: { alignItems: 'center', justifyContent: 'center' },
 });
 
 export default RerouteOverrideScreen;

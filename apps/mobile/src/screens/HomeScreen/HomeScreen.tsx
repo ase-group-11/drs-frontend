@@ -133,22 +133,51 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
           const disasterId = action.disasterId;
           setResponderRouteActive(false);
           authRequest<any>(API.reroute.plans())
-            .then((res: any) => {
+            .then(async (res: any) => {
               // plans endpoint may return array or single plan
               const plans: any[] = Array.isArray(res) ? res : (res?.plans ?? [res]);
               const plan = plans.find((p: any) => p.disaster_id === disasterId);
-              const routes: any[] = plan?.chosen_routes ?? [];
-              if (routes.length > 0 && Array.isArray(routes[0].points) && routes[0].points.length > 1) {
-                // Backend returns [lat, lon]; Mapbox needs [lon, lat]
-                const pts: [number, number][] = routes[0].points.map(
-                  (p: number[]) => [p[1], p[0]] as [number, number],
-                );
-                const meta = {
-                  time: routes[0].travel_time_seconds ?? 0,
-                  dist: routes[0].length_meters ?? 0,
-                };
-                mapRef.current?.applyRerouteAlertWithGeometry?.(disasterId, pts, meta);
-                setResponderRouteActive(true);
+              if (!plan) return;
+
+              if (isResponder) {
+                // Responder: use the first chosen route
+                const routes: any[] = plan?.chosen_routes ?? [];
+                if (routes.length > 0 && Array.isArray(routes[0].points) && routes[0].points.length > 1) {
+                  // Backend returns [lat, lon]; Mapbox needs [lon, lat]
+                  const pts: [number, number][] = routes[0].points.map(
+                    (p: number[]) => [p[1], p[0]] as [number, number],
+                  );
+                  const meta = {
+                    time: routes[0].travel_time_seconds ?? 0,
+                    dist: routes[0].length_meters ?? 0,
+                  };
+                  mapRef.current?.applyRerouteAlertWithGeometry?.(disasterId, pts, meta);
+                  setResponderRouteActive(true);
+                }
+              } else {
+                // Citizen: look up their specific assigned route
+                try {
+                  const stored = await AsyncStorage.getItem('@auth/user_data');
+                  const user = stored ? JSON.parse(stored) : null;
+                  const routeAssignments: Record<string, string> = plan.route_assignments ?? {};
+                  const assignedRouteId = user ? routeAssignments[user.id] : null;
+                  if (!assignedRouteId) return; // not yet assigned — fly only
+                  const routeData = await authRequest<any>(
+                    API.reroute.status(disasterId, assignedRouteId),
+                  );
+                  const pts: [number, number][] = (routeData?.points ?? []).map(
+                    (p: number[]) => [p[1], p[0]] as [number, number],
+                  );
+                  if (pts.length > 1) {
+                    const meta = {
+                      time: routeData.travel_time_seconds ?? 0,
+                      dist: routeData.length_meters ?? 0,
+                    };
+                    mapRef.current?.applyRerouteAlertWithGeometry?.(disasterId, pts, meta);
+                  }
+                } catch (e) {
+                  console.warn('[HomeScreen] Citizen route fetch failed:', e);
+                }
               }
             })
             .catch(() => { /* No plan yet — map still flies to disaster */ });
@@ -163,7 +192,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     }, 200);
 
     return () => clearInterval(interval);
-  }, []));
+  }, [isResponder]));
 
   useEffect(() => {
     loadDisasters();
@@ -355,6 +384,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
     // disaster.cleared — roads reopened, clear reroute overlay and status
     if (alert.event_type === 'disaster.cleared') {
+      mapRef.current?.clearReroute?.();
+    }
+
+    // disaster.resolved — disaster is over, also clear reroute overlay
+    if (alert.event_type === 'disaster.resolved') {
       mapRef.current?.clearReroute?.();
     }
 

@@ -358,10 +358,11 @@ export const DisasterAlertDetailScreen: React.FC = () => {
               onPress={() => {
                 if (lat && lon) {
                   mapActionStore.setPending({
-                    type:  'flyTo',
-                    lat:   Number(lat),
-                    lon:   Number(lon),
-                    label: d?.location_address ?? 'Disaster',
+                    type:       'flyTo',
+                    lat:        Number(lat),
+                    lon:        Number(lon),
+                    label:      d?.location_address ?? 'Disaster',
+                    disasterId: d?.id ?? d?.disaster_id ?? disasterId,
                   });
                 }
                 navigation.navigate('Home' as any);
