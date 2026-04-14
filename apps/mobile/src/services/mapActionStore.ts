@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type MapAction =
-  | { type: 'flyTo';            lat: number; lon: number; label: string }
+  | { type: 'flyTo';            lat: number; lon: number; label: string; disasterId?: string }
   | { type: 'evacuationRoute';  lat: number; lon: number; label: string };
 
 let _pending: MapAction | null = null;

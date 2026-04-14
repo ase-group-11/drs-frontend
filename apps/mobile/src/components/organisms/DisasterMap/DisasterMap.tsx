@@ -494,14 +494,24 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       console.warn('[_doNavigateToScene] Invalid coords:', destLat, destLon, '— aborting');
       return;
     }
-    const origLon = userLocationRef.current[0] ?? -6.2603;
-    const origLat = userLocationRef.current[1] ?? 53.3498;
-    console.log('[_doNavigateToScene] From:', origLat.toFixed(5), origLon.toFixed(5), '->', destLat.toFixed(5), destLon.toFixed(5), '|', label, '| source:', source);
+    console.log('[_doNavigateToScene] -> dest:', destLat.toFixed(5), destLon.toFixed(5), '|', label, '| source:', source);
     setDestinationPin([destLon, destLat]);
     setDestinationLabel(label);
     setShowRoutes(source === 'search'); // only open route card for user searches
     setRouteSource(source);
     setRerouteStatus(null);
+
+    // For responder "Navigate to Disaster" alerts: just fly the camera to the
+    // disaster location and place the pin. Do NOT try to draw a driving route
+    // because the user-location origin may still be the default fallback (GPS
+    // not yet acquired), which would draw a misleading route from the wrong place.
+    if (source === 'alert') {
+      cameraRef.current?.setCamera({ centerCoordinate: [destLon, destLat], zoomLevel: 15, animationDuration: 1500 });
+      return;
+    }
+
+    const origLon = userLocationRef.current[0] ?? -6.2603;
+    const origLat = userLocationRef.current[1] ?? 53.3498;
     try {
       const route = await fetchDirectRoute(origLon, origLat, destLon, destLat);
       if (route && route.points.length > 1) {

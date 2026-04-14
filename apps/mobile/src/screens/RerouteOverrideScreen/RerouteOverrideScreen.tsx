@@ -15,7 +15,6 @@ import {
   StyleSheet,
   StatusBar,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
@@ -161,10 +160,19 @@ export const RerouteOverrideScreen: React.FC = () => {
     setPlanLoad(true);
     setPlanError('');
     try {
-      const data = await authRequest<any>(API.reroute.status(disasterId));
-      setPlan(data);
+      // GET /reroute/plans returns all active plans; find the one for this disaster.
+      const res = await authRequest<any>(API.reroute.plans());
+      const plans: any[] = Array.isArray(res) ? res : (res?.plans ?? [res]);
+      const matched = plans.find((p: any) => p.disaster_id === disasterId) ?? null;
+      setPlan(matched);
     } catch (e: any) {
-      setPlanError(e?.message ?? 'Could not load reroute plan.');
+      if (e?.status === 422 || e?.status === 404) {
+        setPlan(null);
+      } else {
+        const raw = e?.message;
+        const msg = typeof raw === 'string' ? raw : 'Could not load reroute plan.';
+        setPlanError(msg);
+      }
     } finally {
       setPlanLoad(false);
     }
@@ -182,11 +190,11 @@ export const RerouteOverrideScreen: React.FC = () => {
   const handleSubmit = async () => {
     // Validate
     if (selectedType.needsSegment && !segmentId.trim()) {
-      setSubmitErr('Segment ID is required for this override type.');
+      setSubmitErr('Please select a road from the list above.');
       return;
     }
     if (selectedType.needsRoute && !routeId.trim()) {
-      setSubmitErr('Route ID is required for this override type.');
+      setSubmitErr('Please select a route from the list above.');
       return;
     }
 
@@ -367,9 +375,9 @@ export const RerouteOverrideScreen: React.FC = () => {
                       <Text style={S.routeId} numberOfLines={1}>
                         {r.route_id ?? `Route ${i + 1}`}
                       </Text>
-                      {r.duration_seconds != null && (
+                      {r.travel_time_seconds != null && (
                         <Text style={S.routeMeta}>
-                          ~{Math.round(r.duration_seconds / 60)} min
+                          ~{Math.round(r.travel_time_seconds / 60)} min
                         </Text>
                       )}
                     </View>
@@ -413,25 +421,24 @@ export const RerouteOverrideScreen: React.FC = () => {
             })}
           </View>
 
-          {/* ── Segment ID (close_lane / open_lane) ──────────────────── */}
+          {/* ── Road Selection (close_lane / open_lane) ───────────────── */}
           {selectedType.needsSegment && (
             <>
-              <SectionTitle>SELECT ROAD SEGMENT</SectionTitle>
+              <SectionTitle>SELECT ROAD</SectionTitle>
               <View style={S.card}>
                 <Text style={S.inputLabel}>
-                  Road segment to {overrideType === 'close_lane' ? 'close' : 're-open'}
+                  Road to {overrideType === 'close_lane' ? 'close' : 're-open'}
                   <Text style={{ color: RED }}> *</Text>
                 </Text>
 
-                {/* If plan has blocked roads, show them as tappable options */}
                 {plan && Array.isArray(plan.blocked_roads) && plan.blocked_roads.length > 0 ? (
                   <>
                     <Text style={S.pickerHint}>
-                      Tap a road from the current plan, or type a custom ID below:
+                      Tap a road from the current reroute plan:
                     </Text>
                     {plan.blocked_roads.map((road: any, i: number) => {
-                      const id    = road.segment_id ?? road.id ?? road;
-                      const name  = road.road_name  ?? road.name ?? null;
+                      const id     = road.segment_id ?? road.id ?? road;
+                      const name   = road.road_name ?? road.name ?? `Road ${i + 1}`;
                       const active = segmentId === String(id);
                       return (
                         <TouchableOpacity
@@ -442,40 +449,38 @@ export const RerouteOverrideScreen: React.FC = () => {
                         >
                           <View style={[S.pickerDot, { backgroundColor: active ? RED : '#D1D5DB' }]} />
                           <View style={{ flex: 1 }}>
-                            {name && <Text style={S.pickerLabel}>{name}</Text>}
-                            <Text style={[S.pickerSub, active && { color: RED }]}
-                              numberOfLines={1}>
-                              {String(id)}
+                            <Text style={[S.pickerLabel, active && { color: RED }]}>
+                              {name}
                             </Text>
                           </View>
                           {active && <Text style={{ color: RED, fontSize: 16 }}>✓</Text>}
                         </TouchableOpacity>
                       );
                     })}
-                    <View style={S.dividerRow}>
-                      <View style={S.dividerLine} />
-                      <Text style={S.dividerText}>or enter manually</Text>
-                      <View style={S.dividerLine} />
-                    </View>
                   </>
                 ) : (
-                  <Text style={S.pickerHint}>
-                    No blocked roads in current plan. Enter the segment ID from the map overlay:
-                  </Text>
+                  <View style={S.noplanRow}>
+                    <Text style={{ fontSize: 22, lineHeight: 30 }}>🚦</Text>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={S.noplanTitle}>No Blocked Roads in Current Plan</Text>
+                      <Text style={S.noplanSub}>
+                        Contact command for road details, or trigger a reroute plan first.
+                      </Text>
+                    </View>
+                  </View>
                 )}
 
-                <TextInput
-                  style={[S.textInput, segmentId && S.textInputActive]}
-                  value={segmentId}
-                  onChangeText={setSegmentId}
-                  placeholder="e.g. seg-n11-south-01"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
                 {segmentId.length > 0 && (
-                  <View style={S.selectedBadge}>
-                    <Text style={S.selectedBadgeText}>Selected: {segmentId}</Text>
+                  <View style={[S.selectedBadge, { marginTop: 10 }]}>
+                    <Text style={S.selectedBadgeText}>
+                      {(() => {
+                        if (!plan?.blocked_roads) return 'Road selected';
+                        const road = plan.blocked_roads.find(
+                          (r: any) => String(r.segment_id ?? r.id ?? r) === segmentId
+                        );
+                        return road?.road_name ?? road?.name ?? 'Road selected';
+                      })()}
+                    </Text>
                     <TouchableOpacity onPress={() => setSegmentId('')}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Text style={{ color: RED, fontSize: 13, fontWeight: '700' }}>✕</Text>
@@ -486,7 +491,7 @@ export const RerouteOverrideScreen: React.FC = () => {
             </>
           )}
 
-          {/* ── Route ID (pin_detour) ─────────────────────────────────── */}
+          {/* ── Route Selection (pin_detour) ──────────────────────────── */}
           {selectedType.needsRoute && (
             <>
               <SectionTitle>SELECT ROUTE</SectionTitle>
@@ -496,7 +501,6 @@ export const RerouteOverrideScreen: React.FC = () => {
                   <Text style={{ color: RED }}> *</Text>
                 </Text>
 
-                {/* Show active routes from the plan as tappable options */}
                 {plan && Array.isArray(plan.chosen_routes) && plan.chosen_routes.length > 0 ? (
                   <>
                     <Text style={S.pickerHint}>
@@ -504,8 +508,9 @@ export const RerouteOverrideScreen: React.FC = () => {
                     </Text>
                     {plan.chosen_routes.map((r: any, i: number) => {
                       const id     = r.route_id ?? r.id ?? `route-${i}`;
-                      const mins   = r.duration_seconds != null
-                        ? `~${Math.round(r.duration_seconds / 60)} min`
+                      const label  = `Route ${i + 1}`;
+                      const mins   = r.travel_time_seconds != null
+                        ? `~${Math.round(r.travel_time_seconds / 60)} min`
                         : null;
                       const dist   = r.length_meters != null
                         ? `${(r.length_meters / 1000).toFixed(1)} km`
@@ -520,9 +525,8 @@ export const RerouteOverrideScreen: React.FC = () => {
                         >
                           <View style={[S.pickerDot, { backgroundColor: active ? BLUE : '#D1D5DB' }]} />
                           <View style={{ flex: 1 }}>
-                            <Text style={[S.pickerLabel, active && { color: BLUE }]}
-                              numberOfLines={1}>
-                              {String(id)}
+                            <Text style={[S.pickerLabel, active && { color: BLUE }]}>
+                              {label}
                             </Text>
                             {(mins || dist) && (
                               <Text style={S.pickerSub}>
@@ -534,30 +538,30 @@ export const RerouteOverrideScreen: React.FC = () => {
                         </TouchableOpacity>
                       );
                     })}
-                    <View style={S.dividerRow}>
-                      <View style={S.dividerLine} />
-                      <Text style={S.dividerText}>or enter manually</Text>
-                      <View style={S.dividerLine} />
-                    </View>
                   </>
                 ) : (
-                  <Text style={S.pickerHint}>
-                    No active routes in current plan. Enter the route ID manually:
-                  </Text>
+                  <View style={S.noplanRow}>
+                    <Text style={{ fontSize: 22, lineHeight: 30 }}>📍</Text>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={S.noplanTitle}>No Active Routes</Text>
+                      <Text style={S.noplanSub}>
+                        No reroute plan is active. Trigger a reroute plan first before pinning a detour.
+                      </Text>
+                    </View>
+                  </View>
                 )}
 
-                <TextInput
-                  style={[S.textInput, routeId && S.textInputActive]}
-                  value={routeId}
-                  onChangeText={setRouteId}
-                  placeholder="e.g. route-tomtom-abc123"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
                 {routeId.length > 0 && (
-                  <View style={S.selectedBadge}>
-                    <Text style={S.selectedBadgeText}>Selected: {routeId}</Text>
+                  <View style={[S.selectedBadge, { marginTop: 10 }]}>
+                    <Text style={S.selectedBadgeText}>
+                      {(() => {
+                        if (!plan?.chosen_routes) return 'Route selected';
+                        const idx = plan.chosen_routes.findIndex(
+                          (r: any) => String(r.route_id ?? r.id) === routeId
+                        );
+                        return idx >= 0 ? `Route ${idx + 1}` : 'Route selected';
+                      })()}
+                    </Text>
                     <TouchableOpacity onPress={() => setRouteId('')}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Text style={{ color: RED, fontSize: 13, fontWeight: '700' }}>✕</Text>

@@ -31,23 +31,22 @@ import type { RootStackParamList } from '@types/navigation';
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 interface HomeScreenProps { navigation: HomeScreenNavigationProp; route?: any; }
 
-// All possible disaster type labels/icons — only types that exist in the backend.
-// Filters are derived DYNAMICALLY from whichever types are present in loaded disasters.
-const TYPE_META: Record<string, { label: string; icon: string }> = {
-  fire:        { label: '🔥 Fire',        icon: '🔥' },
-  flood:       { label: '🌊 Flood',       icon: '🌊' },
-  storm:       { label: '⛈️ Storm',        icon: '⛈️' },
-  earthquake:  { label: '🏚️ Earthquake',  icon: '🏚️' },
-  hurricane:   { label: '🌀 Hurricane',   icon: '🌀' },
-  tornado:     { label: '🌪️ Tornado',     icon: '🌪️' },
-  tsunami:     { label: '🌊 Tsunami',     icon: '🌊' },
-  drought:     { label: '🏜️ Drought',     icon: '🏜️' },
-  heatwave:    { label: '🌡️ Heatwave',    icon: '🌡️' },
-  coldwave:    { label: '🧊 Coldwave',    icon: '🧊' },
-  other:       { label: '⚠️ Other',       icon: '⚠️' },
-};
-
-const ALL_FILTER: DisasterFilter = { id: 'all', label: '📍 All', icon: '📍' };
+// Static filter tabs — always show all backend-supported disaster types.
+// The map just shows empty if no disasters of that type exist currently.
+const FILTERS: DisasterFilter[] = [
+  { id: 'all',        label: '📍 All',        icon: '📍' },
+  { id: 'fire',       label: '🔥 Fire',       icon: '🔥', type: 'fire' },
+  { id: 'flood',      label: '🌊 Flood',      icon: '🌊', type: 'flood' },
+  { id: 'storm',      label: '⛈️ Storm',       icon: '⛈️', type: 'storm' },
+  { id: 'earthquake', label: '🏚️ Earthquake', icon: '🏚️', type: 'earthquake' },
+  { id: 'hurricane',  label: '🌀 Hurricane',  icon: '🌀', type: 'hurricane' },
+  { id: 'tornado',    label: '🌪️ Tornado',    icon: '🌪️', type: 'tornado' },
+  { id: 'tsunami',    label: '🌊 Tsunami',    icon: '🌊', type: 'tsunami' },
+  { id: 'drought',    label: '🏜️ Drought',    icon: '🏜️', type: 'drought' },
+  { id: 'heatwave',   label: '🌡️ Heatwave',   icon: '🌡️', type: 'heatwave' },
+  { id: 'coldwave',   label: '🧊 Coldwave',   icon: '🧊', type: 'coldwave' },
+  { id: 'other',      label: '⚠️ Other',      icon: '⚠️', type: 'other' },
+];
 
 const getInitials = (name: string): string => {
   const parts = name.trim().split(' ');
@@ -56,29 +55,9 @@ const getInitials = (name: string): string => {
     : name.substring(0, 2).toUpperCase();
 };
 
-// Build dynamic filter tabs from whatever disaster types are currently loaded.
-// Always starts with "All". Only types that exist in the list are shown —
-// no phantom filter tabs for types the backend has never reported.
-const buildFilters = (disasterList: Disaster[]): DisasterFilter[] => {
-  const seen = new Set<string>();
-  disasterList.forEach(d => { if (d.type) seen.add(d.type.toLowerCase()); });
-  const typeTabs: DisasterFilter[] = Array.from(seen)
-    .filter(t => TYPE_META[t]) // only show types we have metadata for
-    .sort()
-    .map(t => ({
-      id:    t,
-      label: TYPE_META[t].label,
-      icon:  TYPE_META[t].icon,
-      type:  t as any,
-    }));
-  return [ALL_FILTER, ...typeTabs];
-};
-
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => {
   const [disasters, setDisasters]                 = useState<Disaster[]>([]);
   const insets     = useSafeAreaInsets();
-  // Dynamic filters — only types present in loaded disasters (+ always "All")
-  const [activeFilters, setActiveFilters]         = useState<DisasterFilter[]>([ALL_FILTER]);
   const [filteredDisasters, setFilteredDisasters] = useState<Disaster[]>([]);
   const [selectedFilter, setSelectedFilter]       = useState('all');
   const [loading, setLoading]                     = useState(true);
@@ -99,6 +78,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   } | null>(null);
   const [isResponder, setIsResponder]             = useState(false);
   const [responderData, setResponderData]         = useState<any>(null);
+  const [responderRouteActive, setResponderRouteActive] = useState(false);
   const [missionCount, setMissionCount]           = useState(0);
   const mapRef      = useRef<any>(null);
   const pendingNav       = useRef<{ lat: number; lon: number; label: string } | null>(null);
@@ -147,6 +127,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       if (action.type === 'flyTo' && mapRef.current?.navigateToScene) {
         mapRef.current.navigateToScene(action.lat, action.lon, action.label);
         clearInterval(interval);
+        // If this flyTo came from "Navigate to Disaster", fetch the active reroute
+        // plan and draw the route overlay so the responder can see the path.
+        if (action.disasterId) {
+          const disasterId = action.disasterId;
+          setResponderRouteActive(false);
+          authRequest<any>(API.reroute.plans())
+            .then((res: any) => {
+              // plans endpoint may return array or single plan
+              const plans: any[] = Array.isArray(res) ? res : (res?.plans ?? [res]);
+              const plan = plans.find((p: any) => p.disaster_id === disasterId);
+              const routes: any[] = plan?.chosen_routes ?? [];
+              if (routes.length > 0 && Array.isArray(routes[0].points) && routes[0].points.length > 1) {
+                // Backend returns [lat, lon]; Mapbox needs [lon, lat]
+                const pts: [number, number][] = routes[0].points.map(
+                  (p: number[]) => [p[1], p[0]] as [number, number],
+                );
+                const meta = {
+                  time: routes[0].travel_time_seconds ?? 0,
+                  dist: routes[0].length_meters ?? 0,
+                };
+                mapRef.current?.applyRerouteAlertWithGeometry?.(disasterId, pts, meta);
+                setResponderRouteActive(true);
+              }
+            })
+            .catch(() => { /* No plan yet — map still flies to disaster */ });
+        }
       } else if (action.type === 'evacuationRoute' && mapRef.current?.showEvacuationRoute) {
         mapRef.current.showEvacuationRoute(action.lat, action.lon, action.label);
         clearInterval(interval);
@@ -185,7 +191,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         }))
         .filter((d: any) => d.location.latitude && d.location.longitude);
       setDisasters(converted);
-      setActiveFilters(buildFilters(converted));
     });
 
     // Connect WebSocket for real-time alerts
@@ -278,7 +283,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         .filter((d: any) => d.location.latitude && d.location.longitude);
 
       setDisasters(converted);
-      setActiveFilters(buildFilters(converted));
       console.log('[HomeScreen] Disasters from store:', converted.length);
       setLoading(false);
     } catch (error) {
@@ -391,16 +395,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
             (p: number[]) => [p[1], p[0]] as [number, number]
           );
           console.log('[Reroute] Geometry pre-fetched:', cachedPts.length, 'points');
-          // Update the stored notification with cached geometry so AlertsScreen can use it
-          const all = await notificationStore.getAll();
-          const idx = all.findIndex(n => n.timestamp === alert.timestamp);
-          if (idx !== -1) {
-            all[idx].cachedRoutePts  = cachedPts ?? undefined;
-            all[idx].cachedRouteMeta = routeMeta
-              ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters }
-              : null;
-            await AsyncStorage.setItem('@notifications/alerts', JSON.stringify(all));
-          }
+          // Cache geometry so AlertsScreen can use it without re-fetching
+          const meta = routeMeta
+            ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters }
+            : null;
+          await notificationStore.updateCachedGeometry(alert.timestamp, cachedPts, meta);
         } catch (e) {
           console.warn('[Reroute] Geometry pre-fetch failed (will retry on tap):', e);
         }
@@ -445,13 +444,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
           const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
           cachedPts = (routeData?.points ?? []).map((p: number[]) => [p[1], p[0]] as [number, number]);
           console.log('[route.updated] New geometry:', cachedPts.length, 'pts');
-          const all = await notificationStore.getAll();
-          const idx = all.findIndex(n => n.timestamp === alert.timestamp);
-          if (idx !== -1) {
-            all[idx].cachedRoutePts  = cachedPts ?? undefined;
-            all[idx].cachedRouteMeta = routeMeta ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters } : null;
-            await AsyncStorage.setItem('@notifications/alerts', JSON.stringify(all));
-          }
+          const meta2 = routeMeta ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters } : null;
+          await notificationStore.updateCachedGeometry(alert.timestamp, cachedPts, meta2);
         } catch (e) { console.warn('[route.updated] Geometry fetch failed:', e); }
 
         setPendingReroute({ disasterId, routeId: userRouteId,
@@ -597,7 +591,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         }
         filterBar={
           <FilterTabs
-            filters={activeFilters}
+            filters={FILTERS}
             selected={selectedFilter}
             onSelect={handleFilterSelect}
           />
@@ -642,6 +636,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
           <TouchableOpacity onPress={() => { setActiveAlert(null); setPendingReroute(null); }} style={styles.alertDismiss}>
             <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
           </TouchableOpacity>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Responder: Clear Route button — shown while a disaster route is drawn ── */}
+      {responderRouteActive && (
+        <TouchableOpacity
+          style={styles.clearRouteBtn}
+          onPress={() => {
+            mapRef.current?.clearReroute?.();
+            setResponderRouteActive(false);
+          }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.clearRouteBtnText}>✕  Clear Route</Text>
         </TouchableOpacity>
       )}
 
@@ -725,6 +733,26 @@ const styles = StyleSheet.create({
   alertBannerTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },
   alertBannerMsg:   { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
   alertDismiss:     { paddingLeft: 12, paddingVertical: 4 },
+  clearRouteBtn: {
+    position:        'absolute',
+    bottom:          32,
+    alignSelf:       'center',
+    backgroundColor: '#DC2626',
+    borderRadius:    24,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    zIndex:          990,
+    shadowColor:     '#000',
+    shadowOffset:    { width: 0, height: 2 },
+    shadowOpacity:   0.25,
+    shadowRadius:    4,
+    elevation:       6,
+  },
+  clearRouteBtnText: {
+    color:      '#fff',
+    fontWeight: '700',
+    fontSize:   14,
+  },
 });
 
 export default HomeScreen;

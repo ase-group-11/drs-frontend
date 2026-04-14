@@ -28,6 +28,7 @@ import { showLocalNotification } from '@services/notificationService';
 import { disasterStore } from '@services/disasterStore';
 import { disasterService } from '@services/disasterService';
 import { API, WS_URL } from '@services/apiConfig';
+import { mapActionStore } from '@services/mapActionStore';
 import { formatTime, formatTimeAgo } from '@utils/formatters';
 
 const RED = '#DC2626';
@@ -275,7 +276,16 @@ export const ActiveMissionsScreen: React.FC = () => {
   };
 
   const navigateToDisaster = (m: Mission) => {
-    navigation.navigate('Home' as any, { flyToLat: m.coordinates.lat, flyToLon: m.coordinates.lon, flyToLabel: m.location_address });
+    // Queue a flyTo map action — HomeScreen will fly the camera to the disaster,
+    // fetch the active reroute plan, and draw a route line with a Clear Route button.
+    mapActionStore.setPending({
+      type:       'flyTo',
+      lat:        m.coordinates.lat,
+      lon:        m.coordinates.lon,
+      label:      m.location_address,
+      disasterId: m.disaster_id,
+    });
+    navigation.navigate('Home' as any);
   };
 
   // ── Chat — real WebSocket via /ws/chat/{disaster_id} ───────────────
