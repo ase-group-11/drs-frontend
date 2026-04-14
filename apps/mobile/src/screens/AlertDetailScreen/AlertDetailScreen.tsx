@@ -21,6 +21,7 @@ import { Button } from '@atoms/Button';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';
 import type { Alert } from '../../types/disaster';
+import { formatDateTime as fmtDT, formatTimeAgo } from '@utils/formatters';
 
 // ─── Route param type ─────────────────────────────────────────────────────
 type AlertDetailRouteParams = {
@@ -44,20 +45,9 @@ const TYPE_EMOJI: Record<string, string> = {
   advisory:   'ℹ️',
 };
 
-const getTimeAgo = (date: Date) => {
-  const m = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (m < 1)  return 'Just now';
-  if (m < 60) return `${m} min${m !== 1 ? 's' : ''} ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hr${h !== 1 ? 's' : ''} ago`;
-  return `${Math.floor(h / 24)}d ago`;
-};
-
-const formatDateTime = (date: Date) =>
-  date.toLocaleDateString('en-IE', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+// Use shared timezone-safe formatters
+const getTimeAgo = (date: Date) => formatTimeAgo(date.toISOString());
+const formatDateTime = (date: Date) => fmtDT(date.toISOString());
 
 // ─── Component ────────────────────────────────────────────────────────────
 export const AlertDetailScreen: React.FC = () => {

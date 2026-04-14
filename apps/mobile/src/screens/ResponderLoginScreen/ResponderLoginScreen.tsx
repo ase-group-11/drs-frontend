@@ -140,7 +140,7 @@ export const ResponderLoginScreen: React.FC = () => {
         full_name:    team_member.full_name,
         email:        team_member.email,
         phone_number: team_member.phone_number,
-        role:         team_member.role,
+        role:         'staff', // only valid responder role — always stored as 'staff'
         department:   team_member.department,
         employee_id:  team_member.employee_id,
         user_type:    'emergency_team',

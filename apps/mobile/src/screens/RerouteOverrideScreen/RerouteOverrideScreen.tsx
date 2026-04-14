@@ -1,0 +1,826 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/screens/RerouteOverrideScreen/RerouteOverrideScreen.tsx
+//
+// Responder Traffic Override Screen
+// Lets an authorised responder inspect the live reroute plan for a disaster
+// and submit a manual operator override via POST /reroute/override.
+//
+// Navigation param:  { disasterId: string }
+// ═══════════════════════════════════════════════════════════════════════════
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  StatusBar,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import Svg, { Path, Circle } from 'react-native-svg';
+
+import { Text } from '@atoms/Text';
+import { spacing } from '@theme/spacing';
+import { authRequest, authService } from '@services/authService';
+import { API } from '@services/apiConfig';
+import { disasterService, RerouteOverrideRequest } from '@services/disasterService';
+import { formatShortDateTime } from '@utils/formatters';
+
+// ── Constants ──────────────────────────────────────────────────────────────
+
+const RED    = '#DC2626';
+const ORANGE = '#EA580C';
+const BLUE   = '#2563EB';
+const GREEN  = '#16A34A';
+const PURPLE = '#7C3AED';
+
+// ── Override type config ───────────────────────────────────────────────────
+
+type OverrideType = 'close_lane' | 'open_lane' | 'pin_detour' | 'corridor_priority';
+type Priority     = 'low' | 'medium' | 'high' | 'critical';
+
+interface OverrideTypeConfig {
+  value:       OverrideType;
+  label:       string;
+  description: string;
+  icon:        string;
+  color:       string;
+  needsSegment: boolean;
+  needsRoute:   boolean;
+}
+
+const OVERRIDE_TYPES: OverrideTypeConfig[] = [
+  {
+    value:       'close_lane',
+    label:       'Close Lane',
+    description: 'Force a road segment closed immediately.',
+    icon:        '🚧',
+    color:       RED,
+    needsSegment: true,
+    needsRoute:   false,
+  },
+  {
+    value:       'open_lane',
+    label:       'Open Lane',
+    description: 'Override an auto-closed segment and re-open it.',
+    icon:        '✅',
+    color:       GREEN,
+    needsSegment: true,
+    needsRoute:   false,
+  },
+  {
+    value:       'pin_detour',
+    label:       'Pin Detour',
+    description: 'Lock a specific route as the preferred detour.',
+    icon:        '📍',
+    color:       BLUE,
+    needsSegment: false,
+    needsRoute:   true,
+  },
+  {
+    value:       'corridor_priority',
+    label:       'Corridor Priority',
+    description: 'Reserve corridor for emergency vehicles only.',
+    icon:        '🚨',
+    color:       PURPLE,
+    needsSegment: false,
+    needsRoute:   false,
+  },
+];
+
+const PRIORITIES: { value: Priority; label: string; color: string }[] = [
+  { value: 'low',      label: 'Low',      color: '#6B7280' },
+  { value: 'medium',   label: 'Medium',   color: ORANGE },
+  { value: 'high',     label: 'High',     color: RED },
+  { value: 'critical', label: 'Critical', color: PURPLE },
+];
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const fmtIso = formatShortDateTime;
+
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+const BackArrow = ({ onPress }: { onPress: () => void }) => (
+  <TouchableOpacity style={S.hBtn} onPress={onPress} activeOpacity={0.7}>
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M19 12H5M12 19l-7-7 7-7"
+        stroke="#fff" strokeWidth={2}
+        strokeLinecap="round" strokeLinejoin="round"
+      />
+    </Svg>
+  </TouchableOpacity>
+);
+
+const StatBox = ({
+  value, label, color,
+}: { value: string; label: string; color: string }) => (
+  <View style={[S.statBox, { borderTopColor: color }]}>
+    <Text style={[S.statVal, { color }]}>{value}</Text>
+    <Text style={S.statLabel}>{label}</Text>
+  </View>
+);
+
+const SectionTitle = ({ children }: { children: string }) => (
+  <Text style={S.sectionTitle}>{children}</Text>
+);
+
+// ── Screen ─────────────────────────────────────────────────────────────────
+
+export const RerouteOverrideScreen: React.FC = () => {
+  const navigation = useNavigation<any>();
+  const route      = useRoute<any>();
+  const { disasterId } = route.params ?? {};
+
+  // ── State ────────────────────────────────────────────────────────────────
+  const [plan,      setPlan]      = useState<any>(null);
+  const [planLoad,  setPlanLoad]  = useState(true);
+  const [planError, setPlanError] = useState('');
+
+  const [overrideType, setOverrideType] = useState<OverrideType>('close_lane');
+  const [segmentId,    setSegmentId]    = useState('');
+  const [routeId,      setRouteId]      = useState('');
+  const [priority,     setPriority]     = useState<Priority>('high');
+
+  const [submitting, setSubmitting] = useState(false);
+  const [result,     setResult]     = useState<{ routes_recomputed: number } | null>(null);
+  const [submitErr,  setSubmitErr]  = useState('');
+
+  const selectedType = OVERRIDE_TYPES.find(t => t.value === overrideType)!;
+
+  // ── Load current plan ────────────────────────────────────────────────────
+  const loadPlan = useCallback(async () => {
+    if (!disasterId) return;
+    setPlanLoad(true);
+    setPlanError('');
+    try {
+      const data = await authRequest<any>(API.reroute.status(disasterId));
+      setPlan(data);
+    } catch (e: any) {
+      setPlanError(e?.message ?? 'Could not load reroute plan.');
+    } finally {
+      setPlanLoad(false);
+    }
+  }, [disasterId]);
+
+  useEffect(() => { loadPlan(); }, [loadPlan]);
+
+  // Reset optional fields when type changes
+  useEffect(() => {
+    setSegmentId('');
+    setRouteId('');
+  }, [overrideType]);
+
+  // ── Submit ───────────────────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    // Validate
+    if (selectedType.needsSegment && !segmentId.trim()) {
+      setSubmitErr('Segment ID is required for this override type.');
+      return;
+    }
+    if (selectedType.needsRoute && !routeId.trim()) {
+      setSubmitErr('Route ID is required for this override type.');
+      return;
+    }
+
+    // Get operator id from stored session
+    const user = await authService.getStoredUser();
+    if (!user?.id) {
+      setSubmitErr('Session expired — please log in again.');
+      return;
+    }
+
+    Alert.alert(
+      'Confirm Override',
+      `Apply "${selectedType.label}" override to disaster ${disasterId}?\n\nThis will recompute live routes for all affected vehicles.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Apply Override',
+          style: 'destructive',
+          onPress: async () => {
+            setSubmitErr('');
+            setResult(null);
+            setSubmitting(true);
+
+            try {
+              const payload: RerouteOverrideRequest = {
+                disaster_id: disasterId,
+                type:        overrideType,
+                operator_id: user.id,
+                priority:    priority,
+                ...(segmentId.trim() && { segment_id: segmentId.trim() }),
+                ...(routeId.trim()   && { route_id:   routeId.trim()   }),
+              };
+
+              const res = await disasterService.submitRerouteOverride(payload);
+              setResult({ routes_recomputed: res?.routes_recomputed ?? 0 });
+              // Refresh the plan to reflect changes
+              loadPlan();
+            } catch (e: any) {
+              setSubmitErr(e?.message ?? 'Override failed. Please try again.');
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <SafeAreaView style={S.safe} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="light-content" backgroundColor={RED} />
+
+      {/* Header */}
+      <View style={S.header}>
+        <BackArrow onPress={() => navigation.goBack()} />
+        <View style={{ alignItems: 'center' }}>
+          <Text style={S.headerTitle}>Traffic Override</Text>
+          <Text style={S.headerSub}>Disaster · {disasterId?.slice(0, 8)}…</Text>
+        </View>
+        <TouchableOpacity style={S.hBtn} onPress={loadPlan} activeOpacity={0.7}>
+          {planLoad
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={{ color: '#fff', fontSize: 20, lineHeight: 26 }}>↻</Text>
+          }
+        </TouchableOpacity>
+      </View>
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={{ padding: spacing.md, paddingBottom: 48 }}
+          keyboardShouldPersistTaps="handled"
+        >
+
+          {/* ── Current Reroute Plan ─────────────────────────────────── */}
+          <SectionTitle>CURRENT REROUTE PLAN</SectionTitle>
+
+          {planLoad && (
+            <View style={S.card}>
+              <ActivityIndicator color={RED} />
+            </View>
+          )}
+
+          {!planLoad && planError ? (
+            <View style={[S.card, S.errorCard]}>
+              <Text style={S.errorText}>{planError}</Text>
+              <TouchableOpacity onPress={loadPlan} style={{ marginTop: 8 }}>
+                <Text style={{ color: RED, fontWeight: '700', fontSize: 13 }}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {!planLoad && !planError && !plan && (
+            <View style={S.card}>
+              <View style={S.noplanRow}>
+                <Text style={{ fontSize: 28, lineHeight: 36 }}>🚦</Text>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={S.noplanTitle}>No Active Reroute Plan</Text>
+                  <Text style={S.noplanSub}>
+                    No routing plan is currently active for this disaster. An override will trigger a fresh reroute pipeline.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {!planLoad && plan && (
+            <View style={S.card}>
+              {/* Status badge */}
+              <View style={S.planHeader}>
+                <View style={[S.statusBadge, { backgroundColor: GREEN + '18' }]}>
+                  <View style={[S.statusDot, { backgroundColor: GREEN }]} />
+                  <Text style={[S.statusText, { color: GREEN }]}>
+                    {(plan.status ?? 'active').toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={S.planMeta}>
+                  Since {fmtIso(plan.created_at)}
+                </Text>
+              </View>
+
+              {/* Stats row */}
+              <View style={S.statsRow}>
+                <StatBox
+                  value={String(plan.vehicles_affected ?? 0)}
+                  label="Vehicles"
+                  color={ORANGE}
+                />
+                <StatBox
+                  value={String(
+                    Array.isArray(plan.chosen_routes)
+                      ? plan.chosen_routes.length
+                      : 0,
+                  )}
+                  label="Routes"
+                  color={BLUE}
+                />
+                <StatBox
+                  value={String(
+                    Array.isArray(plan.blocked_roads)
+                      ? plan.blocked_roads.length
+                      : 0,
+                  )}
+                  label="Blocked"
+                  color={RED}
+                />
+              </View>
+
+              {/* Trigger source */}
+              {plan.trigger_source && (
+                <View style={S.metaRow}>
+                  <Text style={S.metaKey}>Triggered by</Text>
+                  <Text style={S.metaVal}>{plan.trigger_source}</Text>
+                </View>
+              )}
+
+              {/* Plan ID */}
+              {plan.id && (
+                <View style={S.metaRow}>
+                  <Text style={S.metaKey}>Plan ID</Text>
+                  <Text style={[S.metaVal, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11 }]}>
+                    {plan.id}
+                  </Text>
+                </View>
+              )}
+
+              {/* Active routes list */}
+              {Array.isArray(plan.chosen_routes) && plan.chosen_routes.length > 0 && (
+                <>
+                  <Text style={[S.metaKey, { marginTop: 12, marginBottom: 6 }]}>Active Routes</Text>
+                  {plan.chosen_routes.slice(0, 4).map((r: any, i: number) => (
+                    <View key={r.route_id ?? i} style={S.routeRow}>
+                      <View style={[S.routeDot, { backgroundColor: BLUE }]} />
+                      <Text style={S.routeId} numberOfLines={1}>
+                        {r.route_id ?? `Route ${i + 1}`}
+                      </Text>
+                      {r.duration_seconds != null && (
+                        <Text style={S.routeMeta}>
+                          ~{Math.round(r.duration_seconds / 60)} min
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                  {plan.chosen_routes.length > 4 && (
+                    <Text style={[S.metaVal, { marginTop: 4 }]}>
+                      +{plan.chosen_routes.length - 4} more routes
+                    </Text>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+
+          {/* ── Override Type ────────────────────────────────────────── */}
+          <SectionTitle>OVERRIDE TYPE</SectionTitle>
+
+          <View style={S.card}>
+            {OVERRIDE_TYPES.map(t => {
+              const active = overrideType === t.value;
+              return (
+                <TouchableOpacity
+                  key={t.value}
+                  style={[S.typeRow, active && { backgroundColor: t.color + '10', borderColor: t.color }]}
+                  onPress={() => setOverrideType(t.value)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={{ fontSize: 22, lineHeight: 30, marginRight: 10 }}>{t.icon}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[S.typeLabel, active && { color: t.color }]}>{t.label}</Text>
+                    <Text style={S.typeDesc}>{t.description}</Text>
+                  </View>
+                  <View style={[
+                    S.radio,
+                    active && { borderColor: t.color, backgroundColor: t.color },
+                  ]}>
+                    {active && <View style={S.radioInner} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* ── Segment ID (close_lane / open_lane) ──────────────────── */}
+          {selectedType.needsSegment && (
+            <>
+              <SectionTitle>SELECT ROAD SEGMENT</SectionTitle>
+              <View style={S.card}>
+                <Text style={S.inputLabel}>
+                  Road segment to {overrideType === 'close_lane' ? 'close' : 're-open'}
+                  <Text style={{ color: RED }}> *</Text>
+                </Text>
+
+                {/* If plan has blocked roads, show them as tappable options */}
+                {plan && Array.isArray(plan.blocked_roads) && plan.blocked_roads.length > 0 ? (
+                  <>
+                    <Text style={S.pickerHint}>
+                      Tap a road from the current plan, or type a custom ID below:
+                    </Text>
+                    {plan.blocked_roads.map((road: any, i: number) => {
+                      const id    = road.segment_id ?? road.id ?? road;
+                      const name  = road.road_name  ?? road.name ?? null;
+                      const active = segmentId === String(id);
+                      return (
+                        <TouchableOpacity
+                          key={String(id) + i}
+                          style={[S.pickerRow, active && S.pickerRowActive]}
+                          onPress={() => setSegmentId(String(id))}
+                          activeOpacity={0.75}
+                        >
+                          <View style={[S.pickerDot, { backgroundColor: active ? RED : '#D1D5DB' }]} />
+                          <View style={{ flex: 1 }}>
+                            {name && <Text style={S.pickerLabel}>{name}</Text>}
+                            <Text style={[S.pickerSub, active && { color: RED }]}
+                              numberOfLines={1}>
+                              {String(id)}
+                            </Text>
+                          </View>
+                          {active && <Text style={{ color: RED, fontSize: 16 }}>✓</Text>}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    <View style={S.dividerRow}>
+                      <View style={S.dividerLine} />
+                      <Text style={S.dividerText}>or enter manually</Text>
+                      <View style={S.dividerLine} />
+                    </View>
+                  </>
+                ) : (
+                  <Text style={S.pickerHint}>
+                    No blocked roads in current plan. Enter the segment ID from the map overlay:
+                  </Text>
+                )}
+
+                <TextInput
+                  style={[S.textInput, segmentId && S.textInputActive]}
+                  value={segmentId}
+                  onChangeText={setSegmentId}
+                  placeholder="e.g. seg-n11-south-01"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {segmentId.length > 0 && (
+                  <View style={S.selectedBadge}>
+                    <Text style={S.selectedBadgeText}>Selected: {segmentId}</Text>
+                    <TouchableOpacity onPress={() => setSegmentId('')}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={{ color: RED, fontSize: 13, fontWeight: '700' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
+          {/* ── Route ID (pin_detour) ─────────────────────────────────── */}
+          {selectedType.needsRoute && (
+            <>
+              <SectionTitle>SELECT ROUTE</SectionTitle>
+              <View style={S.card}>
+                <Text style={S.inputLabel}>
+                  Route to pin as preferred detour
+                  <Text style={{ color: RED }}> *</Text>
+                </Text>
+
+                {/* Show active routes from the plan as tappable options */}
+                {plan && Array.isArray(plan.chosen_routes) && plan.chosen_routes.length > 0 ? (
+                  <>
+                    <Text style={S.pickerHint}>
+                      Tap a route from the active reroute plan:
+                    </Text>
+                    {plan.chosen_routes.map((r: any, i: number) => {
+                      const id     = r.route_id ?? r.id ?? `route-${i}`;
+                      const mins   = r.duration_seconds != null
+                        ? `~${Math.round(r.duration_seconds / 60)} min`
+                        : null;
+                      const dist   = r.length_meters != null
+                        ? `${(r.length_meters / 1000).toFixed(1)} km`
+                        : null;
+                      const active = routeId === String(id);
+                      return (
+                        <TouchableOpacity
+                          key={String(id) + i}
+                          style={[S.pickerRow, active && S.pickerRowActive]}
+                          onPress={() => setRouteId(String(id))}
+                          activeOpacity={0.75}
+                        >
+                          <View style={[S.pickerDot, { backgroundColor: active ? BLUE : '#D1D5DB' }]} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[S.pickerLabel, active && { color: BLUE }]}
+                              numberOfLines={1}>
+                              {String(id)}
+                            </Text>
+                            {(mins || dist) && (
+                              <Text style={S.pickerSub}>
+                                {[mins, dist].filter(Boolean).join(' · ')}
+                              </Text>
+                            )}
+                          </View>
+                          {active && <Text style={{ color: BLUE, fontSize: 16 }}>✓</Text>}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    <View style={S.dividerRow}>
+                      <View style={S.dividerLine} />
+                      <Text style={S.dividerText}>or enter manually</Text>
+                      <View style={S.dividerLine} />
+                    </View>
+                  </>
+                ) : (
+                  <Text style={S.pickerHint}>
+                    No active routes in current plan. Enter the route ID manually:
+                  </Text>
+                )}
+
+                <TextInput
+                  style={[S.textInput, routeId && S.textInputActive]}
+                  value={routeId}
+                  onChangeText={setRouteId}
+                  placeholder="e.g. route-tomtom-abc123"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {routeId.length > 0 && (
+                  <View style={S.selectedBadge}>
+                    <Text style={S.selectedBadgeText}>Selected: {routeId}</Text>
+                    <TouchableOpacity onPress={() => setRouteId('')}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={{ color: RED, fontSize: 13, fontWeight: '700' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
+          {/* ── Priority ─────────────────────────────────────────────── */}
+          <SectionTitle>PRIORITY LEVEL</SectionTitle>
+
+          <View style={[S.card, { paddingBottom: 4 }]}>
+            <View style={S.priorityGrid}>
+              {PRIORITIES.map(p => {
+                const active = priority === p.value;
+                return (
+                  <TouchableOpacity
+                    key={p.value}
+                    style={[
+                      S.priorityPill,
+                      active && { backgroundColor: p.color, borderColor: p.color },
+                    ]}
+                    onPress={() => setPriority(p.value)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[S.priorityText, active && { color: '#fff' }]}>
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[S.hint, { marginTop: 8 }]}>
+              {priority === 'critical'
+                ? '⚠️ Critical overrides all auto-routing. Use for emergency corridor only.'
+                : priority === 'high'
+                ? 'Takes precedence over automatic route suggestions.'
+                : priority === 'medium'
+                ? 'Standard operator instruction. Applied alongside auto-routing.'
+                : 'Advisory only — vehicles may still use other routes.'}
+            </Text>
+          </View>
+
+          {/* ── Error ────────────────────────────────────────────────── */}
+          {!!submitErr && (
+            <View style={[S.card, S.errorCard]}>
+              <Text style={S.errorText}>{submitErr}</Text>
+            </View>
+          )}
+
+          {/* ── Success banner ───────────────────────────────────────── */}
+          {result && (
+            <View style={[S.card, S.successCard]}>
+              <Text style={{ fontSize: 28, lineHeight: 36 }}>✅</Text>
+              <View style={{ marginLeft: 12, flex: 1 }}>
+                <Text style={S.successTitle}>Override Applied</Text>
+                <Text style={S.successBody}>
+                  Routes recomputed: <Text style={{ fontWeight: '700', color: GREEN }}>
+                    {result.routes_recomputed}
+                  </Text>{'\n'}
+                  Affected vehicles are receiving updated navigation.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* ── Submit ───────────────────────────────────────────────── */}
+          <TouchableOpacity
+            style={[S.submitBtn, submitting && { opacity: 0.65 }]}
+            onPress={handleSubmit}
+            disabled={submitting}
+            activeOpacity={0.8}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={S.submitIcon}>{selectedType.icon}</Text>
+                <Text style={S.submitText}>
+                  Apply {selectedType.label} Override
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Context note */}
+          <Text style={S.footNote}>
+            Overrides are logged and attributed to your operator ID. The backend will recompute routes using TomTom and push updates to all affected vehicles via RabbitMQ.
+          </Text>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+};
+
+// ── Styles ─────────────────────────────────────────────────────────────────
+
+const S = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F8FAFC' },
+
+  // Header
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: RED, paddingHorizontal: 16, paddingVertical: 14,
+  },
+  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  headerSub:   { color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 2 },
+  hBtn:        { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+
+  // Section title
+  sectionTitle: {
+    fontSize: 11, fontWeight: '700', color: '#9CA3AF',
+    letterSpacing: 0.9, marginBottom: 8, marginTop: 4,
+  },
+
+  // Card
+  card: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  },
+  errorCard: {
+    backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorText: { color: '#991B1B', fontSize: 13, lineHeight: 20 },
+
+  successCard: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0',
+  },
+  successTitle: { fontSize: 15, fontWeight: '700', color: GREEN, marginBottom: 4 },
+  successBody:  { fontSize: 13, color: '#166534', lineHeight: 20 },
+
+  // Plan card
+  planHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 12,
+  },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+  },
+  statusDot: { width: 7, height: 7, borderRadius: 4, marginRight: 5 },
+  statusText: { fontSize: 11, fontWeight: '800' },
+  planMeta:   { fontSize: 11, color: '#9CA3AF' },
+
+  statsRow:  { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  statBox:   {
+    flex: 1, alignItems: 'center', backgroundColor: '#F9FAFB',
+    borderRadius: 8, paddingVertical: 10, borderTopWidth: 3,
+  },
+  statVal:   { fontSize: 22, fontWeight: '800', lineHeight: 28 },
+  statLabel: { fontSize: 10, color: '#6B7280', marginTop: 2 },
+
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  metaKey: { fontSize: 12, color: '#9CA3AF', width: 90 },
+  metaVal: { fontSize: 12, color: '#374151', fontWeight: '500', flex: 1 },
+
+  routeRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+  },
+  routeDot: { width: 6, height: 6, borderRadius: 3, marginRight: 8 },
+  routeId:  { flex: 1, fontSize: 12, color: '#374151', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  routeMeta:{ fontSize: 11, color: '#9CA3AF', marginLeft: 8 },
+
+  noplanRow:   { flexDirection: 'row', alignItems: 'flex-start' },
+  noplanTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 4 },
+  noplanSub:   { fontSize: 12, color: '#9CA3AF', lineHeight: 18 },
+
+  // Override type
+  typeRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, paddingHorizontal: 10,
+    borderRadius: 10, borderWidth: 1.5,
+    borderColor: '#F3F4F6', marginBottom: 8,
+  },
+  typeLabel: { fontSize: 14, fontWeight: '700', color: '#1F2937', marginBottom: 2 },
+  typeDesc:  { fontSize: 12, color: '#6B7280' },
+  radio: {
+    width: 20, height: 20, borderRadius: 10,
+    borderWidth: 2, borderColor: '#D1D5DB',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  radioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' },
+
+  // Input
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  textInput: {
+    borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: '#1F2937',
+    backgroundColor: '#FAFAFA',
+  },
+  textInputActive: {
+    borderColor: RED, backgroundColor: '#FFF5F5',
+  },
+  hint: { fontSize: 11, color: '#9CA3AF', marginTop: 6, lineHeight: 16 },
+
+  // Picker rows
+  pickerHint: {
+    fontSize: 12, color: '#6B7280', marginBottom: 10, lineHeight: 17,
+  },
+  pickerRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, paddingHorizontal: 10,
+    borderRadius: 8, borderWidth: 1, borderColor: '#F3F4F6',
+    marginBottom: 6, backgroundColor: '#FAFAFA',
+  },
+  pickerRowActive: {
+    borderColor: RED, backgroundColor: '#FFF5F5',
+  },
+  pickerDot: {
+    width: 8, height: 8, borderRadius: 4, marginRight: 10, flexShrink: 0,
+  },
+  pickerLabel: {
+    fontSize: 13, fontWeight: '600', color: '#1F2937',
+  },
+  pickerSub: {
+    fontSize: 11, color: '#9CA3AF', marginTop: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  dividerRow: {
+    flexDirection: 'row', alignItems: 'center', marginVertical: 10, gap: 8,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
+  dividerText: { fontSize: 11, color: '#9CA3AF' },
+  selectedBadge: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 8, backgroundColor: '#FEF2F2',
+    borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6,
+    borderWidth: 1, borderColor: '#FECACA',
+  },
+  selectedBadgeText: {
+    fontSize: 11, color: '#991B1B', fontWeight: '600', flex: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+
+  // Priority
+  priorityGrid: { flexDirection: 'row', gap: 8 },
+  priorityPill: {
+    flex: 1, alignItems: 'center', paddingVertical: 8,
+    borderRadius: 8, borderWidth: 1.5, borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  priorityText: { fontSize: 12, fontWeight: '700', color: '#374151' },
+
+  // Submit
+  submitBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: RED, borderRadius: 12,
+    paddingVertical: 16, marginBottom: 12, gap: 8,
+  },
+  submitIcon: { fontSize: 20, lineHeight: 26 },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  footNote: {
+    fontSize: 11, color: '#9CA3AF', textAlign: 'center',
+    lineHeight: 16, paddingHorizontal: spacing.sm,
+  },
+});
+
+export default RerouteOverrideScreen;

@@ -25,7 +25,7 @@ import {
   ActivityIndicator, Alert, Linking, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
@@ -33,6 +33,9 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authRequest, authService } from '@services/authService';
 import { wsService } from '@services/wsService';
+import { mapActionStore } from '@services/mapActionStore';
+import { formatTime, formatDate } from '@utils/formatters';
+import { API } from '@services/apiConfig';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -44,6 +47,9 @@ interface EvacuationPlan {
   approved_by?: string;
   activated_at?: string;
   created_at?: string;
+  // Enriched from linked disaster
+  disaster_type?: string;
+  disaster_location?: string;
   impact_zones?: Zone[];
   shelters_with_capacity?: Shelter[];
   population_stats?: { total: number; vulnerable: number; zones_count: number };
@@ -55,10 +61,13 @@ interface EvacuationPlan {
 }
 
 interface Zone {
-  zone_id: string;
-  name: string;
-  lat: number;
-  lon: number;
+  zone_id?: string;
+  area_name?: string;
+  name?: string;
+  lat?: number;
+  lon?: number;
+  center_lat?: number;
+  center_lon?: number;
   population: number;
   vulnerable_count?: number;
   distance_from_disaster_km?: number;
@@ -168,20 +177,24 @@ const CitizenDetailView: React.FC<{
 }> = ({ plan, userLocation, onBack, onFlyTo }) => {
   const navigation = useNavigation<any>();
   const zones    = plan.impact_zones ?? [];
+  const zoneLat  = (z: Zone) => z.lat ?? z.center_lat ?? 53.3498;
+  const zoneLon  = (z: Zone) => z.lon ?? z.center_lon ?? -6.2603;
+  const zoneName = (z: Zone) => z.name ?? z.area_name ?? 'Evacuation Point';
+  const zoneKey  = (z: Zone) => z.zone_id ?? z.area_name ?? 'zone';
   const shelters = plan.shelters_with_capacity ?? [];
   const routes   = plan.best_routes_per_zone ?? {};
 
   // Find nearest evacuation point (zone) to the citizen
   const nearestZone = userLocation && zones.length > 0
     ? zones.reduce((nearest, zone) => {
-        const d = distanceKm(userLocation.lat, userLocation.lon, zone.lat, zone.lon);
+        const d = distanceKm(userLocation.lat, userLocation.lon, zoneLat(zone), zoneLon(zone));
         const nd = distanceKm(userLocation.lat, userLocation.lon, nearest.lat, nearest.lon);
         return d < nd ? zone : nearest;
       })
     : zones[0] ?? null;
 
   const nearestZoneDist = nearestZone && userLocation
-    ? distanceKm(userLocation.lat, userLocation.lon, nearestZone.lat, nearestZone.lon)
+    ? distanceKm(userLocation.lat, userLocation.lon, zoneLat(nearestZone), zoneLon(nearestZone))
     : null;
 
   // Find the route from nearest zone to a shelter
@@ -197,7 +210,7 @@ const CitizenDetailView: React.FC<{
 
   // Find bus schedule for nearest zone
   const schedule = plan.transport_plan?.schedules?.find(
-    s => s.zone_id === nearestZone?.zone_id
+    s => s.zone_id === (nearestZone?.zone_id ?? nearestZone?.area_name)
   );
 
   const walkTime = nearestZoneDist
@@ -237,7 +250,7 @@ const CitizenDetailView: React.FC<{
                   <Text style={S.priorityText}>P{nearestZone.priority ?? '—'}</Text>
                 </View>
                 <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                  <Text style={S.evacuationPointName}>{nearestZone.name}</Text>
+                  <Text style={S.evacuationPointName}>{zoneName(nearestZone)}</Text>
                   {nearestZoneDist != null && (
                     <Text style={S.evacuationPointMeta}>
                       📍 {nearestZoneDist < 1
@@ -258,21 +271,14 @@ const CitizenDetailView: React.FC<{
 
               <View style={S.actionRow}>
                 <TouchableOpacity
-                  style={S.primaryActionBtn}
-                  onPress={() => navigation.navigate('Home' as any, {
-                    flyToLat: nearestZone.lat,
-                    flyToLon: nearestZone.lon,
-                    flyToLabel: nearestZone.name,
-                    evacuationRoute: true,
-                  })}
+                  style={[S.primaryActionBtn, { flex: 1 }]}
+                  onPress={() => {
+                    console.log('[EvacuationPlans] Get Directions → evacuationRoute:', nearestZone.lat, nearestZone.lon);
+                    mapActionStore.setPending({ type: 'evacuationRoute', lat: zoneLat(nearestZone), lon: zoneLon(nearestZone), label: zoneName(nearestZone) });
+                    navigation.navigate('Home' as any);
+                  }}
                 >
-                  <Text style={S.primaryActionTxt}>🗺️  Get Directions</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={S.secondaryActionBtn}
-                  onPress={() => onFlyTo(nearestZone.lat, nearestZone.lon, nearestZone.name)}
-                >
-                  <Text style={S.secondaryActionTxt}>📍 View on Map</Text>
+                  <Text style={S.primaryActionTxt}>🗺️  Get Directions to Evacuation Point</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -318,7 +324,7 @@ const CitizenDetailView: React.FC<{
               {schedule && (
                 <View style={S.busInfoBox}>
                   <Text style={S.busInfoText}>
-                    🚌 {schedule.buses_needed} buses · ~{schedule.estimated_time_min} min journey
+                    🚌 {schedule.buses_needed ?? '?'} buses · ~{schedule.estimated_time_min ?? '?'} min journey
                   </Text>
                 </View>
               )}
@@ -348,15 +354,15 @@ const CitizenDetailView: React.FC<{
               })
               .map(z => {
                 const d = userLocation
-                  ? distanceKm(userLocation.lat, userLocation.lon, z.lat, z.lon)
+                  ? distanceKm(userLocation.lat, userLocation.lon, zoneLat(z), zoneLon(z))
                   : null;
                 return (
                   <TouchableOpacity
-                    key={z.zone_id}
+                    key={zoneKey(z)}
                     style={S.altZoneRow}
-                    onPress={() => onFlyTo(z.lat, z.lon, z.name)}
+                    onPress={() => onFlyTo(zoneLat(z), zoneLon(z), zoneName(z))}
                   >
-                    <Text style={S.altZoneName}>{z.name}</Text>
+                    <Text style={S.altZoneName}>{zoneName(z)}</Text>
                     {d != null && (
                       <Text style={S.altZoneDist}>
                         {d < 1 ? `${Math.round(d * 1000)}m` : `${d.toFixed(1)}km`}
@@ -402,6 +408,10 @@ const ResponderDetailView: React.FC<{
   onFlyTo: (lat: number, lon: number, label: string) => void;
 }> = ({ plan, progress, onBack, onRefresh, onFlyTo }) => {
   const zones    = plan.impact_zones ?? [];
+  const zoneLat  = (z: Zone) => z.lat ?? z.center_lat ?? 53.3498;
+  const zoneLon  = (z: Zone) => z.lon ?? z.center_lon ?? -6.2603;
+  const zoneName = (z: Zone) => z.name ?? z.area_name ?? 'Evacuation Point';
+  const zoneKey  = (z: Zone) => z.zone_id ?? z.area_name ?? 'zone';
   const shelters = plan.shelters_with_capacity ?? [];
   const transport = plan.transport_plan;
   const alloc    = plan.allocations;
@@ -498,7 +508,7 @@ const ResponderDetailView: React.FC<{
                 const pct = m?.percentage ?? 0;
 
                 return (
-                  <View key={z.zone_id} style={[S.responderZoneCard, zi < zones.length - 1 && { marginBottom: spacing.md }]}>
+                  <View key={zoneKey(z)} style={[S.responderZoneCard, zi < zones.length - 1 && { marginBottom: spacing.md }]}>
                     {/* Zone header */}
                     <View style={S.responderZoneHeader}>
                       <View style={[S.priorityBadge, {
@@ -508,14 +518,14 @@ const ResponderDetailView: React.FC<{
                         <Text style={S.priorityText}>P{z.priority ?? zi + 1}</Text>
                       </View>
                       <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                        <Text style={S.responderZoneName}>{z.name}</Text>
+                        <Text style={S.responderZoneName}>{zoneName(z)}</Text>
                         <Text style={S.responderZoneMeta}>
                           👥 {(z.population ?? 0).toLocaleString()} residents
                           {z.vulnerable_count ? ` · 🏥 ${z.vulnerable_count.toLocaleString()} vulnerable` : ''}
                           {z.distance_from_disaster_km != null ? ` · 💥 ${z.distance_from_disaster_km.toFixed(1)}km from disaster` : ''}
                         </Text>
                       </View>
-                      <TouchableOpacity onPress={() => onFlyTo(z.lat, z.lon, z.name)} style={S.mapPinBtn}>
+                      <TouchableOpacity onPress={() => onFlyTo(zoneLat(z), zoneLon(z), zoneName(z))} style={S.mapPinBtn}>
                         <Text style={{ fontSize: 16 }}>📍</Text>
                       </TouchableOpacity>
                     </View>
@@ -549,13 +559,13 @@ const ResponderDetailView: React.FC<{
                           <View style={[S.zoneRouteDot, { backgroundColor: '#3B82F6' }]} />
                         </View>
                         <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                          <Text style={S.zoneRouteFrom}>📍 {z.name}</Text>
+                          <Text style={S.zoneRouteFrom}>{zoneName(z)}</Text>
                           <Text style={S.zoneRouteDetail}>
-                            {sched ? `🚌 ${sched.buses_needed} buses · ~${sched.estimated_time_min} min` : ''}
+                            {sched ? `🚌 ${sched.buses_needed ?? '?'} buses · ~${sched.estimated_time_min ?? '?'} min` : ''}
                             {bestRoute?.distance_km ? ` · ${bestRoute.distance_km.toFixed(1)} km` : ''}
                           </Text>
                           {shelter && (
-                            <>
+                            <React.Fragment key={shelter.shelter_id ?? shelter.name}>
                               <Text style={S.zoneRouteTo}>🏛️ {shelter.name}</Text>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
                                 <Text style={{ fontSize: 11, color: '#6B7280' }}>
@@ -568,11 +578,11 @@ const ResponderDetailView: React.FC<{
                                     </Text>
                                   </View>
                                 )}
-                                <TouchableOpacity onPress={() => onFlyTo(shelter.lat, shelter.lon, shelter.name)}>
-                                  <Text style={{ fontSize: 11, color: '#3B82F6', fontWeight: '600' }}>View →</Text>
+                                <TouchableOpacity onPress={() => onFlyTo(shelter.lat, shelter.lon, shelter.name)} style={{ padding: 4 }}>
+                                  <Text style={{ fontSize: 14 }}>📍</Text>
                                 </TouchableOpacity>
                               </View>
-                            </>
+                            </React.Fragment>
                           )}
                         </View>
                       </View>
@@ -593,7 +603,7 @@ const ResponderDetailView: React.FC<{
                 : 0;
               return (
                 <View key={sh.shelter_id} style={[S.shelterStatusRow, si < shelters.length - 1 && { borderBottomWidth: 1, borderBottomColor: '#F3F4F6', paddingBottom: spacing.sm, marginBottom: spacing.sm }]}>
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flex: 1, alignItems: 'flex-start' }}>
                     <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937' }}>{sh.name}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                       <Text style={{ fontSize: 12, color: '#6B7280' }}>
@@ -618,8 +628,11 @@ const ResponderDetailView: React.FC<{
                       }]} />
                     </View>
                   </View>
-                  <TouchableOpacity style={{ marginLeft: spacing.sm }} onPress={() => onFlyTo(sh.lat, sh.lon, sh.name)}>
-                    <Text style={{ fontSize: 22 }}>📍</Text>
+                  <TouchableOpacity 
+                    style={{ marginLeft: spacing.sm, padding: 6, backgroundColor: '#EFF6FF', borderRadius: 8, alignSelf: 'flex-start' }} 
+                    onPress={() => onFlyTo(sh.lat, sh.lon, sh.name)}
+                  >
+                    <Text style={{ fontSize: 18 }}>📍</Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -645,6 +658,9 @@ const ResponderDetailView: React.FC<{
 
 export const EvacuationPlansScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route      = useRoute<any>();
+  // If navigated from DisasterAlertDetail, auto-open the plan for this disaster
+  const filterDisasterId: string | undefined = route.params?.disasterId;
 
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
@@ -653,28 +669,25 @@ export const EvacuationPlansScreen: React.FC = () => {
   const [progress, setProgress]           = useState<ProgressData | null>(null);
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
   const [isResponder, setIsResponder]     = useState(false);
-  const [isManager, setIsManager]         = useState(false);
+  // isManager removed — only 'staff' role exists; all responders can approve/activate
   const [view, setView]                   = useState<'list' | 'detail'>('list');
   const [userLocation, setUserLocation]   = useState<UserLocation | null>(null);
 
   useEffect(() => {
     loadAll();
 
-    // Detect role
+    // Detect role — only 'staff' is a valid responder role
     AsyncStorage.getItem('@auth/user_role').then(role => {
       setIsResponder(role === 'responder');
     });
-    authService.getStoredUser().then((user: any) => {
-      const role = (user?.role ?? '').toUpperCase();
-      setIsManager(role === 'ADMIN' || role === 'MANAGER');
-    }).catch(() => {});
 
     // Get citizen GPS location for nearest zone calculation
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+    // navigator.geolocation is patched by React Native core (no extra package needed)
+    if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         pos => setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        () => {},
-        { enableHighAccuracy: true, timeout: 10000 }
+        () => { /* silent — nearest zone calc falls back gracefully */ },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
       );
     }
 
@@ -690,6 +703,18 @@ export const EvacuationPlansScreen: React.FC = () => {
     setLoading(false);
   };
 
+  // After plans are loaded, if a specific disasterId was passed as param,
+  // auto-open that disaster's evacuation plan directly
+  useEffect(() => {
+    if (!filterDisasterId || plans.length === 0) return;
+    const match = plans.find(p => p.disaster_id === filterDisasterId);
+    if (match) {
+      // Auto-open the matching plan detail
+      loadPlanDetail(match.id);
+    }
+    // else: no plan for this disaster yet — list shows all plans normally
+  }, [plans, filterDisasterId]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadPlans();
@@ -700,7 +725,27 @@ export const EvacuationPlansScreen: React.FC = () => {
   const loadPlans = async () => {
     try {
       const data = await authRequest<{ evacuation_plans: EvacuationPlan[] }>('/evacuations/');
-      setPlans(data?.evacuation_plans ?? []);
+      const rawPlans: EvacuationPlan[] = data?.evacuation_plans ?? [];
+
+      // Enrich each plan with disaster type + location by fetching linked disaster
+      // Run in parallel, silently ignore failures (plan still shows without disaster info)
+      const enriched = await Promise.all(
+        rawPlans.map(async (plan) => {
+          if (!plan.disaster_id) return plan;
+          try {
+            const d = await authRequest<any>(API.disasters.byId(plan.disaster_id));
+            return {
+              ...plan,
+              disaster_type:     (d?.type ?? d?.disaster_type ?? '').replace(/_/g, ' ').toUpperCase(),
+              disaster_location: d?.location_address ?? d?.location?.address ?? '',
+            };
+          } catch {
+            return plan; // fallback: show plan without disaster info
+          }
+        })
+      );
+
+      setPlans(enriched);
     } catch (e) {
       console.warn('Could not load evacuation plans:', e);
     }
@@ -729,7 +774,9 @@ export const EvacuationPlansScreen: React.FC = () => {
   };
 
   const openMaps = (lat: number, lon: number, label: string) => {
-    navigation.navigate('Home' as any, { flyToLat: lat, flyToLon: lon, flyToLabel: label });
+    console.log('[EvacuationPlans] View on Map → flyTo:', lat, lon, label);
+    mapActionStore.setPending({ type: 'flyTo', lat, lon, label });
+    navigation.navigate('Home' as any);
   };
 
   // ── ERT Actions ────────────────────────────────────────────────────────
@@ -791,10 +838,15 @@ export const EvacuationPlansScreen: React.FC = () => {
     );
   }
 
-  // ── Active plans (non-PENDING, non-CANCELLED) ──────────────────────────
-  const visiblePlans = plans.filter(p =>
-    p.plan_status !== 'PENDING' && p.plan_status !== 'CANCELLED'
-  );
+  // ── Visible plans ───────────────────────────────────────────────────────
+  // Citizens: only show ACTIVE plans (disaster still ongoing)
+  // Hide PENDING (not yet approved), CANCELLED, and COMPLETED (disaster resolved)
+  // Responders see all non-cancelled plans for operational awareness
+  const visiblePlans = plans.filter(p => {
+    if (p.plan_status === 'PENDING' || p.plan_status === 'CANCELLED') return false;
+    if (!isResponder && p.plan_status === 'COMPLETED') return false; // resolved for citizens
+    return true;
+  });
   const activePlans = visiblePlans.filter(p => p.plan_status === 'ACTIVE');
 
   return (
@@ -803,7 +855,14 @@ export const EvacuationPlansScreen: React.FC = () => {
 
       <View style={S.header}>
         <BackIcon onPress={() => navigation.goBack()} />
-        <Text variant="h4">Evacuation Plans</Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text variant="h4">Evacuation Plans</Text>
+          {filterDisasterId && (
+            <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
+              For disaster · {filterDisasterId.slice(0, 8).toUpperCase()}
+            </Text>
+          )}
+        </View>
         <View style={{ width: 40 }} />
       </View>
 
@@ -835,6 +894,17 @@ export const EvacuationPlansScreen: React.FC = () => {
 
           {/* Plans list */}
           <Text style={S.sectionTitle}>EVACUATION PLANS</Text>
+
+          {/* Notice when opened from a specific disaster but no matching plan found */}
+          {filterDisasterId && visiblePlans.length > 0 && !visiblePlans.some(p => p.disaster_id === filterDisasterId) && (
+            <View style={[S.emptyCard, { backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' }]}>
+              <Text style={{ fontSize: 22 }}>⚠️</Text>
+              <Text variant="h5" style={{ marginTop: spacing.sm, color: '#92400E' }}>No Plan for This Disaster Yet</Text>
+              <Text variant="bodyMedium" color="textSecondary" style={{ textAlign: 'center', marginTop: spacing.sm }}>
+                Emergency coordinators haven't created an evacuation plan for this disaster yet. All current plans are shown below.
+              </Text>
+            </View>
+          )}
 
           {visiblePlans.length === 0 ? (
             <View style={S.emptyCard}>
@@ -874,11 +944,26 @@ export const EvacuationPlansScreen: React.FC = () => {
                       </Text>
                     </View>
                   </View>
+                  {/* Disaster info — type + address */}
+                  {p.disaster_type ? (
+                    <Text style={S.planDisasterType}>
+                      {p.disaster_type === 'FIRE' ? '🔥' :
+                       p.disaster_type === 'FLOOD' ? '🌊' :
+                       p.disaster_type === 'EARTHQUAKE' ? '🏚️' :
+                       p.disaster_type === 'STORM' ? '⛈️' : '⚠️'
+                      } {p.disaster_type}
+                    </Text>
+                  ) : null}
+                  {p.disaster_location ? (
+                    <Text style={S.planDisasterLocation} numberOfLines={1}>
+                      📍 {p.disaster_location}
+                    </Text>
+                  ) : null}
                   <Text style={S.planMeta}>
                     {p.activated_at
-                      ? `Active since ${new Date(p.activated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      ? `Active since ${formatTime(p.activated_at)}`
                       : p.created_at
-                      ? `Created ${new Date(p.created_at).toLocaleDateString()}`
+                      ? `Created ${formatDate(p.created_at)}`
                       : 'Evacuation plan'}
                   </Text>
                   {p.approved_by && <Text style={S.planMeta}>Approved by: {p.approved_by}</Text>}
@@ -888,7 +973,7 @@ export const EvacuationPlansScreen: React.FC = () => {
                     </Text>
                   )}
                   {/* Manager actions */}
-                  {isManager && p.plan_status === 'PENDING' && (
+                  {isResponder && p.plan_status === 'PENDING' && (
                     <TouchableOpacity style={[S.ertBtn, { backgroundColor: '#3B82F6' }]}
                       onPress={() => Alert.alert('Approve Plan', 'Approve this plan?', [
                         { text: 'Cancel', style: 'cancel' },
@@ -897,7 +982,7 @@ export const EvacuationPlansScreen: React.FC = () => {
                       <Text style={S.ertBtnTxt}>Approve</Text>
                     </TouchableOpacity>
                   )}
-                  {isManager && p.plan_status === 'APPROVED' && (
+                  {isResponder && p.plan_status === 'APPROVED' && (
                     <TouchableOpacity style={[S.ertBtn, { backgroundColor: '#DC2626' }]}
                       onPress={() => Alert.alert('Activate Plan', 'Activate this evacuation?', [
                         { text: 'Cancel', style: 'cancel' },
@@ -949,6 +1034,8 @@ const S = StyleSheet.create({
   planCardRow:  { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
   planRef:      { fontSize: 15, fontWeight: '700', color: '#1F2937' },
   planMeta:     { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+  planDisasterType: { fontSize: 13, fontWeight: '700', color: '#374151', marginTop: 3 },
+  planDisasterLocation: { fontSize: 11, color: '#6B7280', marginTop: 1, marginBottom: 2 },
   statusPill:   { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   statusPillTxt:{ fontSize: 11, fontWeight: '700' },
   statusDot:    { width: 12, height: 12, borderRadius: 6 },
@@ -1023,10 +1110,10 @@ const S = StyleSheet.create({
   zoneProgressPct:  { fontSize: 13, fontWeight: '700', color: '#6B7280', minWidth: 36, textAlign: 'right' },
 
   responderZoneCard:    { backgroundColor: '#F8FAFC', borderRadius: 12, padding: spacing.md, borderWidth: 1, borderColor: '#E5E7EB' },
-  responderZoneHeader:  { flexDirection: 'row', alignItems: 'flex-start' },
+  responderZoneHeader:  { flexDirection: 'row', alignItems: 'center' },
   responderZoneName:    { fontSize: 15, fontWeight: '700', color: '#1F2937' },
   responderZoneMeta:    { fontSize: 12, color: '#6B7280', marginTop: 3 },
-  mapPinBtn:            { padding: spacing.xs },
+  mapPinBtn:            { padding: 8, marginLeft: 4 },
 
   zoneRouteBox:   { flexDirection: 'row', marginTop: spacing.md, alignItems: 'flex-start' },
   zoneRouteArrow: { alignItems: 'center', paddingTop: 4 },
@@ -1036,7 +1123,7 @@ const S = StyleSheet.create({
   zoneRouteDetail:{ fontSize: 11, color: '#6B7280', marginTop: 2 },
   zoneRouteTo:    { fontSize: 12, fontWeight: '700', color: '#1D4ED8', marginTop: spacing.xs },
 
-  shelterStatusRow: {},
+  shelterStatusRow: { flexDirection: 'row', alignItems: 'center' },
 });
 
 export default EvacuationPlansScreen;

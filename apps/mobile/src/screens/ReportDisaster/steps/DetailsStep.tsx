@@ -14,7 +14,6 @@ import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
 import { reportStyles } from '../styles';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import { Picker } from '@react-native-picker/picker';
 import { launchImageLibrary, launchCamera, ImagePickerResponse, Asset } from 'react-native-image-picker';
 
 const PEOPLE_AFFECTED_RANGES = [
@@ -187,20 +186,28 @@ export const DetailsStep: React.FC<DetailsStepProps> = ({
 
         {/* People Affected */}
         <Text variant="h2" style={reportStyles.sectionTitle}>Number of people affected</Text>
-        <View style={[reportStyles.picker, { paddingVertical: 0, paddingHorizontal: 0, overflow: 'hidden', minHeight: 50 }]}>
-          <Picker
-            selectedValue={peopleAffected || ''}
-            onValueChange={(val) => setPeopleAffected(val as string)}
-            style={{ color: colors.textPrimary, width: '100%' }}
-            itemStyle={{ color: colors.textPrimary, fontSize: 16 }}
-            mode="dropdown"
-          >
-            <Picker.Item label="Select range..." value="" color={colors.textSecondary} />
-            {PEOPLE_AFFECTED_RANGES.map(r => (
-              <Picker.Item key={r} label={r} value={r} color={colors.textPrimary} />
-            ))}
-          </Picker>
+        <View style={chipStyles.grid}>
+          {PEOPLE_AFFECTED_RANGES.map(r => {
+            const active = peopleAffected === r;
+            return (
+              <TouchableOpacity
+                key={r}
+                style={[chipStyles.chip, active && chipStyles.chipActive]}
+                onPress={() => setPeopleAffected(active ? '' : r)}
+                activeOpacity={0.75}
+              >
+                <Text style={[chipStyles.chipText, active && chipStyles.chipTextActive]}>
+                  {r}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+        {peopleAffected ? (
+          <Text style={chipStyles.selectedHint}>Selected: {peopleAffected}</Text>
+        ) : (
+          <Text style={chipStyles.selectedHint}>Tap to select a range</Text>
+        )}
 
         {/* Additional Details */}
         <Text variant="h2" style={reportStyles.sectionTitle}>Additional details (optional)</Text>
@@ -238,3 +245,37 @@ export const DetailsStep: React.FC<DetailsStepProps> = ({
 };
 
 export default DetailsStep;
+
+const chipStyles = {
+  grid: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginBottom: 6,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#374151',
+  },
+  chipTextActive: {
+    color: '#fff',
+  },
+  selectedHint: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginBottom: 12,
+  },
+};

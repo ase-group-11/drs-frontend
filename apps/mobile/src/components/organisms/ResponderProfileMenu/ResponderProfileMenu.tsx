@@ -25,13 +25,10 @@ const DEPT_LABELS: Record<string, string> = {
   fire:    '🔥 Fire',    FIRE:    '🔥 Fire',
   police:  '👮 Police',  POLICE:  '👮 Police',
   medical: '🏥 Medical', MEDICAL: '🏥 Medical',
-  it:      '💻 IT',      IT:      '💻 IT',
 };
-const ROLE_LABELS: Record<string, string> = {
-  admin:   'Admin',     ADMIN:   'Admin',
-  manager: 'Manager',   MANAGER: 'Manager',
-  staff:   'Responder', STAFF:   'Responder',
-};
+
+// Only valid role is 'staff' — always displayed as 'Responder'
+const getRoleLabel = (_role: string) => 'Responder';
 
 export interface ResponderProfileMenuProps {
   name:         string;
@@ -51,8 +48,8 @@ export const ResponderProfileMenu: React.FC<ResponderProfileMenuProps> = ({
   onNavigate, onLogout,
 }) => {
   const insets = useSafeAreaInsets();
-  const deptLabel = DEPT_LABELS[department] ?? department ?? '🔥 Fire';
-  const roleLabel = ROLE_LABELS[role]       ?? role       ?? 'Responder';
+  const deptLabel = DEPT_LABELS[department] ?? `🚒 ${department ?? 'Fire'}`;
+  const roleLabel = getRoleLabel(role);
 
   const call999 = () => {
     Alert.alert('🚨 Emergency Call', 'Call 999 now?', [

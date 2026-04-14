@@ -26,5 +26,6 @@ export { DisasterDetailScreen }            from './DisasterDetailScreen';
 export { CompletedMissionsScreen }         from './CompletedMissionsScreen';
 export { MyCrewScreen }                    from './MyCrewScreen';
 export { SavedLocationsScreen }            from './SavedLocationsScreen';
+export { RerouteOverrideScreen }            from './RerouteOverrideScreen';
 
 export { UnitStatusScreen }                from './UnitStatusScreen';          // NEW

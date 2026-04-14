@@ -25,6 +25,7 @@ import { wsService, WSAlert } from '@services/wsService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '@constants/index';
 import { authRequest } from '@services/authService';
+import { useUserLocation } from '@hooks/useUserLocation';
 
 MapboxGL.setAccessToken(EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN);
 
@@ -95,29 +96,17 @@ const CONGESTION_LEVELS: CongestionLevel[] = ['light', 'moderate', 'heavy', 'sev
 
 // Refined disaster icons: distinct, instantly readable shapes
 const DISASTER_ICONS: Record<string, string> = {
-  fire:                '🔥',
-  flood:               '🌊',
-  storm:               '🌩️',
-  earthquake:          '💢',
-  explosion:           '💥',
-  gas_leak:            '🟡',
-  hazmat:              '☣️',
-  landslide:           '🪨',
-  accident:            '🚧',
-  building_collapse:   '🏚️',
-  medical_emergency:   '🏥',
-  power_outage:        '⚡',
-  water_contamination: '🧪',
-  crime:               '🔴',
-  riot:                '🚧',
-  terrorist_attack:    '💣',
-  other:               '⚠️',
-  hurricane:           '🌀',
-  tornado:             '🌪️',
-  tsunami:             '🌊',
-  drought:             '🏜️',
-  heatwave:            '🌡️',
-  coldwave:            '🧊',
+  flood:      '🌊',
+  fire:       '🔥',
+  earthquake: '🏚️',
+  hurricane:  '🌀',
+  tornado:    '🌪️',
+  tsunami:    '🌊',
+  drought:    '🏜️',
+  heatwave:   '🌡️',
+  coldwave:   '🧊',
+  storm:      '⛈️',
+  other:      '⚠️',
 };
 const SEVERITY_COLORS: Record<string, string> = {
   critical: '#EF4444', high: '#F97316', medium: '#EAB308', low: '#3B82F6',
@@ -262,14 +251,20 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   const [mapStyle, setMapStyle]               = useState('light');
   const [is3D, setIs3D]                       = useState(true);
   const [zoom, setZoom]                       = useState(13);
-  const [userLocation, setUserLocation]       = useState<[number, number]>([-6.2603, 53.3498]);
+  // Live GPS — provided by useUserLocation hook (watchPosition + permission)
+  const { location: userLocation } = useUserLocation();
   const userLocationRef = useRef<[number, number]>([-6.2603, 53.3498]); // always current for closures
+  // Track whether user has manually panned the map — if so, stop auto-centering on GPS updates
+  const userHasPannedRef   = useRef(false);
+  const initialCentreSet   = useRef(false); // true once we've flown to the first real GPS fix
+  // Pulse animation state for the blue live-location dot (avoids Animated API — safe on RN 0.83)
+  const [pulseLarge, setPulseLarge] = useState(false);
   const [mapLoaded, setMapLoaded]             = useState(false);
   const [styleLoaded, setStyleLoaded]         = useState(false); // true only after style fully loaded
   const [styleKey, setStyleKey]               = useState(0); // incremented on style reload to force marker remount
   const pendingNavigateRef = useRef<{ destLat: number; destLon: number; label: string } | null>(null);
   const [trafficSegments, setTrafficSegments] = useState<TrafficSegment[]>([]);
-  const [showTraffic, setShowTraffic]         = useState(true);
+  const [showTraffic, setShowTraffic]         = useState(false); // off by default — user enables via button
   const [trafficLoading, setTrafficLoading]   = useState(false);
   const [selectedSegment, setSelectedSegment]     = useState<TrafficSegment | null>(null);
   const [selectedDisaster, setSelectedDisaster]   = useState<any | null>(null);
@@ -286,6 +281,13 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   const [routes, setRoutes]                   = useState<RerouteEntry[]>([]); // kept for hook order
   const [routesLoading, setRoutesLoading]     = useState(false);
   const [showRoutes, setShowRoutes]           = useState(false);
+  // Track what triggered the current route display:
+  //   'search'     — user typed a destination in the search box (show card + clear button)
+  //   'evacuation' — navigated from EvacuationPlans (show route line, NO card/button)
+  //   'alert'      — navigated from DisasterAlertDetail View on Map (fly only, NO card/button)
+  //   'reroute'    — background WS reroute.triggered (NO card/button)
+  //   null         — no route active
+  const [routeSource, setRouteSource]         = useState<'search' | 'evacuation' | 'alert' | 'reroute' | null>(null);
   // Reroute overlay - drawn when WS reroute.triggered received
   const [rerouteOverlay, setRerouteOverlay]   = useState<[number,number][] | null>(null);
   const [rerouteDisasterId, setRerouteDisasterId] = useState<string | null>(null);
@@ -309,18 +311,30 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   // Animation progress: segmentId -> t (0->1, loops)
   const cameraRef    = useRef<MapboxGL.Camera>(null);
 
-  // -- Location ---------------------------------------------------------
+  // -- Sync userLocationRef whenever the hook delivers a new position ------
+  // The ref is used inside closures (navigateToScene, etc.) so it must stay current.
+  // Also fly to real location on the FIRST non-default GPS fix (not on every update —
+  // that would fight the user if they've panned the map).
   useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      ({ coords: { longitude, latitude } }) => {
-        const pos: [number, number] = [longitude, latitude];
-        setUserLocation(pos);
-        userLocationRef.current = pos;
-        console.log('[Location] Updated:', latitude.toFixed(5), longitude.toFixed(5));
-      },
-      (err) => console.log('Location error:', err),
-      { enableHighAccuracy: false, timeout: 15000, maximumAge: 10000 }
-    );
+    userLocationRef.current = userLocation;
+    const isDublinDefault =
+      Math.abs(userLocation[0] - (-6.2603)) < 0.0001 &&
+      Math.abs(userLocation[1] - 53.3498)  < 0.0001;
+    if (!isDublinDefault && !initialCentreSet.current && !userHasPannedRef.current) {
+      initialCentreSet.current = true;
+      cameraRef.current?.setCamera({
+        centerCoordinate: userLocation,
+        zoomLevel: 15,
+        animationDuration: 1200,
+      });
+    }
+  }, [userLocation]);
+
+  // -- Pulse animation for the blue live-location dot ----------------------
+  // Toggles pulseLarge on a 1.2 s interval — no Animated API, safe on RN 0.83.
+  useEffect(() => {
+    const id = setInterval(() => setPulseLarge(p => !p), 1200);
+    return () => clearInterval(id);
   }, []);
 
   // -- Traffic fetch -----------------------------------------------------
@@ -475,13 +489,18 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
 
 
   // Core navigation logic - called from ref or deferred on map load
-  const _doNavigateToScene = useCallback(async (destLat: number, destLon: number, label: string) => {
-    const origLon = userLocationRef.current[0];
-    const origLat = userLocationRef.current[1];
-    console.log('[_doNavigateToScene] From:', origLat.toFixed(5), origLon.toFixed(5), '->', destLat.toFixed(5), destLon.toFixed(5), '|', label);
+  const _doNavigateToScene = useCallback(async (destLat: number, destLon: number, label: string, source: 'search' | 'evacuation' | 'alert' = 'search') => {
+    if (destLat == null || destLon == null || isNaN(destLat) || isNaN(destLon)) {
+      console.warn('[_doNavigateToScene] Invalid coords:', destLat, destLon, '— aborting');
+      return;
+    }
+    const origLon = userLocationRef.current[0] ?? -6.2603;
+    const origLat = userLocationRef.current[1] ?? 53.3498;
+    console.log('[_doNavigateToScene] From:', origLat.toFixed(5), origLon.toFixed(5), '->', destLat.toFixed(5), destLon.toFixed(5), '|', label, '| source:', source);
     setDestinationPin([destLon, destLat]);
     setDestinationLabel(label);
-    setShowRoutes(true);
+    setShowRoutes(source === 'search'); // only open route card for user searches
+    setRouteSource(source);
     setRerouteStatus(null);
     try {
       const route = await fetchDirectRoute(origLon, origLat, destLon, destLat);
@@ -516,14 +535,17 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       });
     },
     navigateToScene: async (destLat: number, destLon: number, label: string) => {
+      if (destLat == null || destLon == null || isNaN(Number(destLat)) || isNaN(Number(destLon))) {
+        console.warn('[navigateToScene] Invalid coords — ignoring:', destLat, destLon);
+        return;
+      }
       console.log('[navigateToScene] Called. mapLoaded:', mapLoaded, 'destLat:', destLat, 'destLon:', destLon);
       if (!mapLoaded) {
-        // Map not ready yet - store and execute when map loads
         console.log('[navigateToScene] Map not loaded - storing as pending');
         pendingNavigateRef.current = { destLat, destLon, label };
         return;
       }
-      _doNavigateToScene(destLat, destLon, label);
+      _doNavigateToScene(destLat, destLon, label, 'alert');
     },
     applyRerouteAlert: handleRerouteAlert,
     // Called by HomeScreen after fetching geometry on banner tap (citizen Section 8)
@@ -533,7 +555,8 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       setRerouteDisasterId(disasterId);
       setRerouteStatus('affected');
       setRerouteRouteData(meta);
-      setShowRoutes(true);
+      setRouteSource('reroute'); // background WS event — don't show card
+      // Do NOT setShowRoutes(true) — card only shows for user-initiated searches
       const lons = pts.map((p: [number,number]) => p[0]);
       const lats = pts.map((p: [number,number]) => p[1]);
       cameraRef.current?.fitBounds(
@@ -560,16 +583,21 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       setDestinationPin(null);
       setDestinationLabel('');
       setShowRoutes(false);
+      setRouteSource(null);
     },
 
     // Fetch Mapbox walking directions and draw on map — used by EvacuationPlansScreen
     showEvacuationRoute: async (destLat: number, destLon: number, label: string) => {
+      if (destLat == null || destLon == null || isNaN(Number(destLat)) || isNaN(Number(destLon))) {
+        console.warn('[showEvacuationRoute] Invalid coords — ignoring:', destLat, destLon);
+        return;
+      }
       console.log('[DisasterMap] showEvacuationRoute to:', destLat, destLon, label);
-      _doNavigateToScene(destLat, destLon, label);
+      _doNavigateToScene(destLat, destLon, label, 'evacuation');
       try {
-        // Use Dublin center as origin — replace with real GPS if available
-        const userLon = -6.2603;
-        const userLat = 53.3498;
+        // Use real user GPS from userLocationRef (always current)
+        const userLon = userLocationRef.current[0];
+        const userLat = userLocationRef.current[1];
         const url =
           `https://api.mapbox.com/directions/v5/mapbox/walking/` +
           `${userLon},${userLat};${destLon},${destLat}` +
@@ -585,7 +613,8 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
           setRerouteDisasterId('evacuation');
           setRerouteStatus('affected');
           setRerouteRouteData({ time: durationSec, dist: distM });
-          setShowRoutes(true);
+          setRouteSource('evacuation'); // from EvacuationPlans — no card/button
+          // Do NOT setShowRoutes(true) — no card for evacuation-triggered routes
           const lons = coords.map((p: [number, number]) => p[0]);
           const lats = coords.map((p: [number, number]) => p[1]);
           cameraRef.current?.fitBounds(
@@ -728,6 +757,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
     // Show the destination card so user knows they're registered.
     // No Mapbox route drawn - routes only come from WS reroute.triggered events.
     setShowRoutes(true);
+    setRouteSource('search'); // user-initiated search — show card + clear button
     setRerouteStatus(null);
     setRerouteRouteData(null);
   };
@@ -806,15 +836,20 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
   const clearDestination = () => {
     setRerouteStatus(null);
     setRerouteRouteData(null);
+    setRerouteOverlay(null);
+    setRerouteDisasterId(null);
     setDestinationPin(null);
     setDestinationLabel('');
     setOriginPin(null);
     setShowRoutes(false);
+    setRouteSource(null);
     setSearchText('');
     setSearchSuggestions([]);
     setOriginText('My Location');
     setOriginSuggestions([]);
     setSearchExpanded(false);
+    setCarPosition(null);
+    carProgressRef.current = 0;
     _deregisterVehicleTrip();
   };
 
@@ -830,9 +865,10 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
 
   const handleCenterMap = () => {
     setSelectedSegment(null);
+    userHasPannedRef.current = false; // user explicitly re-centering — allow next GPS fix to re-centre
     cameraRef.current?.setCamera({
       centerCoordinate: userLocation,
-      zoomLevel: 13, pitch: is3D ? 45 : 0, animationDuration: 1000,
+      zoomLevel: 15, pitch: is3D ? 45 : 0, animationDuration: 1000,
     });
   };
 
@@ -873,7 +909,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       pendingNavigateRef.current = null;
       setTimeout(() => {
         console.log('[DisasterMap] Executing deferred navigateToScene:', destLat, destLon);
-        _doNavigateToScene(destLat, destLon, label);
+        _doNavigateToScene(destLat, destLon, label, 'alert');
       }, 400);
     }
           setTrafficSegments(prev => [...prev]);
@@ -889,19 +925,50 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       pendingNavigateRef.current = null;
       setTimeout(() => {
         console.log('[DisasterMap] Executing deferred navigateToScene:', destLat, destLon);
-        _doNavigateToScene(destLat, destLon, label);
+        _doNavigateToScene(destLat, destLon, label, 'alert');
       }, 400);
     }
           setTrafficSegments(prev => [...prev]);
         }}
         onPress={() => setSelectedSegment(null)}
+        onRegionDidChange={(feature: any) => {
+          // If the camera moved due to user gesture (not programmatic), mark as panned
+          if (feature?.properties?.isUserInteraction) {
+            userHasPannedRef.current = true;
+          }
+        }}
       >
         <MapboxGL.Camera
           ref={cameraRef}
-          centerCoordinate={userLocation}
-          zoomLevel={13} pitch={45} heading={0} animationDuration={0}
+          defaultSettings={{
+            centerCoordinate: userLocation,
+            zoomLevel: 13,
+            pitch: 45,
+            heading: 0,
+          }}
+          animationDuration={0}
         />
-        <MapboxGL.UserLocation visible showsUserHeadingIndicator androidRenderMode="normal" />
+        {/* ── Live location blue dot ──────────────────────────────────────── */}
+        {/* Replaces MapboxGL.UserLocation with a custom always-visible blue dot.  */}
+        {/* Outer ring pulses via pulseLarge state (toggled every 1.2 s).         */}
+        <MapboxGL.MarkerView
+          id="user-location-dot"
+          coordinate={userLocation}
+          anchor={{ x: 0.5, y: 0.5 }}
+          allowOverlap
+        >
+          <View pointerEvents="none" style={liveDot.wrapper}>
+            {/* Pulsing outer ring */}
+            <View style={[
+              liveDot.pulse,
+              pulseLarge ? liveDot.pulseLarge : liveDot.pulseSmall,
+            ]} />
+            {/* Accuracy halo */}
+            <View style={liveDot.halo} />
+            {/* Solid inner dot */}
+            <View style={liveDot.dot} />
+          </View>
+        </MapboxGL.MarkerView>
 
         {/* -- 3D layers (gated on styleLoaded — composite source must exist) -- */}
         {styleLoaded && (
@@ -1139,9 +1206,6 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
                   </View>
                 )}
               </View>
-              {!!selectedDisaster.description && (
-                <Text style={styles.disasterSheetDesc} numberOfLines={3}>{selectedDisaster.description}</Text>
-              )}
               {/* ── View Full Details button ── */}
               {onViewDetails && (
                 <TouchableOpacity
@@ -1316,8 +1380,12 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
         </View>
       ) : null}
 
-      {/* -- Route Info Card -- citizen only */}
-      {showRoutes && !isResponder && (
+      {/* ── Route Info Card ────────────────────────────────────────────────
+           Only shown for 'search' source AND only the "Trip registered" row
+           (no affected/safe — those come from WS which hides the card).
+           When affected after a search, show the reroute info + clear button.
+      ── */}
+      {routeSource === 'search' && showRoutes && !isResponder && !!destinationLabel && (
         <View style={styles.routeCard}>
           <View style={styles.routeCardHeader}>
             <Text style={styles.routeCardTitle}>
@@ -1328,7 +1396,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
             </TouchableOpacity>
           </View>
 
-          {/* -- SAFE: no disaster on this route -- */}
+          {/* SAFE: route is clear */}
           {rerouteStatus === 'safe' && (
             <View style={styles.routeSafeBox}>
               <Text style={styles.routeSafeIcon}>✅</Text>
@@ -1341,10 +1409,9 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
             </View>
           )}
 
-          {/* -- AFFECTED: disaster on route - show original blocked + assigned reroute -- */}
+          {/* AFFECTED: disaster on route */}
           {rerouteStatus === 'affected' && (
             <>
-              {/* Original route - blocked */}
               <View style={[styles.routeRow, { borderLeftColor: '#EF4444' }]}>
                 <View style={[styles.routeDot, { backgroundColor: '#EF4444' }]} />
                 <View style={{ flex: 1 }}>
@@ -1352,7 +1419,6 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
                   <Text style={styles.routeMeta}>Disaster detected on your route</Text>
                 </View>
               </View>
-              {/* Assigned reroute */}
               {rerouteOverlay && rerouteOverlay.length > 0 && (
                 <View style={[styles.routeRow, { borderLeftColor: '#F97316', marginTop: 4 }]}>
                   <View style={[styles.routeDot, { backgroundColor: '#F97316' }]} />
@@ -1369,7 +1435,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
             </>
           )}
 
-          {/* -- DEFAULT: trip registered, monitoring for reroute events -- */}
+          {/* DEFAULT: trip registered — only shown for search, not for evacuation/alert */}
           {!rerouteStatus && (
             <View style={[styles.routeRow, { borderLeftColor: '#3B82F6' }]}>
               <View style={[styles.routeDot, { backgroundColor: '#3B82F6' }]} />
@@ -1384,7 +1450,7 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
         </View>
       )}
 
-      {/* Route loading spinner - shown while registering vehicle */}
+      {/* Route loading spinner */}
       {routesLoading && (
         <View style={styles.routeLoading}>
           <ActivityIndicator size="small" color={colors.primary} />
@@ -1466,6 +1532,23 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       {onReport && (
         <TouchableOpacity style={styles.reportBtn} onPress={onReport}>
           <Text style={styles.reportText}>⚠️ Report Disaster</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Clear Route button rules:
+          - evacuation/alert source: show whenever rerouteOverlay exists (route line is drawn)
+          - search source: show only when a reroute is active (NOT for plain trip-registered state)
+          - reroute (WS background): never show
+      */}
+      {!isResponder && rerouteOverlay && rerouteOverlay.length > 0 &&
+        (routeSource === 'evacuation' || routeSource === 'alert' ||
+         (routeSource === 'search' && rerouteStatus !== null)) && (
+        <TouchableOpacity
+          style={[styles.clearRouteCitizenBtn, onReport && { bottom: 92 }]}
+          onPress={clearDestination}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.clearRouteCitizenTxt}>✕  Clear Route</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -1551,6 +1634,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
   },
   reportText: { fontSize: 18, fontWeight: '700', color: '#FFF' },
+
+  clearRouteCitizenBtn: {
+    position: 'absolute', bottom: 24, left: 16, right: 16, height: 48,
+    backgroundColor: '#1F2937', borderRadius: 24,
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25, shadowRadius: 6, elevation: 6,
+  },
+  clearRouteCitizenTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   // -- Search collapsed icon --------------------------------------------
   searchIconBtn: {
@@ -1793,7 +1885,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 20, padding: 14,
     shadowColor: '#000', shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.15, shadowRadius: 10, elevation: 12,
-    maxHeight: 220,
+    maxHeight: 180,
   },
   disasterSheetHandle: {
     width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB',
@@ -1861,6 +1953,42 @@ const styles = StyleSheet.create({
   },
   clearRouteBtnTxt: {
     color: '#DC2626', fontSize: 13, fontWeight: '700',
+  },
+});
+
+// ── Live location dot styles ─────────────────────────────────────────────
+const liveDot = StyleSheet.create({
+  // Wrapper sized to the max pulse diameter so touches don't clip
+  wrapper: {
+    width: 60, height: 60,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  // Pulsing outer ring — animates between two sizes via state
+  pulse: {
+    position: 'absolute',
+    borderRadius: 100,
+    backgroundColor: 'rgba(37, 99, 235, 0.18)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(37, 99, 235, 0.35)',
+  },
+  pulseSmall: { width: 36, height: 36 },
+  pulseLarge: { width: 52, height: 52 },
+  // Semi-transparent accuracy halo
+  halo: {
+    position: 'absolute',
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: 'rgba(37, 99, 235, 0.15)',
+  },
+  // Solid blue dot with white border
+  dot: {
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: '#2563EB',
+    borderWidth: 3, borderColor: '#FFFFFF',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 6,
+    elevation: 8,
   },
 });
 

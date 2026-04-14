@@ -8,7 +8,7 @@ import {
   View, TouchableOpacity, Animated, ScrollView,
   KeyboardAvoidingView, Platform, StatusBar, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
@@ -27,6 +27,7 @@ import {
 
 export const ReportDisasterScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(1);
   const [submitting, setSubmitting]   = useState(false);
   const [reportId, setReportId]       = useState<string | null>(null);
@@ -163,7 +164,7 @@ export const ReportDisasterScreen = () => {
   };
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.white }}>
+    <View style={{ flex: 1, backgroundColor: colors.white, paddingTop: insets.top }}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       <KeyboardAvoidingView
@@ -301,7 +302,7 @@ export const ReportDisasterScreen = () => {
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 };
 

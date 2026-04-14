@@ -6,13 +6,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { DrawerContentScrollView } from '@react-navigation/drawer';
-import { Text } from '@atoms/Text';
+import { Text } from '@/components/atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { authService } from '@services/authService';
-import { disasterStore } from '@services/disasterStore';
+import { notificationService } from '@services/notificationService';
 
 interface DrawerContentProps {
   navigation: any;
@@ -24,14 +24,12 @@ const DrawerItem = ({
   icon, 
   label, 
   onPress, 
-  active = false,
-  badge,
+  active = false 
 }: { 
   icon: React.ReactNode; 
   label: string; 
   onPress: () => void; 
   active?: boolean;
-  badge?: number;
 }) => (
   <TouchableOpacity
     style={[styles.drawerItem, active && styles.drawerItemActive]}
@@ -45,24 +43,24 @@ const DrawerItem = ({
     >
       {label}
     </Text>
-    {!!badge && (
-      <View style={styles.badge}>
-        <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
-      </View>
-    )}
   </TouchableOpacity>
 );
 
 export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state }) => {
   const currentRoute = state.routes[state.index]?.name;
   const [user, setUser] = useState<any>(null);
-  const [unreadAlerts, setUnreadAlerts] = useState(disasterStore.unreadCount);
+  const [isResponder, setIsResponder] = useState(false);
 
   useEffect(() => {
-    authService.getStoredUser().then(setUser).catch(() => {});
-    disasterStore.loadPersistedAlerts();
-    const unsub = disasterStore.subscribe(() => setUnreadAlerts(disasterStore.unreadCount));
-    return unsub;
+    authService.getStoredUser().then(u => {
+      setUser(u);
+      // Check role from AsyncStorage
+      const role = (u as any)?.role ?? '';
+      setIsResponder(role === 'responder' || role === 'ADMIN' || role === 'MANAGER' || role === 'STAFF');
+    }).catch(() => {});
+    AsyncStorage.getItem('@auth/user_role').then(role => {
+      if (role === 'responder') setIsResponder(true);
+    }).catch(() => {});
   }, []);
 
   const initials = user?.full_name
@@ -79,6 +77,7 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
+            await notificationService.cleanup();
             await authService.logout();
             // Navigation will automatically go to Login screen
             // because App.tsx checks for token
@@ -121,29 +120,32 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
           active={currentRoute === 'Home'}
         />
 
-        <DrawerItem
-          icon={
-            <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-                stroke={currentRoute === 'MyReports' ? colors.primary : colors.textSecondary}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <Path
-                d="M14 2v6h6M16 13H8M16 17H8M10 9H8"
-                stroke={currentRoute === 'MyReports' ? colors.primary : colors.textSecondary}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-          }
-          label="My Reports"
-          onPress={() => navigation.navigate('MyReports')}
-          active={currentRoute === 'MyReports'}
-        />
+        {/* My Reports — citizen only */}
+        {!isResponder && (
+          <DrawerItem
+            icon={
+              <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                  stroke={currentRoute === 'MyReports' ? colors.primary : colors.textSecondary}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <Path
+                  d="M14 2v6h6M16 13H8M16 17H8M10 9H8"
+                  stroke={currentRoute === 'MyReports' ? colors.primary : colors.textSecondary}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            }
+            label="My Reports"
+            onPress={() => navigation.navigate('MyReports')}
+            active={currentRoute === 'MyReports'}
+          />
+        )}
 
         <DrawerItem
           icon={
@@ -167,8 +169,67 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
           label="Alerts"
           onPress={() => navigation.navigate('Alerts')}
           active={currentRoute === 'Alerts'}
-          badge={unreadAlerts > 0 ? unreadAlerts : undefined}
         />
+
+        {/* Responder-only items */}
+        {isResponder && (
+          <>
+            <DrawerItem
+              icon={
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                  <Path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"
+                    stroke={currentRoute === 'ActiveMissions' ? '#DC2626' : colors.textSecondary}
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <Path d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"
+                    stroke={currentRoute === 'ActiveMissions' ? '#DC2626' : colors.textSecondary}
+                    strokeWidth="2" />
+                </Svg>
+              }
+              label="Active Missions"
+              onPress={() => navigation.navigate('ActiveMissions')}
+              active={currentRoute === 'ActiveMissions'}
+            />
+            <DrawerItem
+              icon={
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                  <Path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
+                    stroke={currentRoute === 'MyCrew' ? '#DC2626' : colors.textSecondary}
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <Circle cx="9" cy="7" r="4"
+                    stroke={currentRoute === 'MyCrew' ? '#DC2626' : colors.textSecondary}
+                    strokeWidth="2" />
+                </Svg>
+              }
+              label="My Crew"
+              onPress={() => navigation.navigate('MyCrew')}
+              active={currentRoute === 'MyCrew'}
+            />
+            <DrawerItem
+              icon={
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                  <Path d="M22 12h-4l-3 9L9 3l-3 9H2"
+                    stroke={currentRoute === 'UnitStatus' ? '#DC2626' : colors.textSecondary}
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              }
+              label="Unit Status"
+              onPress={() => navigation.navigate('UnitStatus')}
+              active={currentRoute === 'UnitStatus'}
+            />
+            <DrawerItem
+              icon={
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                  <Path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+                    stroke={currentRoute === 'EvacuationPlans' ? '#DC2626' : colors.textSecondary}
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              }
+              label="Evacuation Plans"
+              onPress={() => navigation.navigate('EvacuationPlans')}
+              active={currentRoute === 'EvacuationPlans'}
+            />
+          </>
+        )}
 
         <DrawerItem
           icon={
@@ -213,7 +274,7 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
             </Svg>
           }
           label="Settings"
-          onPress={() => Alert.alert('Settings', 'Settings screen coming soon')}
+          onPress={() => navigation.navigate('Settings')}
         />
 
         <DrawerItem
@@ -229,7 +290,7 @@ export const DrawerContent: React.FC<DrawerContentProps> = ({ navigation, state 
             </Svg>
           }
           label="Help & Support"
-          onPress={() => Alert.alert('Help', 'Support screen coming soon')}
+          onPress={() => navigation.navigate('HelpSupport')}
         />
 
         <DrawerItem
@@ -331,20 +392,6 @@ const styles = StyleSheet.create({
   },
   footerText: {
     marginBottom: spacing.xs,
-  },
-  badge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#EF4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 5,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
   },
 });
 

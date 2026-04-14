@@ -24,19 +24,12 @@ import { spacing }         from '@theme/spacing';
 import Svg, { Path }       from 'react-native-svg';
 import { disasterStore, SEVERITY_COLOR, COLOUR_MAP } from '@services/disasterStore';
 import type { StoredAlert }   from '@services/disasterStore';
+import AsyncStorage            from '@react-native-async-storage/async-storage';
+import { formatTimeAgo }   from '@utils/formatters';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-const formatTime = (iso: string) => {
-  try {
-    const d       = new Date(iso);
-    const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
-    if (diffMin < 1)    return 'just now';
-    if (diffMin < 60)   return `${diffMin}m ago`;
-    if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
-    return d.toLocaleDateString('en-IE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  } catch { return iso; }
-};
+const formatTime = formatTimeAgo;
 
 // Human-readable labels for event types shown in the card badge
 const EVENT_LABEL: Record<string, string> = {
@@ -94,9 +87,12 @@ const getNavHint = (alert: StoredAlert): string | null => {
 export const AlertsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const [, forceRender] = useState(0);
+  const [role, setRole] = useState<string | null>(null); // null = not yet read
 
   useEffect(() => {
     disasterStore.loadPersistedAlerts();
+    // Read stored role — hide Clear All only for confirmed responders
+    AsyncStorage.getItem('@auth/user_role').then(r => setRole(r));
     const unsub = disasterStore.subscribe(() => forceRender(n => n + 1));
     return unsub;
   }, []);
@@ -109,50 +105,65 @@ export const AlertsScreen: React.FC = () => {
     return SEVERITY_COLOR[a.severity] ?? '#6B7280';
   };
 
-  // ── Smart tap handler ────────────────────────────────────────────────────
+  // ── Smart tap handler — role-aware ───────────────────────────────────────
   const handleTap = (alert: StoredAlert) => {
-    // Always mark as read first
     if (!alert.isRead) disasterStore.markAlertRead(alert.id);
 
     const et         = alert.event_type;
     const data       = alert.data ?? {};
     const disasterId = data.disaster_id ?? data.id;
+    const isCitizen  = role !== 'responder';
 
-    // Disaster events → DisasterDetail
+    // ── Disaster events ────────────────────────────────────────────────────
     if (et.startsWith('disaster.') && disasterId) {
-      navigation.navigate('DisasterDetail' as any, { disasterId });
+      // Citizens → citizen-safe screen (no deployment/unit data)
+      // Responders → full detail with deployments tab
+      navigation.navigate(
+        isCitizen ? ('DisasterAlertDetail' as any) : ('DisasterDetail' as any),
+        isCitizen ? { disasterId, alert } : { disasterId },
+      );
       return;
     }
 
-    // Reroute / route.updated → Home with reroute geometry pre-applied
+    // ── Reroute / route.updated → Home map ────────────────────────────────
     if (et === 'reroute.triggered' || et === 'route.updated') {
-      const storedAlert = alert as any; // has cachedRoutePts/cachedRouteMeta from HomeScreen pre-fetch
+      const storedAlert = alert as any;
       if (storedAlert.cachedRoutePts && storedAlert.cachedRoutePts.length > 1) {
         navigation.navigate('Home' as any, {
-          reroutePts:       storedAlert.cachedRoutePts,
-          rerouteMeta:      storedAlert.cachedRouteMeta ?? null,
-          rerouteDisaster:  disasterId ?? '',
+          reroutePts:      storedAlert.cachedRoutePts,
+          rerouteMeta:     storedAlert.cachedRouteMeta ?? null,
+          rerouteDisaster: disasterId ?? '',
         });
       } else if (disasterId) {
-        // No cached geometry — go to DisasterDetail instead
-        navigation.navigate('DisasterDetail' as any, { disasterId });
+        navigation.navigate(
+          isCitizen ? ('DisasterAlertDetail' as any) : ('DisasterDetail' as any),
+          { disasterId },
+        );
       }
       return;
     }
 
-    // Evacuation → EvacuationPlans
+    // ── Evacuation → EvacuationPlans (has its own citizen/responder split) ─
     if (et.startsWith('evacuation.')) {
       navigation.navigate('EvacuationPlans' as any);
       return;
     }
 
-    // Coordination → DisasterCommand
+    // ── Coordination events ────────────────────────────────────────────────
     if (et.startsWith('coordination.')) {
-      navigation.navigate('DisasterCommand' as any);
+      if (isCitizen) {
+        // No command screen for citizens — show disaster detail if available
+        if (disasterId) {
+          navigation.navigate('DisasterAlertDetail' as any, { disasterId });
+        }
+        // else: alert already marked read, stay on screen
+      } else {
+        navigation.navigate('DisasterCommand' as any);
+      }
       return;
     }
 
-    // All other events — just mark read (already done above), no navigation
+    // All other events — already marked read above, no navigation needed
   };
 
   const handleClearAll = () => {
@@ -251,10 +262,12 @@ export const AlertsScreen: React.FC = () => {
               );
             })}
 
-            {/* Clear all */}
-            <TouchableOpacity style={S.clearBtn} onPress={handleClearAll}>
-              <Text style={S.clearBtnTxt}>Clear All Alerts</Text>
-            </TouchableOpacity>
+            {/* Clear all — citizens only */}
+            {role !== 'responder' && (
+              <TouchableOpacity style={S.clearBtn} onPress={handleClearAll}>
+                <Text style={S.clearBtnTxt}>🗑️  Clear All Alerts</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
         <View style={{ height: 40 }} />

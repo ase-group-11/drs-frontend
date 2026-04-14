@@ -18,15 +18,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authService, authRequest, getUserUnitInfo } from '@services/authService';
 import { wsService } from '@services/wsService';
+import { showLocalNotification } from '@services/notificationService';
 import { disasterStore } from '@services/disasterStore';
 import { disasterService } from '@services/disasterService';
 import { API, WS_URL } from '@services/apiConfig';
+import { formatTime, formatTimeAgo } from '@utils/formatters';
 
 const RED = '#DC2626';
 
@@ -78,29 +80,23 @@ const parseUTCTimestamp = (ts: string): Date => {
   const normalized = ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z';
   return new Date(normalized);
 };
-const formatChatTime = (ts: string): string =>
-  parseUTCTimestamp(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// Use shared timezone-safe formatter for chat message times
+const formatChatTime = (ts: string): string => formatTime(ts);
 
 const sortMessages = (msgs: ChatMessage[]): ChatMessage[] =>
   [...msgs].sort((a, b) => {
-    // Sort purely by timestamp (UTC-corrected) — oldest first
     const ta = parseUTCTimestamp(a.timestamp).getTime();
     const tb = parseUTCTimestamp(b.timestamp).getTime();
     if (ta !== tb) return ta - tb;
-    // Tiebreak by seq if timestamps are identical
     if (a.seq != null && b.seq != null) return a.seq - b.seq;
     return 0;
   });
 
-const formatAgo = (iso: string) => {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} mins ago`;
-  return `${Math.floor(s / 3600)} hr ago`;
-};
+const formatAgo = (iso: string) => formatTimeAgo(iso);
 
 export const ActiveMissionsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const [tab, setTab] = useState<'active' | 'completed'>('active');
   const [active, setActive] = useState<Mission[]>([]);
   const [completed, setCompleted] = useState<Mission[]>([]);
@@ -133,6 +129,7 @@ export const ActiveMissionsScreen: React.FC = () => {
   const [chatInput, setChatInput]       = useState('');
   const [userName, setUserName]         = useState('');
   const [userId, setUserId]             = useState('');
+  const [unreadChat, setUnreadChat]     = useState(0);
   const [chatConnected, setChatConnected] = useState(false);
   const [chatConnecting, setChatConnecting] = useState(false);
   const [chatError, setChatError]       = useState<string | null>(null);
@@ -141,7 +138,9 @@ export const ActiveMissionsScreen: React.FC = () => {
   const chatWsRef   = useRef<WebSocket | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const chatDisasterRef = useRef<string | null>(null);
-  const isCompletedRef  = useRef<boolean>(false); // ref so useEffect reads fresh value
+  const isCompletedRef  = useRef<boolean>(false);
+  const userIdRef       = useRef<string>('');
+  const detailTabRef    = useRef<'details' | 'chat'>('details');
 
   // Subscribe to disasterStore so any external mission changes reflect immediately
   useEffect(() => {
@@ -178,6 +177,28 @@ export const ActiveMissionsScreen: React.FC = () => {
     loadUser();
   }, []);
 
+  // Handle deep link from notification tap — openMissionId param
+  useEffect(() => {
+    const params = route?.params as any;
+    if (!params?.openMissionId) return;
+    // Wait for missions to load then open the matching mission
+    const timer = setTimeout(() => {
+      setActive(prev => {
+        const mission = prev.find(m => m.id === params.openMissionId || m.disaster_id === params.openMissionId);
+        if (mission) {
+          openDetail(mission);
+          // Switch directly to chat tab
+          setTimeout(() => {
+            setDetailTab('chat');
+            detailTabRef.current = 'chat';
+          }, 300);
+        }
+        return prev;
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [route?.params]);
+
   // Refresh whenever screen comes into focus (e.g. navigating back from detail)
   useFocusEffect(useCallback(() => {
     fetchMissions();
@@ -187,7 +208,9 @@ export const ActiveMissionsScreen: React.FC = () => {
     try {
       const u = await authService.getStoredUser() as any;
       setUserName(u?.full_name ?? u?.employee_id ?? 'Me');
-      setUserId(u?.id ?? '');
+      const uid = u?.id ?? '';
+      setUserId(uid);
+      userIdRef.current = uid;
     } catch {}
   };
 
@@ -236,7 +259,7 @@ export const ActiveMissionsScreen: React.FC = () => {
   const openDetail = async (m: Mission, fromCompleted = false) => {
     console.log('[openDetail] mission id:', m.id, 'disaster_id:', m.disaster_id);
     setSelectedMission(m);
-    setDetailTab('details');
+    setDetailTab('details'); detailTabRef.current = 'details';
     setDetailLoading(true);
     setIsCompletedMission(fromCompleted);
     isCompletedRef.current = fromCompleted; // update ref immediately for useEffect
@@ -299,6 +322,10 @@ export const ActiveMissionsScreen: React.FC = () => {
     setChatConnecting(true);
     setChatError(null);
 
+    // Capture mounted state at connection time — each WS instance checks its own flag
+    // MUST be defined before any ws.on* callbacks that use it
+    const thisWsActive = () => isChatMounted.current && chatWsRef.current === ws;
+
     ws.onopen = () => {
       if (!thisWsActive()) { ws.close(); return; }
       console.log('[Chat WS] Connected ✓ disaster:', disasterId);
@@ -307,9 +334,6 @@ export const ActiveMissionsScreen: React.FC = () => {
       setChatError(null);
       reconnectCount.current = 0;
     };
-
-    // Capture mounted state at connection time — each WS instance checks its own flag
-    const thisWsActive = () => isChatMounted.current && chatWsRef.current === ws;
 
     ws.onmessage = (event) => {
       // Log every raw frame so we can confirm messages arrive at JS layer
@@ -329,7 +353,14 @@ export const ActiveMissionsScreen: React.FC = () => {
             text: m.message ?? '', timestamp: m.sent_at ?? new Date().toISOString(),
             type: 'message',
           }));
-          setMessages(sortMessages(hist));
+          // Merge with existing messages — don't wipe optimistic/buffered ones
+          // that the server hasn't flushed to DB yet
+          setMessages(prev => {
+            const merged = sortMessages([...hist, ...prev.filter(p =>
+              !hist.some(h => h.id === p.id)
+            )]);
+            return merged;
+          });
           if (data.members_online != null) setMembersOnline(data.members_online);
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
           return;
@@ -358,9 +389,14 @@ export const ActiveMissionsScreen: React.FC = () => {
         if (data.type === 'message') {
           console.log('[Chat WS] ▶ Message from:', data.sender_name, '—', data.message);
           if (!thisWsActive()) { console.warn('[Chat WS] Message arrived after disconnect'); return; }
+          const isOwn = data.sender_id === userIdRef.current;
           setMessages(prev => {
             if (prev.some(m => m.id === data.id)) return prev;
-            return sortMessages([...prev, {
+            // Remove optimistic message with same text+sender if present
+            const withoutOptimistic = prev.filter(m =>
+              !(m.id.startsWith('optimistic-') && m.text === data.message && m.senderId === data.sender_id)
+            );
+            return sortMessages([...withoutOptimistic, {
               id: data.id, seq: data.seq,
               sender: data.sender_name ?? 'Unknown', senderId: data.sender_id ?? '',
               sender_type: data.sender_type ?? 'unit',
@@ -368,6 +404,35 @@ export const ActiveMissionsScreen: React.FC = () => {
               type: 'message',
             }]);
           });
+          // Notify if message is from someone else
+          if (!isOwn) {
+            if (detailTabRef.current !== 'chat') {
+              // User is on Details tab — show badge + local notification
+              setUnreadChat(n => n + 1);
+              // Get the mission_id to pass to notification for deep linking
+              const missionId = chatDisasterRef.current ?? '';
+              showLocalNotification(
+                `💬 ${data.sender_name ?? 'New message'}`,
+                data.message ?? '',
+                'INFO',
+                { event_type: 'chat.message', mission_id: missionId },
+              ).catch(() => {
+                Alert.alert(
+                  `💬 ${data.sender_name ?? 'New message'}`,
+                  data.message ?? '',
+                  [
+                    { text: 'View', onPress: () => {
+                      setDetailTab('chat');
+                      detailTabRef.current = 'chat';
+                      setUnreadChat(0);
+                      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+                    }},
+                    { text: 'Dismiss' },
+                  ],
+                );
+              });
+            }
+          }
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
         }
       } catch { /* non-JSON — ignore */ }
@@ -426,7 +491,8 @@ export const ActiveMissionsScreen: React.FC = () => {
     const initTimer = setTimeout(() => {
       if (!isChatMounted.current || hasConnectedRef.current) return;
       hasConnectedRef.current = true;
-      setMessages([]);
+      // Don't clear messages on initial connect — keep any existing ones visible
+      // They'll be merged with history when server sends the history frame
       connectChat(selectedMission.disaster_id);
     }, 50);
 
@@ -483,6 +549,20 @@ export const ActiveMissionsScreen: React.FC = () => {
   const sendMessage = () => {
     const text = chatInput.trim();
     if (!text || !chatWsRef.current || chatWsRef.current.readyState !== WebSocket.OPEN) return;
+    // Optimistic update — show message immediately, server echo will dedup by id
+    const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+    const optimisticMsg: ChatMessage = {
+      id:          optimisticId,
+      seq:         Date.now(), // high seq so it sorts to bottom
+      sender:      userName || 'Me',
+      senderId:    userId,
+      sender_type: 'unit',
+      text,
+      timestamp:   new Date().toISOString(),
+      type:        'message',
+    };
+    setMessages(prev => sortMessages([...prev, optimisticMsg]));
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
     chatWsRef.current.send(JSON.stringify({ message: text }));
     setChatInput('');
   };
@@ -565,7 +645,7 @@ export const ActiveMissionsScreen: React.FC = () => {
       <SafeAreaView style={S.safe} edges={['top', 'left', 'right']}>
         <StatusBar barStyle="light-content" backgroundColor={RED} />
         <View style={S.header}>
-          <TouchableOpacity style={S.hBtn} onPress={() => { disconnectChat(); setSelectedMission(null); setMissionDetail(null); setMessages([]); }}>
+          <TouchableOpacity style={S.hBtn} onPress={() => { disconnectChat(); setSelectedMission(null); setMissionDetail(null); setMessages([]); setUnreadChat(0); detailTabRef.current = 'details'; }}>
             <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
               <Path d="M19 12H5M12 19l-7-7 7-7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
@@ -580,10 +660,10 @@ export const ActiveMissionsScreen: React.FC = () => {
             <Text style={[S.tabTxt, detailTab === 'details' && S.tabTxtOn]}>Details</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[S.tab, detailTab === 'chat' && S.tabOn]}
-            onPress={() => { setDetailTab('chat'); setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100); }}>
+            onPress={() => { setDetailTab('chat'); detailTabRef.current = 'chat'; setUnreadChat(0); setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100); }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Text style={[S.tabTxt, detailTab === 'chat' && S.tabTxtOn]}>
-                {isCompletedMission ? 'Chat History' : 'Group Chat'}
+                {isCompletedMission ? 'Chat History' : `Group Chat${unreadChat > 0 ? ` (${unreadChat})` : ''}`}
               </Text>
               {!isCompletedMission && chatConnected && (
                 <View style={[S.chatLiveDot, { marginBottom: 6 }]} />
@@ -613,7 +693,7 @@ export const ActiveMissionsScreen: React.FC = () => {
                 {missionDetail.priority_level && <Text style={S.infoRow}>Priority: <Text style={S.infoVal}>{missionDetail.priority_level}</Text></Text>}
                 {missionDetail.situation_report && <Text style={S.infoRow}>Sitrep: <Text style={S.infoVal}>{missionDetail.situation_report}</Text></Text>}
                 {missionDetail.timeline && Object.entries(missionDetail.timeline).map(([k, v]) => v ? (
-                  <Text key={k} style={S.infoRow}>{k.replace(/_/g, ' ')}: <Text style={S.infoVal}>{new Date(v as string).toLocaleTimeString()}</Text></Text>
+                  <Text key={k} style={S.infoRow}>{k.replace(/_/g, ' ')}: <Text style={S.infoVal}>{formatTime(v as string)}</Text></Text>
                 ) : null)}
               </View>
             ) : null}
@@ -625,6 +705,14 @@ export const ActiveMissionsScreen: React.FC = () => {
               </TouchableOpacity>
               <TouchableOpacity style={S.btnOutline} onPress={() => openStatusModal(m)}>
                 <Text style={S.btnOutTxt}>📱  Update Status</Text>
+              </TouchableOpacity>
+              {/* Traffic Override — only available for active missions on this disaster */}
+              <TouchableOpacity
+                style={S.btnOverride}
+                onPress={() => navigation.navigate('RerouteOverride' as any, { disasterId: m.disaster_id })}
+                activeOpacity={0.8}
+              >
+                <Text style={S.btnOverrideTxt}>🚦  Traffic Override</Text>
               </TouchableOpacity>
               <TouchableOpacity style={S.btnOutline}
                 onPress={() => Alert.alert('📞 Contact Command', 'Call HQ?',
@@ -956,6 +1044,8 @@ const S = StyleSheet.create({
   btnRedTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
   btnOutline: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingVertical: 14, alignItems: 'center', backgroundColor: '#fff' },
   btnOutTxt: { color: '#374151', fontWeight: '600', fontSize: 14 },
+  btnOverride: { borderWidth: 1.5, borderColor: '#FECACA', borderRadius: 10, paddingVertical: 14, alignItems: 'center', backgroundColor: '#FEF2F2' },
+  btnOverrideTxt: { color: RED, fontWeight: '700', fontSize: 14 },
   // Chat
   // Bubble wrapper (replaces old bubble/bubbleMe/bubbleOther)
   bubbleWrap:      { maxWidth: '78%', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, marginBottom: 8 },

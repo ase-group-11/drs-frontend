@@ -16,6 +16,7 @@ import { Text } from '@atoms/Text';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authRequest, authService, getUserUnitInfo } from '@services/authService';
+import { formatShortDateTime } from '@utils/formatters';
 
 const RED = '#DC2626';
 
@@ -49,7 +50,7 @@ export const CompletedMissionsScreen: React.FC = () => {
 
       // GET /deployments/unit/{unit_id}/completed — ERT-integration.md Section 8
       const data = await authRequest<any>(`/deployments/unit/${unitId}/completed?limit=50`);
-      const list: any[] = data?.missions ?? data?.deployments ?? (Array.isArray(data) ? data : []);
+      const list: any[] = data?.completed_missions ?? data?.missions ?? data?.deployments ?? (Array.isArray(data) ? data : []);
       setMissions(list);
     } catch (e: any) {
       setError(e.message || 'Failed to load completed missions.');
@@ -71,10 +72,7 @@ export const CompletedMissionsScreen: React.FC = () => {
     setDetailLoading(false);
   };
 
-  const formatDate = (iso?: string) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleDateString('en-IE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  };
+  const formatDate = (iso?: string) => formatShortDateTime(iso);
 
   if (selected) {
     return (
@@ -96,8 +94,8 @@ export const CompletedMissionsScreen: React.FC = () => {
               <Text style={S.row}>Status: <Text style={S.val}>{selected.deployment_status ?? selected.status}</Text></Text>
               <Text style={S.row}>Priority: <Text style={S.val}>{selected.priority_level ?? '—'}</Text></Text>
               {selected.situation_report && <Text style={S.row}>Report: <Text style={S.val}>{selected.situation_report}</Text></Text>}
-              {selected.minor_injuries > 0 && <Text style={S.row}>Minor injuries: <Text style={S.val}>{selected.minor_injuries}</Text></Text>}
-              {selected.serious_injuries > 0 && <Text style={[S.val, { color: '#EF4444' }]}>Serious injuries: {selected.serious_injuries}</Text>}
+              {(selected.minor_injuries > 0 || selected.casualties?.minor_injuries > 0) && <Text style={S.row}>Minor injuries: <Text style={S.val}>{selected.minor_injuries ?? selected.casualties?.minor_injuries}</Text></Text>}
+              {(selected.serious_injuries > 0 || selected.casualties?.serious_injuries > 0) && <Text style={[S.val, { color: '#EF4444' }]}>Serious injuries: {selected.serious_injuries ?? selected.casualties?.serious_injuries}</Text>}
             </View>
             {selected.disaster && (
               <View style={S.card}>
@@ -170,7 +168,7 @@ export const CompletedMissionsScreen: React.FC = () => {
                 </View>
                 <Text style={S.mType}>{(d.type ?? 'Mission').replace(/_/g, ' ')}</Text>
                 <Text style={S.mAddr}>{d.location_address ?? 'Location unknown'}</Text>
-                <Text style={S.mDate}>{formatDate(m.timeline?.completed_at ?? m.updated_at)}</Text>
+                <Text style={S.mDate}>{formatDate(m.completed_at ?? m.timeline?.completed_at ?? m.updated_at)}</Text>
               </TouchableOpacity>
             );
           })}

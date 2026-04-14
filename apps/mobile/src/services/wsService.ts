@@ -15,6 +15,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
+import { showLocalNotification } from './notificationService';
 import { API_BASE_URL } from '@constants/index';
 import { API, WS_URL } from './apiConfig';
 import { disasterStore } from './disasterStore';
@@ -228,6 +230,11 @@ class WsService {
           // ─── 3. Notify screen-level handlers (HomeScreen, ActiveMissions etc) ─
           this.handlers.forEach(h => h(alert));
 
+          // ─── 4. Show Alert.alert for important events on ANY screen ──────
+          // HomeScreen shows a banner when it's visible, but on other screens
+          // we use Alert.alert so the user always sees critical notifications.
+          this._showGlobalAlert(alert);
+
         } catch (e) {
           console.warn('[WS] onmessage error:', e);
         }
@@ -370,6 +377,66 @@ class WsService {
       lat:  this.currentLat,
       lon:  this.currentLon,
     }));
+  }
+
+  private _showGlobalAlert(alert: WSAlert) {
+    const et       = alert.event_type;
+    const severity = alert.severity ?? 'INFO';
+    const title    = alert.title   ?? 'DRS Alert';
+    const message  = alert.message ?? '';
+
+    // Use the isResponder flag set during connect() — no AsyncStorage read needed
+    const isResponder = this.isResponder;
+
+    // Citizen-only events — never show to responders
+    const CITIZEN_EVENTS: Record<string, string> = {
+      'disaster.evaluated':   '⚠️ Disaster Alert',
+      'disaster.verified':    '✅ Disaster Verified',
+      'disaster.resolved':    '✅ Disaster Resolved',
+      'disaster.false_alarm': 'ℹ️ False Alarm',
+      'evacuation.triggered': '🚨 Evacuation Activated',
+      'evacuation.updated':   '🔄 Evacuation Updated',
+      'reroute.triggered':    '🗺️ Route Change',
+      'route.updated':        '🔄 Route Updated',
+    };
+
+    // Responder-only events — never show to citizens
+    const RESPONDER_EVENTS: Record<string, string> = {
+      'disaster.dispatched':        '🚨 Dispatched to Disaster',
+      'disaster.updated':           '🔄 Disaster Updated',
+      'disaster.backup_requested':  '🆘 Backup Requested',
+      'disaster.unit_completed':    '✅ Mission Complete',
+      'coordination.escalation':    '⚠️ Escalation',
+      'coordination.team_assigned': '👥 Team Assigned',
+    };
+
+    // Pick the right title based on role
+    let notifTitle: string | undefined;
+    if (isResponder) {
+      notifTitle = RESPONDER_EVENTS[et] ?? CITIZEN_EVENTS[et];
+    } else {
+      notifTitle = CITIZEN_EVENTS[et]; // citizens never see responder events
+    }
+
+    if (!notifTitle) return; // event not relevant to this user's role
+
+    // Build notification data for deep linking on tap
+    const notifData: Record<string, string> = {
+      event_type: et,
+      severity,
+    };
+    const alertData = alert.data ?? {};
+    if (alertData.disaster_id) notifData.disaster_id = String(alertData.disaster_id);
+
+    // Show local push notification — appears on any screen, even background
+    showLocalNotification(
+      notifTitle,
+      message || title,
+      severity,
+      notifData,
+    ).catch(() => {
+      Alert.alert(notifTitle!, message || title, [{ text: 'OK' }]);
+    });
   }
 
   private _scheduleReconnect(token: string) {

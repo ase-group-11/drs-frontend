@@ -16,10 +16,15 @@ import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';
 import { disasterService } from '@services/disasterService';
+import { authRequest } from '@services/authService';
+import { API } from '@services/apiConfig';
 import { EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN } from '@env';
 import Svg, { Path, Circle, Polyline } from 'react-native-svg';
+import { formatDateTime } from '@utils/formatters';
 
 MapboxGL.setAccessToken(EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN);
+
+// ─── Types ────────────────────────────────────────────────────────────────
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface ReportDetail {
@@ -68,11 +73,7 @@ const TYPE_EMOJI: Record<string, string> = {
 
 const getEmoji = (type: string) => TYPE_EMOJI[type?.toLowerCase()] ?? '⚠️';
 
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return 'Unknown date';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+const formatDate = formatDateTime;
 
 // ─── Component ────────────────────────────────────────────────────────────
 export const ReportDetailScreen: React.FC = () => {
@@ -80,9 +81,11 @@ export const ReportDetailScreen: React.FC = () => {
   const route      = useRoute<any>();
   const reportId   = route.params?.reportId as string;
 
-  const [report, setReport]   = useState<ReportDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [report, setReport]           = useState<ReportDetail | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [disasterStatus, setDisasterStatus] = useState<string | null>(null);
+  const [disasterLoading, setDisasterLoading] = useState(false);
 
   useEffect(() => { loadReport(); }, [reportId]);
 
@@ -96,7 +99,7 @@ export const ReportDetailScreen: React.FC = () => {
       const lat = data.latitude  ?? data.location?.lat  ?? 53.3498;
       const lon = data.longitude ?? data.location?.lon  ?? -6.2603;
 
-      setReport({
+      const reportData = {
         id:                data.id,
         disaster_type:     data.disaster_type ?? 'other',
         severity:          data.severity ?? 'medium',
@@ -113,7 +116,22 @@ export const ReportDetailScreen: React.FC = () => {
         rejection_reason:    data.rejection_reason ?? null,
         created_at:          data.created_at ?? new Date().toISOString(),
         photo_count:         data.photo_count ?? 0,
-      });
+      };
+      setReport(reportData);
+
+      // Fetch linked disaster status if available — gives accurate timeline
+      const linkedDisasterId = data.disaster_id ?? null;
+      if (linkedDisasterId) {
+        setDisasterLoading(true);
+        try {
+          const disaster = await authRequest<any>(API.disasters.byId(linkedDisasterId));
+          setDisasterStatus(disaster?.disaster_status ?? null);
+        } catch {
+          // Non-critical — timeline falls back to report_status only
+        } finally {
+          setDisasterLoading(false);
+        }
+      }
     } catch (err: any) {
       console.error('Failed to load report:', err);
       setError(err.message || 'Failed to load report details');
@@ -309,33 +327,83 @@ export const ReportDetailScreen: React.FC = () => {
           </View>
         )}
 
-        {/* Status Timeline */}
+        {/* Status Timeline — combines report_status + live disaster_status */}
         <View style={styles.card}>
-          <Text variant="labelLarge" color="textSecondary" style={styles.cardLabel}>
-            STATUS TIMELINE
-          </Text>
-          <TimelineItem
-            done={true}
-            label="Report Submitted"
-            time={formatDate(report.created_at)}
-          />
-          <TimelineItem
-            done={['verified', 'active', 'resolved'].includes(report.report_status)}
-            active={report.report_status === 'pending'}
-            label="Under Review"
-            time={report.report_status === 'pending' ? 'In progress...' : undefined}
-          />
-          <TimelineItem
-            done={['active', 'resolved'].includes(report.report_status)}
-            active={report.report_status === 'verified'}
-            label="Emergency Services Dispatched"
-          />
-          <TimelineItem
-            done={report.report_status === 'resolved'}
-            active={report.report_status === 'active'}
-            label="Incident Resolved"
-            last
-          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm }}>
+            <Text variant="labelLarge" color="textSecondary">STATUS TIMELINE</Text>
+            {disasterLoading && <ActivityIndicator size="small" color={colors.primary} />}
+          </View>
+          {(() => {
+            // Derive timeline state from both report_status and disaster_status
+            const rs  = report.report_status;           // pending|verified|rejected|active|resolved
+            const ds  = (disasterStatus ?? '').toUpperCase(); // ACTIVE|DISPATCHED|RESOLVED|VERIFIED etc.
+
+            const isRejected = rs === 'rejected';
+
+            // Step 2 — "Under Review": green tick once report is past pending
+            const reviewDone   = ['verified', 'active', 'resolved'].includes(rs);
+            const reviewActive = rs === 'pending';
+
+            // Step 3 — "Emergency Services Dispatched": green once active/resolved
+            const dispatchDone   = ['active', 'resolved'].includes(rs)
+                                || ['ACTIVE', 'DISPATCHED', 'ON_SCENE', 'IN_PROGRESS', 'RESOLVED'].includes(ds);
+            const dispatchActive = (rs === 'verified' && !dispatchDone)
+                                || ds === 'DISPATCHED';
+
+            // Step 4 — "Incident Resolved"
+            const resolvedDone   = rs === 'resolved' || ds === 'RESOLVED';
+            const resolvedActive = (rs === 'active' && !resolvedDone)
+                                || (['ACTIVE', 'ON_SCENE', 'IN_PROGRESS'].includes(ds) && dispatchDone);
+
+            // Sub-label for dispatch step
+            const dispatchTime = ds === 'DISPATCHED'   ? 'En route'
+                               : ds === 'ON_SCENE'     ? 'On scene'
+                               : ds === 'IN_PROGRESS'  ? 'On scene'
+                               : ds === 'ACTIVE'       ? 'On scene'
+                               : dispatchDone          ? 'Responded'
+                               : undefined;
+
+            return (
+              <>
+                <TimelineItem
+                  done={true}
+                  label="Report Submitted"
+                  time={formatDate(report.created_at)}
+                />
+                {isRejected ? (
+                  <TimelineItem
+                    done={false}
+                    rejected
+                    label="Report Rejected"
+                    time={report.rejection_reason ?? 'Did not meet verification criteria'}
+                    last
+                  />
+                ) : (
+                  <>
+                    <TimelineItem
+                      done={reviewDone}
+                      active={reviewActive}
+                      label="Under Review"
+                      time={reviewActive ? 'In progress…' : reviewDone ? 'Verified' : undefined}
+                    />
+                    <TimelineItem
+                      done={dispatchDone}
+                      active={dispatchActive}
+                      label="Emergency Services Dispatched"
+                      time={dispatchTime}
+                    />
+                    <TimelineItem
+                      done={resolvedDone}
+                      active={resolvedActive}
+                      label="Incident Resolved"
+                      time={resolvedDone ? 'Resolved' : undefined}
+                      last
+                    />
+                  </>
+                )}
+              </>
+            );
+          })()}
         </View>
 
         {/* Linked disaster ID — shown only when report is verified */}
@@ -404,17 +472,19 @@ const ImpactItem: React.FC<ImpactItemProps> = ({ icon, label, value, alert }) =>
   </View>
 );
 
-interface TimelineItemProps { done: boolean; active?: boolean; label: string; time?: string; last?: boolean; }
-const TimelineItem: React.FC<TimelineItemProps> = ({ done, active, label, time, last }) => (
+interface TimelineItemProps { done: boolean; active?: boolean; rejected?: boolean; label: string; time?: string; last?: boolean; }
+const TimelineItem: React.FC<TimelineItemProps> = ({ done, active, rejected, label, time, last }) => (
   <View style={styles.timelineRow}>
     <View style={styles.timelineLeft}>
       <View style={[
         styles.timelineDot,
-        done  && styles.timelineDotDone,
-        active && styles.timelineDotActive,
+        done     && styles.timelineDotDone,
+        active   && styles.timelineDotActive,
+        rejected && styles.timelineDotRejected,
       ]}>
-        {done && <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>✓</Text>}
-        {active && <View style={styles.timelinePulse} />}
+        {done     && <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>✓</Text>}
+        {rejected && <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>✕</Text>}
+        {active   && <View style={styles.timelinePulse} />}
       </View>
       {!last && <View style={[styles.timelineLine, done && styles.timelineLineDone]} />}
     </View>
@@ -510,7 +580,8 @@ const styles = StyleSheet.create({
     borderColor: colors.gray300, justifyContent: 'center', alignItems: 'center',
   },
   timelineDotDone: { backgroundColor: colors.success, borderColor: colors.success },
-  timelineDotActive: { backgroundColor: colors.white, borderColor: colors.primary, borderWidth: 3 },
+  timelineDotActive:    { backgroundColor: colors.white, borderColor: colors.primary, borderWidth: 3 },
+  timelineDotRejected:  { backgroundColor: colors.error, borderColor: colors.error },
   timelinePulse:   { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
   timelineLine:    { width: 2, flex: 1, backgroundColor: colors.gray200, marginTop: 4 },
   timelineLineDone: { backgroundColor: colors.success },

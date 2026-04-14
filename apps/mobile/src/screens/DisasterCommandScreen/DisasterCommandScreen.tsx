@@ -13,15 +13,14 @@ import Svg, { Path } from 'react-native-svg';
 import { authRequest } from '@services/authService';
 import { API } from '@services/apiConfig';
 import { disasterStore, SEVERITY_COLOR } from '@services/disasterStore';
+import { formatTimeAgo } from '@utils/formatters';
 
 const RED = '#DC2626';
 
 const TYPE_EMOJI: Record<string, string> = {
-  FIRE: '🔥', FLOOD: '🌊', STORM: '⛈️', EARTHQUAKE: '🏚️',
-  EXPLOSION: '💥', GAS_LEAK: '☁️', HAZMAT: '☣️', LANDSLIDE: '⛰️',
-  ACCIDENT: '🚗', BUILDING_COLLAPSE: '🏗️', MEDICAL_EMERGENCY: '🚑',
-  POWER_OUTAGE: '⚡', WATER_CONTAMINATION: '💧', CRIME: '🚨',
-  RIOT: '⚠️', TERRORIST_ATTACK: '🚨', OTHER: '⚠️',
+  FLOOD: '🌊', FIRE: '🔥', EARTHQUAKE: '🏚️', HURRICANE: '🌀',
+  TORNADO: '🌪️', TSUNAMI: '🌊', DROUGHT: '🏜️', HEATWAVE: '🌡️',
+  COLDWAVE: '🧊', STORM: '⛈️', OTHER: '⚠️',
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -29,14 +28,7 @@ const STATUS_DOT: Record<string, string> = {
   PENDING: '#EAB308', RESOLVED: '#22C55E', REJECTED: '#6B7280',
 };
 
-const formatAgo = (iso?: string) => {
-  if (!iso) return '';
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return new Date(iso).toLocaleDateString('en-IE', { day: 'numeric', month: 'short' });
-};
+const formatAgo = formatTimeAgo;
 
 export const DisasterCommandScreen: React.FC = () => {
   const navigation = useNavigation<any>();

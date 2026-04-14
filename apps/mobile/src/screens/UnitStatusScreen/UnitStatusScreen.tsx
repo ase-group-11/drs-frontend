@@ -26,6 +26,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { authRequest, authService, getUserUnitInfo } from '@services/authService';
 import { disasterStore } from '@services/disasterStore';
 import { API } from '@services/apiConfig';
+import { formatDateTime } from '@utils/formatters';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -134,11 +135,7 @@ const DEPT_LABEL: Record<string, string> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-const fmt = (iso?: string | null) =>
-  !iso ? '—' : new Date(iso).toLocaleString('en-IE', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+const fmt = formatDateTime;
 
 const fmtSeconds = (s?: number | null) => {
   if (!s) return '—';

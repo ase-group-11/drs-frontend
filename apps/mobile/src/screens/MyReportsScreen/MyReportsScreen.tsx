@@ -15,26 +15,29 @@ import { colors } from '@theme/colors';
 import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { disasterService, authService } from '@services';
+import { authRequest } from '@services/authService';
+import { API } from '@services/apiConfig';
 import type { Report } from '../../types/disaster';
 
 type Tab = 'active' | 'resolved' | 'all';
 
+// Disaster statuses that mean the incident is fully resolved
+const RESOLVED_DISASTER_STATUSES = ['RESOLVED', 'CLOSED', 'FALSE_ALARM', 'CANCELLED'];
+
 // Convert backend report to frontend format
 const convertBackendReport = (backendReport: any): Report => {
-  // Use String() to safely handle null — null.toLowerCase() would crash
   const disasterType = String(backendReport.disaster_type ?? 'OTHER');
   const severity     = String(backendReport.severity      ?? 'MEDIUM');
   const reportStatus = String(backendReport.report_status ?? backendReport.status ?? 'pending');
 
-  // Backend returns location as { lat, lon } object or flat latitude/longitude fields
   const lat = backendReport.latitude  ?? backendReport.location?.lat  ?? 53.3498;
   const lon = backendReport.longitude ?? backendReport.location?.lon  ?? -6.2603;
 
   return {
     id:           String(backendReport.id ?? ''),
     reportNumber: `DR-${String(backendReport.id ?? '00000000').substring(0, 8).toUpperCase()}`,
-    type:         disasterType.toLowerCase(),         // e.g. 'fire', 'flood'
-    severity:     severity.toLowerCase(),             // e.g. 'high', 'critical'
+    type:         disasterType.toLowerCase(),
+    severity:     severity.toLowerCase(),
     title:        `${disasterType.replace(/_/g, ' ')} — ${severity}`,
     location: {
       latitude:  Number(lat),
@@ -42,10 +45,40 @@ const convertBackendReport = (backendReport: any): Report => {
       address:   String(backendReport.location_address ?? backendReport.location?.address ?? 'Unknown location'),
     },
     reportedAt:  backendReport.created_at ? new Date(backendReport.created_at) : new Date(),
-    status:      reportStatus.toLowerCase() as any,  // pending/verified/active/resolved/rejected
+    // Store disaster_id so we can enrich status later
+    status:      reportStatus.toLowerCase() as any,
     reportedBy:  'You',
     description: String(backendReport.description ?? ''),
-  };
+    // Store raw for enrichment
+    _disasterId: backendReport.disaster_id ?? null,
+  } as any;
+};
+
+// Fetch linked disaster statuses and upgrade report status to 'resolved' if disaster is resolved
+const enrichWithDisasterStatus = async (reports: any[]): Promise<Report[]> => {
+  const enriched = await Promise.all(
+    reports.map(async (r: any) => {
+      // Already resolved/rejected — no need to fetch
+      if (r.status === 'resolved' || r.status === 'rejected') return r;
+      // No linked disaster — can't enrich
+      if (!r._disasterId) return r;
+      try {
+        const disaster = await authRequest<any>(API.disasters.byId(r._disasterId));
+        const ds = (disaster?.disaster_status ?? '').toUpperCase();
+        if (RESOLVED_DISASTER_STATUSES.includes(ds)) {
+          return { ...r, status: 'resolved' };
+        }
+        // Map ACTIVE/ON_SCENE disaster → report status 'active'
+        if (['ACTIVE', 'DISPATCHED', 'ON_SCENE', 'IN_PROGRESS'].includes(ds)) {
+          return { ...r, status: 'active' };
+        }
+      } catch {
+        // Non-critical — keep original status
+      }
+      return r;
+    })
+  );
+  return enriched;
 };
 
 export const MyReportsScreen: React.FC = () => {
@@ -80,12 +113,12 @@ export const MyReportsScreen: React.FC = () => {
       }
 
       console.log('[MyReports] Loading reports for user:', userId);
-      // API: GET /disaster-reports/user/{user_id}
-      // NOTE: If this returns 404, the endpoint is missing from the backend.
-      // Tell backend team to add GET /disaster-reports/user/{user_id} to disaster_report.py
       const backendReports = await disasterService.getMyReports(userId);
       const convertedReports = backendReports.map(convertBackendReport);
-      setReports(convertedReports);
+      // Enrich statuses from linked disaster — backend often keeps report_status as
+      // 'verified' even after the disaster is RESOLVED
+      const enrichedReports = await enrichWithDisasterStatus(convertedReports);
+      setReports(enrichedReports);
       setError(null);
     } catch (err: any) {
       console.error('Failed to load reports:', err);
@@ -102,13 +135,20 @@ export const MyReportsScreen: React.FC = () => {
   };
 
   const filtered = reports.filter((r) => {
-    if (tab === 'active') return r.status !== 'resolved' && r.status !== 'rejected';
-    if (tab === 'resolved') return r.status === 'resolved' || r.status === 'rejected';
-    return true;
+    const s = (r.status ?? '').toLowerCase();
+    if (tab === 'active')   return s !== 'resolved' && s !== 'rejected';
+    if (tab === 'resolved') return s === 'resolved' || s === 'rejected';
+    return true; // 'all'
   });
 
-  const activeCount = reports.filter((r) => r.status !== 'resolved' && r.status !== 'rejected').length;
-  const resolvedCount = reports.filter((r) => r.status === 'resolved' || r.status === 'rejected').length;
+  const activeCount   = reports.filter((r) => {
+    const s = (r.status ?? '').toLowerCase();
+    return s !== 'resolved' && s !== 'rejected';
+  }).length;
+  const resolvedCount = reports.filter((r) => {
+    const s = (r.status ?? '').toLowerCase();
+    return s === 'resolved' || s === 'rejected';
+  }).length;
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
@@ -203,8 +243,17 @@ export const MyReportsScreen: React.FC = () => {
       ) : filtered.length === 0 ? (
         <View style={styles.centerContainer}>
           <Text variant="bodyLarge" color="textSecondary">
-            No {tab === 'active' ? 'active' : tab === 'resolved' ? 'resolved' : ''} reports
+            {tab === 'active'
+              ? 'No active reports'
+              : tab === 'resolved'
+              ? 'No resolved reports yet'
+              : 'No reports yet'}
           </Text>
+          {tab === 'active' && (
+            <Text variant="bodyMedium" color="textSecondary" style={{ marginTop: 8, textAlign: 'center' }}>
+              Reports you submit will appear here while being processed
+            </Text>
+          )}
         </View>
       ) : (
         <ReportsList
