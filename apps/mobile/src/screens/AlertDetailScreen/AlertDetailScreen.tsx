@@ -8,12 +8,12 @@ import {
   View,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   TouchableOpacity,
   Linking,
   Alert as RNAlert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Text } from '@atoms/Text';
@@ -21,6 +21,7 @@ import { Button } from '@atoms/Button';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';
 import type { Alert } from '../../types/disaster';
+import { formatDateTime as fmtDT, formatTimeAgo } from '@utils/formatters';
 
 // ─── Route param type ─────────────────────────────────────────────────────
 type AlertDetailRouteParams = {
@@ -44,20 +45,9 @@ const TYPE_EMOJI: Record<string, string> = {
   advisory:   'ℹ️',
 };
 
-const getTimeAgo = (date: Date) => {
-  const m = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (m < 1)  return 'Just now';
-  if (m < 60) return `${m} min${m !== 1 ? 's' : ''} ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hr${h !== 1 ? 's' : ''} ago`;
-  return `${Math.floor(h / 24)}d ago`;
-};
-
-const formatDateTime = (date: Date) =>
-  date.toLocaleDateString('en-IE', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+// Use shared timezone-safe formatters
+const getTimeAgo = (date: Date) => formatTimeAgo(date.toISOString());
+const formatDateTime = (date: Date) => fmtDT(date.toISOString());
 
 // ─── Component ────────────────────────────────────────────────────────────
 export const AlertDetailScreen: React.FC = () => {
@@ -99,7 +89,7 @@ export const AlertDetailScreen: React.FC = () => {
 
   // ─── Render ─────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header */}
@@ -294,7 +284,7 @@ const styles = StyleSheet.create({
     width: 52, height: 52, borderRadius: 26,
     justifyContent: 'center', alignItems: 'center', marginRight: spacing.md,
   },
-  typeEmoji: { fontSize: 24 },
+  typeEmoji: { fontSize: 24, lineHeight: 32 },
   heroInfo: { flex: 1, justifyContent: 'center' },
   sevBadge: {
     borderRadius: borderRadius.sm, paddingVertical: spacing.sm,

@@ -7,6 +7,9 @@
 export { authService } from './authService';
 export { disasterService } from './disasterService';
 export { mapService } from './mapService';
+export { wsService } from './wsService';
+export { notificationService, initNotifications, cleanupNotifications, showLocalNotification, handleNotificationPress } from './notificationService';
+export { mapActionStore } from './mapActionStore';
 
 // Export validators and utilities from authService
 export {
@@ -15,6 +18,8 @@ export {
   validateEmail,
   validateFullName,
   validateOTP,
+  getUserUnitInfo,
+  clearCachedUnitInfo,
   ApiError,
 } from './authService';
 

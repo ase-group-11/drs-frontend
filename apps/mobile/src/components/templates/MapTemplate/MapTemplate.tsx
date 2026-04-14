@@ -15,7 +15,7 @@ export interface MapTemplateProps {
 }
 
 export const MapTemplate: React.FC<MapTemplateProps> = ({ header, filterBar, map }) => (
-  <SafeAreaView style={styles.safe} edges={['top']}>
+  <SafeAreaView style={styles.safe} edges={[]}>
     <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
     {header}
     {filterBar}

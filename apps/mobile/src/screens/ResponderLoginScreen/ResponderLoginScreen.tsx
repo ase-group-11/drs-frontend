@@ -1,19 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/ResponderLoginScreen/ResponderLoginScreen.tsx
-//
-// NEW 2-step MFA login flow (backend updated):
-//   Step 1: POST /emergency-team/login
-//           Body: { email, password }
-//           Returns: { message, login_token }
-//
-//   Step 2: POST /emergency-team/login/verify
-//           Body: { login_token, otp }
-//           Returns: { team_member, tokens }
+// FIXED: Added KeyboardAvoidingView for Step 1 (email/password)
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useState, useRef } from 'react';
 import {
-  View, StyleSheet, TouchableOpacity, TextInput, Keyboard,
+  View, StyleSheet, TouchableOpacity, TextInput, Keyboard, ActivityIndicator,
+  InputAccessoryView, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -26,6 +19,10 @@ import { colors }       from '@theme/colors';
 import { spacing }      from '@theme/spacing';
 import Svg, { Path }    from 'react-native-svg';
 import { API_BASE_URL, API_TIMEOUT } from '@constants/index';
+import { useOTPTimer } from '@hooks/useOTPTimer';
+import { API } from '@services/apiConfig';
+
+const OTP_ACCESSORY_ID = 'responder-login-otp-accessory';
 
 const STORAGE_KEYS = {
   ACCESS_TOKEN:  '@auth/access_token',
@@ -54,21 +51,19 @@ const EyeClosed = () => (
 export const ResponderLoginScreen: React.FC = () => {
   const navigation = useNavigation<any>();
 
-  // Step 1
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
 
-  // Step 2
   const [step, setStep]             = useState<1 | 2>(1);
   const [loginToken, setLoginToken] = useState('');
   const [otp, setOtp]               = useState('');
   const [otpHint, setOtpHint]       = useState('');
 
-  // Shared
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const otpRef = useRef<TextInput>(null);
+  const { canResend, resendLoading, resendSuccess, formattedTime, triggerResend, resetTimer } = useOTPTimer();
 
   const handleStep1 = async () => {
     if (!email.trim())    { setError('Please enter your email address'); return; }
@@ -80,7 +75,7 @@ export const ResponderLoginScreen: React.FC = () => {
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
-      const res = await fetch(`${API_BASE_URL}/emergency-team/login`, {
+      const res = await fetch(`${API_BASE_URL}${API.responder.login()}`, {
         method:  'POST',
         signal:  controller.signal,
         headers: { 'Content-Type': 'application/json' },
@@ -90,7 +85,6 @@ export const ResponderLoginScreen: React.FC = () => {
       const data = await res.json();
       if (!res.ok) {
         const raw = data.detail || data.message || 'Invalid email or password';
-        // Sanitize backend Pydantic validation errors into a friendly message
         const friendly = typeof raw === 'string' && raw.includes('validation error')
           ? 'Server error. Please try again or contact support.'
           : typeof raw === 'string' ? raw : 'Invalid email or password';
@@ -100,6 +94,7 @@ export const ResponderLoginScreen: React.FC = () => {
       setLoginToken(data.login_token);
       setOtpHint(data.message || 'An OTP has been sent to your registered phone number.');
       setStep(2);
+      resetTimer();
       setTimeout(() => otpRef.current?.focus(), 300);
     } catch (e: any) {
       if (e.name === 'AbortError') setError('Request timed out. Check your connection.');
@@ -119,7 +114,7 @@ export const ResponderLoginScreen: React.FC = () => {
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
-      const res = await fetch(`${API_BASE_URL}/emergency-team/login/verify`, {
+      const res = await fetch(`${API_BASE_URL}${API.responder.loginVerify()}`, {
         method:  'POST',
         signal:  controller.signal,
         headers: { 'Content-Type': 'application/json' },
@@ -145,7 +140,7 @@ export const ResponderLoginScreen: React.FC = () => {
         full_name:    team_member.full_name,
         email:        team_member.email,
         phone_number: team_member.phone_number,
-        role:         team_member.role,
+        role:         'staff', // only valid responder role — always stored as 'staff'
         department:   team_member.department,
         employee_id:  team_member.employee_id,
         user_type:    'emergency_team',
@@ -156,6 +151,24 @@ export const ResponderLoginScreen: React.FC = () => {
       else setError(e.message || 'Verification failed. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async (): Promise<void> => {
+    setOtp('');
+    setError('');
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), API_TIMEOUT);
+    const res = await fetch(`${API_BASE_URL}${API.responder.loginResendOtp()}`, {
+      method:  'POST',
+      signal:  controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ login_token: loginToken }),
+    });
+    clearTimeout(tid);
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.detail || data.message || 'Failed to resend OTP');
     }
   };
 
@@ -172,94 +185,138 @@ export const ResponderLoginScreen: React.FC = () => {
         />
       }
     >
-      <View style={S.container}>
+      {/* ✅ KeyboardAvoidingView wraps the form so inputs aren't covered */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ width: '100%' }}
+      >
+        <View style={S.container}>
 
-        <View style={S.badge}>
-          <Text style={S.badgeText}>🚒  Authorised Personnel Only</Text>
-        </View>
-
-        {!!error && (
-          <View style={S.errorBox}>
-            <Text style={S.errorText}>{error}</Text>
+          <View style={S.badge}>
+            <Text style={S.badgeText}>🚒  Authorised Personnel Only</Text>
           </View>
-        )}
 
-        {step === 1 && (
-          <>
-            <Input
-              label="Email Address"
-              placeholder="name@emergency.ie"
-              value={email}
-              onChangeText={v => { setEmail(v); setError(''); }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="next"
-            />
-            <View style={{ marginTop: spacing.md }}>
+          {!!error && (
+            <View style={S.errorBox}>
+              <Text style={S.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {step === 1 && (
+            <>
               <Input
-                label="Password"
-                placeholder="Enter your password"
-                value={password}
-                onChangeText={v => { setPassword(v); setError(''); }}
-                secureTextEntry={!showPass}
+                label="Email Address"
+                placeholder="name@emergency.ie"
+                value={email}
+                onChangeText={v => { setEmail(v); setError(''); }}
+                keyboardType="email-address"
                 autoCapitalize="none"
-                returnKeyType="done"
-                onSubmitEditing={handleStep1}
-                rightElement={
-                  <TouchableOpacity onPress={() => setShowPass(p => !p)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    style={{ padding: spacing.xs }}>
-                    {showPass ? <EyeOpen /> : <EyeClosed />}
-                  </TouchableOpacity>
-                }
+                autoCorrect={false}
+                returnKeyType="next"
               />
-            </View>
-            <Button title="Continue" onPress={handleStep1} loading={loading}
-              disabled={!email.trim() || !password.trim() || loading} style={S.button} />
-            <View style={S.backRow}>
-              <Text variant="bodyMedium" color="textSecondary">Not a responder? </Text>
-              <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
-                <Text variant="bodyMedium" color="primary">Citizen Login</Text>
+              <View style={{ marginTop: spacing.md }}>
+                <Input
+                  label="Password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChangeText={v => { setPassword(v); setError(''); }}
+                  secureTextEntry={!showPass}
+                  autoCapitalize="none"
+                  returnKeyType="done"
+                  onSubmitEditing={handleStep1}
+                  rightElement={
+                    <TouchableOpacity onPress={() => setShowPass(p => !p)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      style={{ padding: spacing.xs }}>
+                      {showPass ? <EyeOpen /> : <EyeClosed />}
+                    </TouchableOpacity>
+                  }
+                />
+              </View>
+              <Button title="Continue" onPress={handleStep1} loading={loading}
+                disabled={!email.trim() || !password.trim() || loading} style={S.button} />
+
+              <TouchableOpacity
+                style={S.forgotRow}
+                onPress={() => navigation.navigate('ResponderForgotPassword' as any)}
+                activeOpacity={0.7}
+              >
+                <Text style={S.forgotText}>Forgot Password?</Text>
               </TouchableOpacity>
-            </View>
-          </>
-        )}
 
-        {step === 2 && (
-          <>
-            <View style={{ marginTop: spacing.sm }}>
-              <Text style={S.otpLabel}>One-Time Passcode</Text>
-              <TextInput
-                ref={otpRef}
-                style={S.otpInput}
-                placeholder="● ● ● ● ● ●"
-                placeholderTextColor="#D1D5DB"
-                value={otp}
-                onChangeText={v => { setOtp(v.replace(/[^0-9]/g, '')); setError(''); }}
-                keyboardType="number-pad"
-                maxLength={6}
-                returnKeyType="done"
-                onSubmitEditing={handleStep2}
-                textContentType="oneTimeCode"
-              />
-              <Text style={S.otpHint}>Check your registered phone for the SMS</Text>
-            </View>
+              <View style={S.backRow}>
+                <Text variant="bodyMedium" color="textSecondary">New responder? </Text>
+                <TouchableOpacity onPress={() => navigation.navigate('ResponderSignup' as any)} activeOpacity={0.7}>
+                  <Text variant="bodyMedium" color="primary">Create Account</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={[S.backRow, { marginTop: 8 }]}>
+                <Text variant="bodyMedium" color="textSecondary">Not a responder? </Text>
+                <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
+                  <Text variant="bodyMedium" color="primary">Citizen Login</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
 
-            <Button title="Verify & Login" onPress={handleStep2} loading={loading}
-              disabled={otp.trim().length !== 6 || loading} style={S.button} />
+          {step === 2 && (
+            <>
+              <View style={{ marginTop: spacing.sm }}>
+                <Text style={S.otpLabel}>One-Time Passcode</Text>
+                <TextInput
+                  ref={otpRef}
+                  style={S.otpInput}
+                  placeholder="● ● ● ● ● ●"
+                  placeholderTextColor="#D1D5DB"
+                  value={otp}
+                  onChangeText={v => { setOtp(v.replace(/[^0-9]/g, '')); setError(''); }}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  returnKeyType="done"
+                  onSubmitEditing={handleStep2}
+                  textContentType="oneTimeCode"
+                  inputAccessoryViewID={Platform.OS === 'ios' ? OTP_ACCESSORY_ID : undefined}
+                />
+                {Platform.OS === 'ios' && (
+                  <InputAccessoryView nativeID={OTP_ACCESSORY_ID}>
+                    <View style={{ height: 0 }} />
+                  </InputAccessoryView>
+                )}
+                <Text style={S.otpHint}>Check your registered phone for the SMS</Text>
 
-            <TouchableOpacity style={S.backStep} onPress={goBackToStep1} disabled={loading}>
-              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                <Path d="M19 12H5M12 19l-7-7 7-7" stroke={colors.primary}
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-              <Text style={S.backStepText}>Back — use different credentials</Text>
-            </TouchableOpacity>
-          </>
-        )}
+                <View style={S.resendRow}>
+                  {resendLoading ? (
+                    <>
+                      <ActivityIndicator size="small" color="#DC2626" />
+                      <Text style={S.resendText}> Sending new code…</Text>
+                    </>
+                  ) : resendSuccess ? (
+                    <Text style={S.resendSuccess}>✅ OTP resent successfully!</Text>
+                  ) : canResend ? (
+                    <TouchableOpacity onPress={() => triggerResend(handleResendOtp)} activeOpacity={0.7}>
+                      <Text style={S.resendLink}>Resend OTP</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={S.resendText}>Resend in <Text style={S.resendTimer}>{formattedTime}</Text></Text>
+                  )}
+                </View>
+              </View>
 
-      </View>
+              <Button title="Verify & Login" onPress={handleStep2} loading={loading}
+                disabled={otp.trim().length !== 6 || loading} style={S.button} />
+
+              <TouchableOpacity style={S.backStep} onPress={goBackToStep1} disabled={loading} activeOpacity={0.7}>
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                  <Path d="M19 12H5M12 19l-7-7 7-7" stroke={colors.primary}
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+                <Text style={S.backStepText}>Back — use different credentials</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+        </View>
+      </KeyboardAvoidingView>
     </AuthTemplate>
   );
 };
@@ -287,6 +344,13 @@ const S = StyleSheet.create({
   backStep:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                       marginTop: spacing.lg, gap: spacing.xs },
   backStepText:     { fontSize: 14, color: colors.primary, fontWeight: '600' },
+  forgotRow:        { alignItems: 'flex-end', marginTop: spacing.sm, marginBottom: spacing.sm },
+  forgotText:       { fontSize: 13, color: '#DC2626', fontWeight: '600' },
+  resendRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.md },
+  resendText:       { fontSize: 13, color: '#6B7280' },
+  resendTimer:      { color: '#DC2626', fontWeight: '700' },
+  resendLink:       { fontSize: 13, color: '#DC2626', fontWeight: '700', textDecorationLine: 'underline' },
+  resendSuccess:    { fontSize: 13, color: '#166534', fontWeight: '600' },
 });
 
 export default ResponderLoginScreen;

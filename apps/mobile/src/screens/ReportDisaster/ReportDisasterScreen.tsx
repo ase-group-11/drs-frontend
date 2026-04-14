@@ -6,8 +6,9 @@
 import React, { useState } from 'react';
 import {
   View, TouchableOpacity, Animated, ScrollView,
-  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Alert,
+  KeyboardAvoidingView, Platform, StatusBar, Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
@@ -26,6 +27,7 @@ import {
 
 export const ReportDisasterScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(1);
   const [submitting, setSubmitting]   = useState(false);
   const [reportId, setReportId]       = useState<string | null>(null);
@@ -79,11 +81,10 @@ export const ReportDisasterScreen = () => {
       const user = await authService.getStoredUser();
       if (!user) throw new Error('You must be logged in to submit a report.');
 
-      // Map types to backend enum values (matches DisasterType enum exactly)
+      // Map frontend ids → backend enum values
       const typeMap: Record<string, string> = {
-        fire:       'FIRE',
         flood:      'FLOOD',
-        storm:      'STORM',
+        fire:       'FIRE',
         earthquake: 'EARTHQUAKE',
         hurricane:  'HURRICANE',
         tornado:    'TORNADO',
@@ -91,6 +92,7 @@ export const ReportDisasterScreen = () => {
         drought:    'DROUGHT',
         heatwave:   'HEATWAVE',
         coldwave:   'COLDWAVE',
+        storm:      'STORM',
         other:      'OTHER',
       };
       const severityMap: Record<string, string> = {
@@ -111,21 +113,21 @@ export const ReportDisasterScreen = () => {
       const roadBlocked         = reportData.additionalDetails.includes('Road access blocked');
 
       const payload = {
-        user_id:            user.id,
-        disaster_type:      (typeMap[reportData.type || ''] || 'OTHER') as any,
-        severity:           (severityMap[reportData.severity || ''] || 'MEDIUM') as any,
-        latitude:           reportData.location.latitude,
-        longitude:          reportData.location.longitude,
-        location_address:   reportData.location.address,
-        description:        reportData.description || 'No description provided',
-        people_affected:    peopleCount,
+        user_id:             user.id,
+        disaster_type:       (typeMap[reportData.type || ''] || 'OTHER') as any,
+        severity:            (severityMap[reportData.severity || ''] || 'MEDIUM') as any,
+        latitude:            reportData.location.latitude,
+        longitude:           reportData.location.longitude,
+        location_address:    reportData.location.address,
+        description:         reportData.description || 'No description provided',
+        people_affected:     peopleCount,
         multiple_casualties: multipleCasualties || undefined,
         structural_damage:   structuralDamage   || undefined,
         road_blocked:        roadBlocked        || undefined,
       };
 
-      const response = await disasterService.createReport(payload);
-      console.log('Report submitted:', response.id);
+      const response = await disasterService.submitReport(payload, reportData.photos?.length ? reportData.photos : undefined);
+      console.log('Report submitted:', response.id, '| status:', response.report_status);
       setReportId(response.id);
       goToStep(5);
 
@@ -162,7 +164,7 @@ export const ReportDisasterScreen = () => {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }}>
+    <View style={{ flex: 1, backgroundColor: colors.white, paddingTop: insets.top }}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       <KeyboardAvoidingView
@@ -300,7 +302,7 @@ export const ReportDisasterScreen = () => {
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 };
 

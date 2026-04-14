@@ -13,16 +13,16 @@ import { reportStyles } from '../styles';
 import Svg, { Path } from 'react-native-svg';
 
 const DISASTER_TYPES = [
-  { id: 'fire',       emoji: '🔥', label: 'Fire' },
   { id: 'flood',      emoji: '🌊', label: 'Flood' },
-  { id: 'storm',      emoji: '⛈️', label: 'Storm' },
+  { id: 'fire',       emoji: '🔥', label: 'Fire' },
   { id: 'earthquake', emoji: '🏚️', label: 'Earthquake' },
   { id: 'hurricane',  emoji: '🌀', label: 'Hurricane' },
+  { id: 'tornado',    emoji: '🌪️', label: 'Tornado' },
   { id: 'tsunami',    emoji: '🌊', label: 'Tsunami' },
   { id: 'drought',    emoji: '☀️', label: 'Drought' },
   { id: 'heatwave',   emoji: '🌡️', label: 'Heatwave' },
-  { id: 'coldwave',   emoji: '🥶', label: 'Cold Wave' },
-  { id: 'tornado',    emoji: '🌪️', label: 'Tornado' },
+  { id: 'coldwave',   emoji: '🥶', label: 'Coldwave' },
+  { id: 'storm',      emoji: '⛈️', label: 'Storm' },
   { id: 'other',      emoji: '⚠️', label: 'Other' },
 ];
 
@@ -65,7 +65,7 @@ export const TypeStep: React.FC<TypeStepProps> = ({
         onPress={() => setTypePickerVisible(true)}
         activeOpacity={0.8}
       >
-        <Text style={{ fontSize: 28 }}>{selectedTypeObj.emoji}</Text>
+        <Text style={{ fontSize: 28, lineHeight: 36 }}>{selectedTypeObj.emoji}</Text>
         <Text variant="bodyLarge" style={{ flex: 1, marginLeft: spacing.md, color: colors.textPrimary, fontWeight: '600' }}>
           {selectedTypeObj.label}
         </Text>
@@ -146,7 +146,7 @@ export const TypeStep: React.FC<TypeStepProps> = ({
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text style={{ fontSize: 28, marginRight: spacing.md }}>{type.emoji}</Text>
+                  <Text style={{ fontSize: 28, lineHeight: 36, marginRight: spacing.md }}>{type.emoji}</Text>
                   <Text
                     variant="bodyLarge"
                     style={{ flex: 1, color: selectedType === type.id ? colors.primary : colors.textPrimary, fontWeight: selectedType === type.id ? '600' : '400' }}

@@ -7,10 +7,9 @@
 import React, { useState, useRef } from 'react';
 import {
   View, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, FlatList,
+  ActivityIndicator, Alert, FlatList, Platform, PermissionsAndroid,
 } from 'react-native';
 import MapboxGL from '@rnmapbox/maps';
-import Geolocation from '@react-native-community/geolocation';
 import { Text } from '@atoms/Text';
 import { Button } from '@atoms/Button';
 import { colors } from '@theme/colors';
@@ -164,31 +163,59 @@ export const LocationStep: React.FC<LocationStepProps> = ({ initialLocation, onN
   };
 
   // ── Use Current Location ──────────────────────────────────────────────
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
     setGettingLocation(true);
     handleClearSearch();
-    Geolocation.getCurrentPosition(
-      async ({ coords }) => {
-        const address = await reverseGeocode(coords.latitude, coords.longitude);
-        const newLoc: Location = {
-          latitude:  coords.latitude,
-          longitude: coords.longitude,
-          address,
-        };
-        setLocation(newLoc);
-        cameraRef.current?.setCamera({
-          centerCoordinate: [coords.longitude, coords.latitude],
-          zoomLevel: 16,
-          animationDuration: 800,
-        });
+
+    const doGet = () => {
+      if (!navigator.geolocation) {
         setGettingLocation(false);
-      },
-      () => {
+        Alert.alert('Location Error', 'Location services are not available on this device.');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        async ({ coords }) => {
+          const address = await reverseGeocode(coords.latitude, coords.longitude);
+          const newLoc: Location = {
+            latitude:  coords.latitude,
+            longitude: coords.longitude,
+            address,
+          };
+          setLocation(newLoc);
+          cameraRef.current?.setCamera({
+            centerCoordinate: [coords.longitude, coords.latitude],
+            zoomLevel: 16,
+            animationDuration: 800,
+          });
+          setGettingLocation(false);
+        },
+        () => {
+          setGettingLocation(false);
+          Alert.alert('Location Error', 'Could not get your location. Please search for an address instead.');
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    };
+
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+          doGet();
+        } else {
+          setGettingLocation(false);
+          Alert.alert('Permission Denied', 'Location permission is required to use your current location.');
+        }
+      } catch {
         setGettingLocation(false);
-        Alert.alert('Location Error', 'Could not get your location. Please search for an address instead.');
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
+        doGet();
+      }
+    } else {
+      // iOS triggers the OS prompt automatically on first call
+      doGet();
+    }
   };
 
   // ── Map tap → update pin ──────────────────────────────────────────────

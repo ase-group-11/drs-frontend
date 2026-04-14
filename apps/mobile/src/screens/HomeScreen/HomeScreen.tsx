@@ -13,30 +13,41 @@ import { FilterTabs }  from '@organisms/FilterTabs';
 import { MapTemplate } from '@templates/MapTemplate';
 import { ProfileMenu } from '@organisms/ProfileMenu';
 import { ResponderProfileMenu } from '@organisms/ResponderProfileMenu';
-import { mapService }  from '@services/mapService';
-import { authService, authRequest } from '@services/authService';
+import { authService, authRequest, getUserUnitInfo } from '@services/authService';
+import { API } from '@services/apiConfig';
 import { wsService, WSAlert } from '@services/wsService';
-import { notificationStore } from '@services/notificationStore';
+import { useUserLocation } from '@hooks/useUserLocation';
+import { mapActionStore } from '@services/mapActionStore';
+import { initNotifications } from '@services/notificationService';
+import { disasterStore } from '@services/disasterStore';
+import { notificationStore } from '@services/notificationStore'; // used only for reroute geometry caching
 import { colors }      from '@theme/colors';
 import type { Disaster, DisasterFilter } from '../../types/disaster';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '@types/navigation';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 interface HomeScreenProps { navigation: HomeScreenNavigationProp; route?: any; }
 
-const FILTERS: DisasterFilter[] = [
-  { id: 'all',       label: '📍 All',        icon: '📍' },
-  { id: 'fire',      label: '🔥 Fire',       icon: '🔥', type: 'fire' },
-  { id: 'flood',     label: '🌊 Flood',      icon: '🌊', type: 'flood' },
-  { id: 'storm',     label: '⛈️ Storm',      icon: '⛈️', type: 'storm' },
-  { id: 'earthquake',label: '🏚️ Earthquake', icon: '🏚️', type: 'earthquake' },
-  { id: 'hurricane', label: '🌀 Hurricane',  icon: '🌀', type: 'hurricane' },
-  { id: 'tsunami',   label: '🌊 Tsunami',    icon: '🌊', type: 'tsunami' },
-  { id: 'heatwave',  label: '🌡️ Heatwave',   icon: '🌡️', type: 'heatwave' },
-  { id: 'other',     label: '⚠️ Other',      icon: '⚠️', type: 'other' },
-];
+// All possible disaster type labels/icons — only types that exist in the backend.
+// Filters are derived DYNAMICALLY from whichever types are present in loaded disasters.
+const TYPE_META: Record<string, { label: string; icon: string }> = {
+  fire:        { label: '🔥 Fire',        icon: '🔥' },
+  flood:       { label: '🌊 Flood',       icon: '🌊' },
+  storm:       { label: '⛈️ Storm',        icon: '⛈️' },
+  earthquake:  { label: '🏚️ Earthquake',  icon: '🏚️' },
+  hurricane:   { label: '🌀 Hurricane',   icon: '🌀' },
+  tornado:     { label: '🌪️ Tornado',     icon: '🌪️' },
+  tsunami:     { label: '🌊 Tsunami',     icon: '🌊' },
+  drought:     { label: '🏜️ Drought',     icon: '🏜️' },
+  heatwave:    { label: '🌡️ Heatwave',    icon: '🌡️' },
+  coldwave:    { label: '🧊 Coldwave',    icon: '🧊' },
+  other:       { label: '⚠️ Other',       icon: '⚠️' },
+};
+
+const ALL_FILTER: DisasterFilter = { id: 'all', label: '📍 All', icon: '📍' };
 
 const getInitials = (name: string): string => {
   const parts = name.trim().split(' ');
@@ -45,11 +56,34 @@ const getInitials = (name: string): string => {
     : name.substring(0, 2).toUpperCase();
 };
 
+// Build dynamic filter tabs from whatever disaster types are currently loaded.
+// Always starts with "All". Only types that exist in the list are shown —
+// no phantom filter tabs for types the backend has never reported.
+const buildFilters = (disasterList: Disaster[]): DisasterFilter[] => {
+  const seen = new Set<string>();
+  disasterList.forEach(d => { if (d.type) seen.add(d.type.toLowerCase()); });
+  const typeTabs: DisasterFilter[] = Array.from(seen)
+    .filter(t => TYPE_META[t]) // only show types we have metadata for
+    .sort()
+    .map(t => ({
+      id:    t,
+      label: TYPE_META[t].label,
+      icon:  TYPE_META[t].icon,
+      type:  t as any,
+    }));
+  return [ALL_FILTER, ...typeTabs];
+};
+
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => {
   const [disasters, setDisasters]                 = useState<Disaster[]>([]);
+  const insets     = useSafeAreaInsets();
+  // Dynamic filters — only types present in loaded disasters (+ always "All")
+  const [activeFilters, setActiveFilters]         = useState<DisasterFilter[]>([ALL_FILTER]);
   const [filteredDisasters, setFilteredDisasters] = useState<Disaster[]>([]);
   const [selectedFilter, setSelectedFilter]       = useState('all');
   const [loading, setLoading]                     = useState(true);
+  // Citizen GPS location — sent to backend every 30s for geo-targeted alerts
+  const { location: citizenLocation }             = useUserLocation();
   const [userName, setUserName]                   = useState('User');
   const [userPhone, setUserPhone]                 = useState('');
   const [userInitials, setUserInitials]           = useState('U');
@@ -67,20 +101,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   const [responderData, setResponderData]         = useState<any>(null);
   const [missionCount, setMissionCount]           = useState(0);
   const mapRef      = useRef<any>(null);
-  const pendingNav  = useRef<{ lat: number; lon: number; label: string } | null>(null);
+  const pendingNav       = useRef<{ lat: number; lon: number; label: string } | null>(null);
 
-  // Store params immediately when they arrive (before screen is focused)
+  // Handle navigation params — only used for reroute from AlertsScreen
+  // flyTo + evacuationRoute now use mapActionStore to avoid race conditions
   useEffect(() => {
     const params = route?.params as any;
-    if (params?.flyToLat && params?.flyToLon) {
-      console.log('[HomeScreen] Storing pending nav params:', params.flyToLat, params.flyToLon);
-      pendingNav.current = {
-        lat:   params.flyToLat,
-        lon:   params.flyToLon,
-        label: params.flyToLabel ?? 'Incident Location',
-      };
-    }
-    // Reroute from AlertsScreen: geometry already fetched, just apply to map
+    if (!params) return;
     if (params?.reroutePts && params.reroutePts.length > 1) {
       console.log('[HomeScreen] Received reroutePts from AlertsScreen:', params.reroutePts.length);
       setTimeout(() => {
@@ -95,28 +122,71 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     }
   }, [route?.params]);
 
-  // Fire navigation when screen comes into focus AND map ref is ready
+  // Execute pending map action on focus — uses mapActionStore to avoid params race
   useFocusEffect(useCallback(() => {
-    if (!pendingNav.current) return;
-    const nav = pendingNav.current;
-    pendingNav.current = null;
-    // Longer delay — map needs time after screen transition to be interactive
-    const t = setTimeout(() => {
-      console.log('[HomeScreen] useFocusEffect firing navigateToScene, mapRef:', !!mapRef.current);
-      if (mapRef.current?.navigateToScene) {
-        mapRef.current.navigateToScene(nav.lat, nav.lon, nav.label);
+    // Reconnect WS if it dropped while screen was not focused
+    if (!wsService.connected) {
+      AsyncStorage.getItem('@auth/user_role').then(role => {
+        console.log('[HomeScreen] WS not connected on focus — reconnecting as', role);
+        wsService.connect(role === 'responder');
+      });
+    }
+
+    // Poll every 200ms for up to 4s until mapRef is ready to execute action
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts += 1;
+      if (attempts > 20) { clearInterval(interval); return; }
+      if (!mapActionStore.hasPending()) { clearInterval(interval); return; }
+
+      const action = mapActionStore.consume();
+      if (!action) { clearInterval(interval); return; }
+
+      console.log('[HomeScreen] Map action:', action.type, action.lat, action.lon);
+
+      if (action.type === 'flyTo' && mapRef.current?.navigateToScene) {
+        mapRef.current.navigateToScene(action.lat, action.lon, action.label);
+        clearInterval(interval);
+      } else if (action.type === 'evacuationRoute' && mapRef.current?.showEvacuationRoute) {
+        mapRef.current.showEvacuationRoute(action.lat, action.lon, action.label);
+        clearInterval(interval);
       } else {
-        console.warn('[HomeScreen] mapRef.current.navigateToScene not available');
+        // mapRef method not ready yet — put action back and retry next tick
+        mapActionStore.setPending(action);
       }
-    }, 1200);
-    return () => clearTimeout(t);
+    }, 200);
+
+    return () => clearInterval(interval);
   }, []));
 
   useEffect(() => {
     loadDisasters();
     loadUserData();
     loadAlertCount();
-    const interval = setInterval(() => { loadDisasters(); loadAlertCount(); }, 30000);
+
+    // Subscribe to disasterStore — re-read disasters when store changes
+    // (wsService dispatches to store on WS events, so this is reactive)
+    const unsubStore2 = disasterStore.subscribe(() => {
+      const activeList = disasterStore.getState().activeDisasters;
+      const converted = activeList
+        .map((d: any) => ({
+          id: d.id || String(Math.random()),
+          type: (d.type || d.disaster_type || 'other').toLowerCase(),
+          severity: (d.severity || 'medium').toLowerCase(),
+          title: `${d.type || d.disaster_type || 'Disaster'} - ${d.severity}`,
+          location: {
+            latitude: d.location?.lat ?? d.lat ?? d.latitude ?? 53.35,
+            longitude: d.location?.lon ?? d.lon ?? d.longitude ?? -6.26,
+            address: d.location_address ?? d.description ?? 'Disaster location',
+          },
+          description: d.description || d.location_address || '',
+          reportedAt: d.created_at ? new Date(d.created_at) : new Date(),
+          status: (d.disaster_status ?? d.status ?? 'active').toLowerCase(),
+        }))
+        .filter((d: any) => d.location.latitude && d.location.longitude);
+      setDisasters(converted);
+      setActiveFilters(buildFilters(converted));
+    });
 
     // Connect WebSocket for real-time alerts
     const connectWS = async () => {
@@ -125,20 +195,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     };
     connectWS();
 
+    // Request notification permission + setup channels
+    initNotifications().catch(() => {});
+
     const unsubAlert   = wsService.onAlert(handleWSAlert);
     const unsubConnect = wsService.onConnect(setWsConnected);
-    const unsubStore   = notificationStore.subscribe(notifications => {
-      setAlertCount(notifications.filter(n => !n.isRead).length);
+    const unsubDisasterStore = disasterStore.subscribe(() => {
+      setAlertCount(disasterStore.unreadCount);
     });
 
     return () => {
-      clearInterval(interval);
       unsubAlert();
       unsubConnect();
-      unsubStore();
+      unsubDisasterStore();
+      unsubStore2();
       wsService.disconnect();
     };
   }, []);
+
+  // ── Citizen location → backend every 30 seconds ──────────────────────
+  // The backend uses this to geo-target disaster alerts to nearby citizens.
+  // Without periodic updates, the backend sees the Dublin default coordinates
+  // and the citizen may miss alerts for disasters near their actual location.
+  // Citizens only — responders use a separate deployment location endpoint.
+  useEffect(() => {
+    if (isResponder) return; // responders handled separately
+    const [lon, lat] = citizenLocation;
+    // Send immediately on location change
+    wsService.updateLocation(lat, lon);
+    // Then re-send every 30 seconds to keep backend location fresh
+    const interval = setInterval(() => {
+      wsService.updateLocation(lat, lon);
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [citizenLocation, isResponder]);
 
   useEffect(() => {
     if (selectedFilter === 'all') {
@@ -148,19 +238,48 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     }
   }, [selectedFilter, disasters]);
 
-  const loadAlertCount = async () => {
-    const count = await notificationStore.unreadCount();
-    setAlertCount(count);
+  const loadAlertCount = () => {
+    setAlertCount(disasterStore.unreadCount);
   };
 
   const loadDisasters = async () => {
     try {
-      const bounds = mapService.formatBounds(53.20, -6.45, 53.45, -6.05);
-      // ERT doc Section 11: responders use GET /live-map/data (richer combined data)
-      // Citizens use GET /live-map/disasters
-      const data = await mapService.getDisasters(bounds, 100);
-      setDisasters(data);
-      console.log('[HomeScreen] Disasters loaded:', data?.length ?? 0);
+      // Spec: use GET /disasters/active?limit=50 — NOT live-map/disasters
+      // This populates the global disasterStore. All screens read from the store.
+      // On subsequent WS events, wsService dispatches directly to the store.
+      const storeState = disasterStore.getState();
+
+      // Only fetch from API if store is empty (first load)
+      // After that, wsService handles updates via disaster.evaluated → fetch,
+      // disaster.dispatched → in-place, disaster.updated → merge, etc.
+      if (storeState.activeDisasters.length === 0) {
+        const data = await authRequest<any>(API.disasters.active());
+        const list = data?.disasters ?? (Array.isArray(data) ? data : []);
+        disasterStore.setActiveDisasters(list);
+      }
+
+      // Read from store and convert to Disaster[] format for the map
+      const activeList = disasterStore.getState().activeDisasters;
+      const converted = activeList
+        .map((d: any) => ({
+          id: d.id || String(Math.random()),
+          type: (d.type || d.disaster_type || 'other').toLowerCase(),
+          severity: (d.severity || 'medium').toLowerCase(),
+          title: `${d.type || d.disaster_type || 'Disaster'} - ${d.severity}`,
+          location: {
+            latitude: d.location?.lat ?? d.lat ?? d.latitude ?? 53.35,
+            longitude: d.location?.lon ?? d.lon ?? d.longitude ?? -6.26,
+            address: d.location_address ?? d.description ?? 'Disaster location',
+          },
+          description: d.description || d.location_address || '',
+          reportedAt: d.created_at ? new Date(d.created_at) : new Date(),
+          status: (d.disaster_status ?? d.status ?? 'active').toLowerCase(),
+        }))
+        .filter((d: any) => d.location.latitude && d.location.longitude);
+
+      setDisasters(converted);
+      setActiveFilters(buildFilters(converted));
+      console.log('[HomeScreen] Disasters from store:', converted.length);
       setLoading(false);
     } catch (error) {
       console.error('Failed to load disasters:', error);
@@ -183,12 +302,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         setResponderData(user);
         // ERT-only APIs — only called when role === 'responder', not for citizens
         try {
-          const unitsData = await authRequest('/emergency-units/');
-          const units: any[] = unitsData?.units ?? [];
-          const userDept = (user.department ?? '').toUpperCase();
-          const myUnit = units.find((u: any) => u.department?.toUpperCase() === userDept) ?? units[0];
-          if (myUnit?.id) {
-            const data = await authRequest(`/deployments/unit/${myUnit.id}/active`);
+          const { unitId } = await getUserUnitInfo();
+          if (unitId) {
+            const data = await authRequest(API.deployments.unitActive(unitId));
             setMissionCount(data?.count ?? 0);
           }
         } catch { /* no missions or unit not found — badge stays 0 */ }
@@ -211,7 +327,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     if (!pts || pts.length < 2) {
       try {
         console.log('[Reroute] No cache - fetching geometry now:', routeId);
-        const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${routeId}`);
+        const routeData = await authRequest<any>(API.reroute.status(disasterId, routeId));
         pts = (routeData?.points ?? []).map(
           (p: number[]) => [p[1], p[0]] as [number, number]
         );
@@ -229,10 +345,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   };
 
   const handleWSAlert = async (alert: WSAlert) => {
-    // Refresh disaster map on relevant events
-    if (['disaster.evaluated', 'disaster.verified', 'disaster.resolved', 'disaster.false_alarm'].includes(alert.event_type)) {
-      loadDisasters();
-    }
+    // wsService already dispatches disaster.evaluated/dispatched/updated/resolved/false_alarm
+    // to the disasterStore, which triggers the store subscription above.
+    // No need to call loadDisasters() here — store is the single source of truth.
 
     // disaster.cleared — roads reopened, clear reroute overlay and status
     if (alert.event_type === 'disaster.cleared') {
@@ -246,10 +361,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       const routeAssignments: Record<string,string> = data.route_assignments ?? {};
       // routes[] in the WS payload already has time/dist metadata
       const routes: any[] = data.routes ?? [];
-
-      // Always store in notification inbox (geometry added below after fetch)
-      await notificationStore.add(alert);
-      setAlertCount(await notificationStore.unreadCount());
 
       try {
         const stored = await AsyncStorage.getItem('@auth/user_data');
@@ -275,7 +386,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         // Fetch geometry immediately while plan is still active in the DB
         let cachedPts: [number, number][] | null = null;
         try {
-          const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${userRouteId}`);
+          const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
           cachedPts = (routeData?.points ?? []).map(
             (p: number[]) => [p[1], p[0]] as [number, number]
           );
@@ -320,9 +431,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       const routeAssignments: Record<string,string> = data.route_assignments ?? {};
       const routes: any[] = data.routes ?? [];
 
-      await notificationStore.add(alert);
-      setAlertCount(await notificationStore.unreadCount());
-
       try {
         const stored = await AsyncStorage.getItem('@auth/user_data');
         const user = stored ? JSON.parse(stored) : null;
@@ -334,7 +442,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         const routeMeta = routes.find((r: any) => r.route_id === userRouteId);
         let cachedPts: [number, number][] | null = null;
         try {
-          const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${userRouteId}`);
+          const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
           cachedPts = (routeData?.points ?? []).map((p: number[]) => [p[1], p[0]] as [number, number]);
           console.log('[route.updated] New geometry:', cachedPts.length, 'pts');
           const all = await notificationStore.getAll();
@@ -379,31 +487,61 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       mapRef.current?.clearVehicle?.();
     }
 
-    // Store ALL alerts in notification inbox — AlertsScreen reads from here
-    await notificationStore.add(alert);
-    const unread = await notificationStore.unreadCount();
-    setAlertCount(unread);
+    // NOTE: disasterStore.addAlert() is called by wsService for EVERY event
+    // before handlers.forEach() fires. No need to call it again here.
+    // Just update the badge count from the store (which was already updated).
+    setAlertCount(disasterStore.unreadCount);
 
-    // ERT-specific events — refreshMap and show urgent alert if responder
+    // ERT-specific events — store already updated by wsService dispatch
     if (isResponder) {
-      if (['disaster.dispatched', 'disaster.updated', 'disaster.unit_completed',
-           'coordination.team_assigned'].includes(alert.event_type)) {
-        loadDisasters();
-      }
+      // No loadDisasters() needed — disasterStore subscription handles re-render
       if (alert.event_type === 'coordination.escalation') {
         // Escalation — always show persistent banner, never auto-dismiss
         setActiveAlert(alert);
         return;
       }
+      // Evacuation triggered — show evacuation status panel for ERT
+      if (alert.event_type === 'evacuation.triggered') {
+        Alert.alert(
+          '🚨 EVACUATION ACTIVATED',
+          alert.message ?? 'An evacuation plan has been activated for an active disaster.',
+          [
+            { text: 'View Plans', onPress: () => navigation.navigate('EvacuationPlans' as any) },
+            { text: 'OK' },
+          ],
+        );
+      }
+      // Backup requested — prompt additional dispatch for ERT
+      if (alert.event_type === 'disaster.backup_requested') {
+        Alert.alert(
+          '🆘 BACKUP REQUESTED',
+          `${alert.title}\n\n${alert.message}`,
+          [
+            { text: 'View Missions', onPress: () => navigation.navigate('ActiveMissions' as any) },
+            { text: 'OK' },
+          ],
+        );
+      }
     }
 
-    // Show banner for important alerts
-    if (['disaster.evaluated', 'reroute.triggered', 'evacuation.triggered', 'disaster.backup_requested',
-         'disaster.verified', 'disaster.resolved', 'disaster.false_alarm', 'disaster.cleared',
-         'route.updated', 'simulation.complete',
-         // ERT extras
-         'disaster.dispatched', 'disaster.updated', 'disaster.unit_completed',
-         'coordination.team_assigned', 'coordination.escalation'].includes(alert.event_type)) {
+    // Citizen events — shown to everyone
+    const CITIZEN_BANNER_EVENTS = [
+      'disaster.evaluated', 'reroute.triggered', 'evacuation.triggered',
+      'disaster.verified', 'disaster.resolved', 'disaster.false_alarm',
+      'disaster.cleared', 'route.updated', 'simulation.complete',
+    ];
+
+    // Responder-only events — only show banner to responders
+    const RESPONDER_BANNER_EVENTS = [
+      'disaster.dispatched', 'disaster.updated', 'disaster.unit_completed',
+      'coordination.team_assigned', 'coordination.escalation',
+    ];
+
+    const shouldShowBanner =
+      CITIZEN_BANNER_EVENTS.includes(alert.event_type) ||
+      (isResponder && RESPONDER_BANNER_EVENTS.includes(alert.event_type));
+
+    if (shouldShowBanner) {
       setActiveAlert(alert);
       if (alert.severity === 'LOW' || alert.severity === 'INFO') {
         setTimeout(() => setActiveAlert(prev => prev === alert ? null : prev), 5000);
@@ -459,7 +597,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         }
         filterBar={
           <FilterTabs
-            filters={FILTERS}
+            filters={activeFilters}
             selected={selectedFilter}
             onSelect={handleFilterSelect}
           />
@@ -469,7 +607,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
             ref={mapRef}
             disasters={filteredDisasters}
             loading={loading}
-            onReport={() => navigation.navigate('ReportDisaster' as any)}
+            onReport={isResponder ? undefined : () => navigation.navigate('ReportDisaster' as any)}
+            onViewDetails={(disasterId) =>
+              isResponder
+                ? navigation.navigate('DisasterDetail' as any, { disasterId })
+                : navigation.navigate('DisasterAlertDetail' as any, { disasterId })
+            }
+            hideSearch={isResponder}
+            isResponder={isResponder}
             selectedFilter={selectedFilter}
           />
         }
@@ -480,7 +625,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         <TouchableOpacity
           activeOpacity={pendingReroute ? 0.75 : 1}
           onPress={pendingReroute ? handleRerouteBannerTap : undefined}
-          style={[styles.alertBanner, { backgroundColor: SEVERITY_BG[activeAlert.severity] ?? '#1F2937' }]}
+          style={[styles.alertBanner, {
+            backgroundColor: SEVERITY_BG[activeAlert.severity] ?? '#1F2937',
+            paddingTop: insets.top + 12,  // respect safe area (notch/status bar)
+          }]}
         >
           <View style={{ flex: 1 }}>
             <Text style={styles.alertBannerTitle}>{activeAlert.title}</Text>
@@ -571,7 +719,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center',
-    padding: 14, paddingTop: 18,
+    paddingHorizontal: 14, paddingBottom: 14,
     zIndex: 999,
   },
   alertBannerTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },

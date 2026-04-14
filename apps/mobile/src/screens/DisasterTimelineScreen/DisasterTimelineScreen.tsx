@@ -8,17 +8,24 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar,
+  View, ScrollView, StyleSheet, StatusBar,
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { colors } from '@theme/colors';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authRequest } from '@services/authService';
+import { API } from '@services/apiConfig';
+import { formatDateTime } from '@utils/formatters';
 
-// Timeline steps driven by report_status from GET /disaster-reports/{id}
+// Disaster statuses → effective report status
+const RESOLVED_DISASTER_STATUSES = ['RESOLVED', 'CLOSED', 'FALSE_ALARM', 'CANCELLED'];
+const ACTIVE_DISASTER_STATUSES   = ['ACTIVE', 'DISPATCHED', 'ON_SCENE', 'IN_PROGRESS'];
+
+// Timeline steps driven by effective status (report_status merged with disaster_status)
 const STEPS = [
   { key: 'submitted', label: 'Report Submitted',          icon: '📍', done: ['pending','verified','active','resolved','rejected'] },
   { key: 'review',    label: 'Under Review',              icon: '🔍', done: ['verified','active','resolved'] },
@@ -53,9 +60,29 @@ export const DisasterTimelineScreen: React.FC = () => {
   const load = async () => {
     setError('');
     try {
-      // GET /disaster-reports/{id} — citizen's own report, approved citizen API
+      // GET /disaster-reports/{id} — citizen's own report
       const data = await authRequest<any>(`/disaster-reports/${id}`);
-      setReport(data);
+
+      // Derive effective status by also checking linked disaster_status
+      // Backend often keeps report_status as 'verified' even after disaster resolves
+      let effectiveStatus = (data?.report_status ?? data?.status ?? 'pending').toLowerCase();
+      const disasterId = data?.disaster_id;
+
+      if (disasterId && effectiveStatus !== 'resolved' && effectiveStatus !== 'rejected') {
+        try {
+          const disaster = await authRequest<any>(API.disasters.byId(disasterId));
+          const ds = (disaster?.disaster_status ?? '').toUpperCase();
+          if (RESOLVED_DISASTER_STATUSES.includes(ds)) {
+            effectiveStatus = 'resolved';
+          } else if (ACTIVE_DISASTER_STATUSES.includes(ds)) {
+            effectiveStatus = 'active';
+          }
+        } catch {
+          // Non-critical — keep report_status as fallback
+        }
+      }
+
+      setReport({ ...data, _effectiveStatus: effectiveStatus });
     } catch (e: any) {
       setError(e.message || 'Could not load report status');
     }
@@ -65,11 +92,11 @@ export const DisasterTimelineScreen: React.FC = () => {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  const status   = (report?.report_status ?? report?.status ?? 'pending').toLowerCase();
+  const status    = (report?._effectiveStatus ?? report?.report_status ?? report?.status ?? 'pending').toLowerCase();
   const statusCfg = STATUS_LABEL[status] ?? STATUS_LABEL.pending;
 
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       <View style={S.header}>
@@ -99,7 +126,7 @@ export const DisasterTimelineScreen: React.FC = () => {
         </View>
       ) : error ? (
         <View style={S.center}>
-          <Text style={{ fontSize: 40 }}>⚠️</Text>
+          <Text style={{ fontSize: 40, lineHeight: 52 }}>⚠️</Text>
           <Text variant="bodyMedium" color="textSecondary" style={{ marginTop: spacing.md, textAlign: 'center' }}>
             {error}
           </Text>
@@ -140,7 +167,7 @@ export const DisasterTimelineScreen: React.FC = () => {
               {report.created_at && (
                 <Text style={S.infoRow}>
                   <Text style={S.infoKey}>Reported:  </Text>
-                  {new Date(report.created_at).toLocaleString('en-IE', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {formatDateTime(report.created_at)}
                 </Text>
               )}
             </View>

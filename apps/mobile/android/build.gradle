@@ -18,4 +18,32 @@ buildscript {
     }
 }
 
+// ✅ Read local.properties for secret keys
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
+        maven { url 'https://oss.sonatype.org/content/repositories/releases/' }
+        maven {
+            url 'https://api.mapbox.com/downloads/v2/releases/maven'
+            authentication {
+                basic(BasicAuthentication)
+            }
+            credentials {
+                username = "mapbox"
+                // ✅ Reads from local.properties → falls back to gradle.properties → empty string
+                password = localProperties['MAPBOX_DOWNLOADS_TOKEN']
+                        ?: project.properties['MAPBOX_DOWNLOADS_TOKEN']
+                        ?: ""
+            }
+        }
+    }
+}
 apply plugin: "com.facebook.react.rootproject"

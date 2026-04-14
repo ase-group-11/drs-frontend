@@ -1,45 +1,53 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// FILE: src/hooks/useDisasterData.ts
+// Hook that provides disaster data. Reads from global store (activeDisasters)
+// and fetches reports for the current user.
+// ═══════════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect, useCallback } from 'react';
 import { disasterService } from '@services/disasterService';
-import type { Disaster, Alert, Report } from '../types/disaster';
-
-interface DisasterDataState {
-  disasters: Disaster[];
-  alerts: Alert[];
-  reports: Report[];
-  isLoading: boolean;
-  error: string | null;
-}
+import { authService } from '@services/authService';
+import { disasterStore } from '@services/disasterStore';
 
 export const useDisasterData = () => {
-  const [state, setState] = useState<DisasterDataState>({
-    disasters: [],
-    alerts: [],
-    reports: [],
-    isLoading: false,
-    error: null,
-  });
+  const [reports, setReports]   = useState<any[]>([]);
+  const [isLoading, setLoading] = useState(false);
+  const [error, setError]       = useState<string | null>(null);
 
-  const fetchAll = useCallback(async () => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
-    try {
-      const [disasters, alerts, reports] = await Promise.all([
-        disasterService.getActiveDisasters(),
-        disasterService.getAlerts(),
-        disasterService.getMyReports(),
-      ]);
-      setState({ disasters, alerts, reports, isLoading: false, error: null });
-    } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: (err as Error).message ?? 'Something went wrong',
-      }));
-    }
+  // Subscribe to store for reactive disasters / alerts
+  const [storeVersion, setStoreVersion] = useState(0);
+  useEffect(() => {
+    const unsub = disasterStore.subscribe(() => setStoreVersion(n => n + 1));
+    return unsub;
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  const state = disasterStore.getState();
 
-  return { ...state, refresh: fetchAll };
+  const fetchReports = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const user = await authService.getStoredUser();
+      if (user?.id) {
+        const r = await disasterService.getMyReports(user.id);
+        setReports(r);
+      }
+    } catch (err: any) {
+      setError(err.message ?? 'Something went wrong');
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  return {
+    disasters: state.activeDisasters,
+    alerts:    state.alerts,
+    reports,
+    isLoading,
+    error,
+    refresh: fetchReports,
+  };
 };
 
 export default useDisasterData;

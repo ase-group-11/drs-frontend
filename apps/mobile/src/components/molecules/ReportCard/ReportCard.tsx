@@ -6,6 +6,9 @@ import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import type { Report, ReportStatus } from '../../../types/disaster';
+import { formatTimeAgo } from '@utils/formatters';
+
+const getTimeAgo = (date: Date): string => formatTimeAgo(date.toISOString());
 
 export interface ReportCardProps {
   report: Report;
@@ -26,21 +29,14 @@ const STATUS_CONFIG: Record<string, { color: string; label: string; borderColor:
 };
 
 const DISASTER_ICONS: Record<string, string> = {
-  // lowercase
-  fire: '🔥', flood: '🌊', storm: '⛈️', earthquake: '🏚️',
-  hurricane: '🌀', tornado: '🌪️', tsunami: '🌊', explosion: '💥',
-  gas_leak: '☁️', accident: '🚗', power: '⚡', other: '⚠️',
-};
-
-const getTimeAgo = (date: Date): string => {
-  const s = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (s < 60) return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min${m > 1 ? 's' : ''} ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
-  const d = Math.floor(h / 24);
-  return d === 1 ? 'yesterday' : `${d} days ago`;
+  // lowercase keys — matches DisasterType
+  flood: '🌊', fire: '🔥', earthquake: '🏚️', hurricane: '🌀',
+  tornado: '🌪️', tsunami: '🌊', drought: '☀️', heatwave: '🌡️',
+  coldwave: '🥶', storm: '⛈️', other: '⚠️',
+  // UPPERCASE variants for API responses
+  FLOOD: '🌊', FIRE: '🔥', EARTHQUAKE: '🏚️', HURRICANE: '🌀',
+  TORNADO: '🌪️', TSUNAMI: '🌊', DROUGHT: '☀️', HEATWAVE: '🌡️',
+  COLDWAVE: '🥶', STORM: '⛈️', OTHER: '⚠️',
 };
 
 export const ReportCard: React.FC<ReportCardProps> = ({ report, onPress }) => {

@@ -1,11 +1,18 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/components/organisms/ResponderProfileMenu/ResponderProfileMenu.tsx
+//
+// Fixed:
+//   - Uses useSafeAreaInsets for status bar / dynamic island padding
+//   - Removed "OPERATIONS" and "REPORTING" section labels (flat list)
+//   - Removed "Completed Missions" (already shown as "Done" tab in Active Missions)
+//   - Emoji lineHeight fixes
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity, Linking, Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text }     from '@atoms/Text';
 import { Avatar }   from '@atoms/Avatar';
 import { MenuItem } from '@molecules/MenuItem';
@@ -18,13 +25,10 @@ const DEPT_LABELS: Record<string, string> = {
   fire:    '🔥 Fire',    FIRE:    '🔥 Fire',
   police:  '👮 Police',  POLICE:  '👮 Police',
   medical: '🏥 Medical', MEDICAL: '🏥 Medical',
-  it:      '💻 IT',      IT:      '💻 IT',
 };
-const ROLE_LABELS: Record<string, string> = {
-  admin:   'Admin',     ADMIN:   'Admin',
-  manager: 'Manager',   MANAGER: 'Manager',
-  staff:   'Responder', STAFF:   'Responder',
-};
+
+// Only valid role is 'staff' — always displayed as 'Responder'
+const getRoleLabel = (_role: string) => 'Responder';
 
 export interface ResponderProfileMenuProps {
   name:         string;
@@ -43,8 +47,9 @@ export const ResponderProfileMenu: React.FC<ResponderProfileMenuProps> = ({
   missionCount = 0,
   onNavigate, onLogout,
 }) => {
-  const deptLabel = DEPT_LABELS[department] ?? department ?? '🔥 Fire';
-  const roleLabel = ROLE_LABELS[role]       ?? role       ?? 'Responder';
+  const insets = useSafeAreaInsets();
+  const deptLabel = DEPT_LABELS[department] ?? `🚒 ${department ?? 'Fire'}`;
+  const roleLabel = getRoleLabel(role);
 
   const call999 = () => {
     Alert.alert('🚨 Emergency Call', 'Call 999 now?', [
@@ -56,8 +61,8 @@ export const ResponderProfileMenu: React.FC<ResponderProfileMenuProps> = ({
   return (
     <View style={S.container}>
 
-      {/* Red header */}
-      <View style={S.header}>
+      {/* Red header — padded for notch / dynamic island */}
+      <View style={[S.header, { paddingTop: insets.top + spacing.md }]}>
         <Avatar initials={initials} size="large" backgroundColor={RED_DARK} />
         <Text style={S.name}>{name}</Text>
         <View style={S.chips}>
@@ -68,37 +73,69 @@ export const ResponderProfileMenu: React.FC<ResponderProfileMenuProps> = ({
         {employeeId ? <Text style={S.empId}>ID: {employeeId}</Text> : null}
       </View>
 
-      {/* Active missions badge - only show when there are active missions */}
+      {/* Active missions badge */}
       {missionCount > 0 && (
         <View style={S.dutyBar}>
           <View style={S.dutyDot} />
-          <Text style={S.dutyText}>{missionCount} Active Mission{missionCount > 1 ? 's' : ''}</Text>
+          <Text style={S.dutyText}>
+            {missionCount} Active Mission{missionCount > 1 ? 's' : ''}
+          </Text>
         </View>
       )}
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
 
-        <Text style={S.sectionLabel}>OPERATIONS</Text>
-        <MenuItem icon={<Text>🗺️</Text>}  label="Command Map"       onPress={() => onNavigate('Home')} />
-        <MenuItem icon={<Text>🎯</Text>}  label="Disaster Command"   onPress={() => onNavigate('DisasterCommand')} />
-        <MenuItem icon={<Text>📋</Text>}  label="Active Missions"
+        {/* Flat menu — no section headers */}
+        <View style={{ marginTop: spacing.sm }} />
+
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🗺️</Text>}
+          label="Command Map"
+          onPress={() => onNavigate('Home')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🎯</Text>}
+          label="Disaster Command"
+          onPress={() => onNavigate('DisasterCommand')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>📋</Text>}
+          label="Active Missions"
           badge={missionCount > 0 ? missionCount : undefined}
-          onPress={() => onNavigate('ActiveMissions')} />
-        <MenuItem icon={<Text>✅</Text>}  label="Completed Missions"   onPress={() => onNavigate('CompletedMissions')} />
-        <MenuItem icon={<Text>🚁</Text>}  label="Evacuation Plans"     onPress={() => onNavigate('EvacuationPlans')} />
+          onPress={() => onNavigate('ActiveMissions')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>👥</Text>}
+          label="My Crew"
+          onPress={() => onNavigate('MyCrew')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🔄</Text>}
+          label="Unit Status"
+          onPress={() => onNavigate('UnitStatus')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🚁</Text>}
+          label="Evacuation Plans"
+          onPress={() => onNavigate('EvacuationPlans')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🔔</Text>}
+          label="Alerts"
+          onPress={() => onNavigate('Alerts')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>⚙️</Text>}
+          label="Settings"
+          onPress={() => onNavigate('Settings')}
+        />
+        <MenuItem
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>❓</Text>}
+          label="Help & Support"
+          onPress={() => onNavigate('HelpSupport')}
+        />
 
-        <View style={S.divider} />
-
-        <Text style={S.sectionLabel}>REPORTING</Text>
-        <MenuItem icon={<Text>📄</Text>}  label="My Submitted Reports"  onPress={() => onNavigate('MyReports')} />
-
-        <View style={S.divider} />
-
-        <MenuItem icon={<Text>🔔</Text>}  label="Alerts"         onPress={() => onNavigate('Alerts')} />
-        <MenuItem icon={<Text>⚙️</Text>}  label="Settings"      onPress={() => onNavigate('Settings')} />
-        <MenuItem icon={<Text>❓</Text>}  label="Help & Support" onPress={() => onNavigate('HelpSupport')} />
-
-        <View style={S.divider} />
+        <View style={{ height: 8 }} />
 
         {/* Emergency 999 */}
         <TouchableOpacity style={S.emergBtn} onPress={call999} activeOpacity={0.85}>
@@ -106,7 +143,7 @@ export const ResponderProfileMenu: React.FC<ResponderProfileMenuProps> = ({
         </TouchableOpacity>
 
         <MenuItem
-          icon={<Text>🚪</Text>}
+          icon={<Text style={{ fontSize: 18, lineHeight: 24 }}>🚪</Text>}
           label="Logout"
           textColor="error"
           showArrow={false}
@@ -126,7 +163,6 @@ const S = StyleSheet.create({
 
   header: {
     backgroundColor: RED,
-    paddingTop: spacing.xl,
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.lg,
   },
@@ -149,14 +185,6 @@ const S = StyleSheet.create({
   },
   dutyDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
   dutyText: { flex: 1, fontSize: 13, fontWeight: '600', color: RED },
-  badge:    { backgroundColor: RED, paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: 10 },
-  badgeText:{ color: '#fff', fontSize: 11, fontWeight: '700' },
-
-  sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8,
-    paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs,
-  },
-  divider: { height: 8, backgroundColor: '#F9FAFB' },
 
   emergBtn: {
     margin: spacing.lg, padding: spacing.md,

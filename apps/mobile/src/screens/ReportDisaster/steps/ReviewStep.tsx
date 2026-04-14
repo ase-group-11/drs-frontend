@@ -21,9 +21,8 @@ interface ReviewStepProps {
 
 const getTypeEmoji = (type: string) => {
   const emojis: Record<string, string> = {
-    fire:       '🔥',
     flood:      '🌊',
-    storm:      '⛈️',
+    fire:       '🔥',
     earthquake: '🏚️',
     hurricane:  '🌀',
     tornado:    '🌪️',
@@ -31,6 +30,7 @@ const getTypeEmoji = (type: string) => {
     drought:    '☀️',
     heatwave:   '🌡️',
     coldwave:   '🥶',
+    storm:      '⛈️',
     other:      '⚠️',
   };
   return emojis[type?.toLowerCase()] || '⚠️';

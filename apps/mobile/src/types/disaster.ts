@@ -1,8 +1,14 @@
-export type DisasterType = 'fire' | 'flood' | 'storm' | 'accident' | 'power';
+export type DisasterType =
+  | 'flood' | 'fire' | 'earthquake' | 'hurricane'
+  | 'tornado' | 'tsunami' | 'drought' | 'heatwave'
+  | 'coldwave' | 'storm' | 'other';
 
 export type DisasterSeverity = 'critical' | 'high' | 'medium' | 'low';
 
-export type ReportStatus = 'in_progress' | 'evaluating' | 'resolved';
+// Backend report_status values — keep legacy frontend values for compatibility
+export type ReportStatus =
+  | 'pending' | 'verified' | 'active' | 'resolved' | 'rejected'
+  | 'in_progress' | 'evaluating'; // legacy frontend values
 
 export interface Disaster {
   id: string;

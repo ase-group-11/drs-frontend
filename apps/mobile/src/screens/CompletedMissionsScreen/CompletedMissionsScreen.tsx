@@ -7,14 +7,16 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar,
+  View, ScrollView, StyleSheet, StatusBar,
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
 import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
-import { authRequest, authService } from '@services/authService';
+import { authRequest, authService, getUserUnitInfo } from '@services/authService';
+import { formatShortDateTime } from '@utils/formatters';
 
 const RED = '#DC2626';
 
@@ -41,21 +43,14 @@ export const CompletedMissionsScreen: React.FC = () => {
       const user = await authService.getStoredUser() as any;
       if (!user?.id) { setLoading(false); setRefreshing(false); return; }
 
-      // Find unit ID — try by department match from emergency-units
-      let unitId: string | null = null;
-      try {
-        const units = await authRequest<any>('/emergency-units/');
-        const arr: any[] = units?.units ?? [];
-        const dept = (user.department ?? '').toUpperCase();
-        const match = arr.find((u: any) => u.department?.toUpperCase() === dept) ?? arr[0];
-        if (match?.id) unitId = match.id;
-      } catch {}
+      // Get unit ID from /users/{user_id} API
+      const { unitId } = await getUserUnitInfo();
 
       if (!unitId) { setMissions([]); setLoading(false); setRefreshing(false); return; }
 
       // GET /deployments/unit/{unit_id}/completed — ERT-integration.md Section 8
       const data = await authRequest<any>(`/deployments/unit/${unitId}/completed?limit=50`);
-      const list: any[] = data?.missions ?? data?.deployments ?? (Array.isArray(data) ? data : []);
+      const list: any[] = data?.completed_missions ?? data?.missions ?? data?.deployments ?? (Array.isArray(data) ? data : []);
       setMissions(list);
     } catch (e: any) {
       setError(e.message || 'Failed to load completed missions.');
@@ -77,14 +72,11 @@ export const CompletedMissionsScreen: React.FC = () => {
     setDetailLoading(false);
   };
 
-  const formatDate = (iso?: string) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleDateString('en-IE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  };
+  const formatDate = (iso?: string) => formatShortDateTime(iso);
 
   if (selected) {
     return (
-      <SafeAreaView style={S.safe}>
+      <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
         <StatusBar barStyle="light-content" backgroundColor={RED} />
         <View style={S.header}>
           <TouchableOpacity style={S.hBtn} onPress={() => setSelected(null)}>
@@ -102,8 +94,8 @@ export const CompletedMissionsScreen: React.FC = () => {
               <Text style={S.row}>Status: <Text style={S.val}>{selected.deployment_status ?? selected.status}</Text></Text>
               <Text style={S.row}>Priority: <Text style={S.val}>{selected.priority_level ?? '—'}</Text></Text>
               {selected.situation_report && <Text style={S.row}>Report: <Text style={S.val}>{selected.situation_report}</Text></Text>}
-              {selected.minor_injuries > 0 && <Text style={S.row}>Minor injuries: <Text style={S.val}>{selected.minor_injuries}</Text></Text>}
-              {selected.serious_injuries > 0 && <Text style={[S.val, { color: '#EF4444' }]}>Serious injuries: {selected.serious_injuries}</Text>}
+              {(selected.minor_injuries > 0 || selected.casualties?.minor_injuries > 0) && <Text style={S.row}>Minor injuries: <Text style={S.val}>{selected.minor_injuries ?? selected.casualties?.minor_injuries}</Text></Text>}
+              {(selected.serious_injuries > 0 || selected.casualties?.serious_injuries > 0) && <Text style={[S.val, { color: '#EF4444' }]}>Serious injuries: {selected.serious_injuries ?? selected.casualties?.serious_injuries}</Text>}
             </View>
             {selected.disaster && (
               <View style={S.card}>
@@ -128,7 +120,7 @@ export const CompletedMissionsScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
       <StatusBar barStyle="light-content" backgroundColor={RED} />
       <View style={S.header}>
         <TouchableOpacity style={S.hBtn} onPress={() => navigation.goBack()}>
@@ -155,7 +147,7 @@ export const CompletedMissionsScreen: React.FC = () => {
         <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}>
           {missions.length === 0 ? (
             <View style={S.empty}>
-              <Text style={{ fontSize: 40 }}>📋</Text>
+              <Text style={{ fontSize: 40, lineHeight: 52 }}>📋</Text>
               <Text style={S.emptyTitle}>No completed missions</Text>
             </View>
           ) : missions.map((m, i) => {
@@ -176,7 +168,7 @@ export const CompletedMissionsScreen: React.FC = () => {
                 </View>
                 <Text style={S.mType}>{(d.type ?? 'Mission').replace(/_/g, ' ')}</Text>
                 <Text style={S.mAddr}>{d.location_address ?? 'Location unknown'}</Text>
-                <Text style={S.mDate}>{formatDate(m.timeline?.completed_at ?? m.updated_at)}</Text>
+                <Text style={S.mDate}>{formatDate(m.completed_at ?? m.timeline?.completed_at ?? m.updated_at)}</Text>
               </TouchableOpacity>
             );
           })}

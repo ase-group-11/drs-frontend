@@ -6,9 +6,10 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar,
+  View, ScrollView, StyleSheet, StatusBar,
   TouchableOpacity, Switch, Modal, ActivityIndicator, Alert, Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@atoms/Text';
@@ -16,6 +17,7 @@ import { colors } from '@theme/colors';
 import { spacing, borderRadius, shadows } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authService, authRequest } from '@services/authService';
+import { API } from '@services/apiConfig';
 
 // ─── Pref storage keys ────────────────────────────────────────────────────
 const P_PUSH  = '@prefs/push_notifications';
@@ -63,6 +65,7 @@ export const SettingsScreen: React.FC = () => {
 
   const [profile, setProfile]       = useState<any>(null);
   const [loading, setLoading]       = useState(true);
+  const [isResponder, setIsResponder] = useState(false);
 
   const [pushNotif, setPushNotif]           = useState(true);
   const [smsAlerts, setSmsAlerts]           = useState(true);
@@ -71,8 +74,11 @@ export const SettingsScreen: React.FC = () => {
 
   const [modal, setModal] = useState<{ title: string; body: string } | null>(null);
 
+  const accent = isResponder ? '#DC2626' : colors.primary;
+
   useEffect(() => {
     loadAll();
+    AsyncStorage.getItem('@auth/user_role').then(role => setIsResponder(role === 'responder'));
   }, []);
 
   const loadAll = async () => {
@@ -96,7 +102,7 @@ export const SettingsScreen: React.FC = () => {
         // GET /users/{id} requires admin auth — use stored data + fetch report stats separately
         setProfile(stored);
         try {
-          const reportData = await authRequest<any>(`/disaster-reports/user/${stored.id}?limit=100`);
+          const reportData = await authRequest<any>(API.reports.byUser(stored.id, 100));
           const reports: any[] = reportData?.reports ?? [];
           const verified = reports.filter((r: any) => r.report_status === 'VERIFIED' || r.report_status === 'verified').length;
           setProfile({
@@ -134,7 +140,7 @@ export const SettingsScreen: React.FC = () => {
   const initials = profile?.full_name?.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2) ?? '?';
 
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView edges={["top", "left", "right"]} style={S.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header */}
@@ -159,12 +165,12 @@ export const SettingsScreen: React.FC = () => {
             body: `Name:  ${profile.full_name ?? '—'}\nPhone: ${profile.phone_number ?? '—'}\nEmail: ${profile.email ?? 'Not set'}\n\nTotal Reports:    ${profile.stats?.total_reports ?? 0}\nVerified Reports: ${profile.stats?.verified_reports ?? 0}`,
           })}
         >
-          <View style={S.avatar}>
-            <Text style={{ fontSize: 22, fontWeight: '700', color: '#fff' }}>{initials}</Text>
+          <View style={[S.avatar, { backgroundColor: accent }]}>
+            <Text style={{ fontSize: 22, lineHeight: 28, fontWeight: '700', color: '#fff' }}>{initials}</Text>
           </View>
           <View style={{ flex: 1, marginLeft: spacing.md }}>
             {loading
-              ? <ActivityIndicator size="small" color={colors.primary} />
+              ? <ActivityIndicator size="small" color={accent} />
               : <>
                   <Text variant="h5">{profile?.full_name ?? 'User'}</Text>
                   <Text variant="bodySmall" color="textSecondary">{profile?.phone_number ?? ''}</Text>
@@ -224,7 +230,7 @@ export const SettingsScreen: React.FC = () => {
             <View style={S.modalHeader}>
               <Text variant="h4">{modal?.title}</Text>
               <TouchableOpacity onPress={() => setModal(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Text style={{ fontSize: 22, color: colors.textSecondary }}>✕</Text>
+                <Text style={{ fontSize: 22, lineHeight: 28, color: colors.textSecondary }}>✕</Text>
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>

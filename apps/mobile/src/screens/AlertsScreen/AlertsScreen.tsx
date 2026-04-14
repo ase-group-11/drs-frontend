@@ -1,317 +1,346 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/AlertsScreen/AlertsScreen.tsx
 //
-// Citizen notification inbox — shows all WS push notifications received.
-// Data comes from notificationStore (persisted AsyncStorage).
-// No API calls — this is a pure notification history screen.
+// Alerts inbox from WS events.
+// Tap behaviour now routes intelligently based on event_type:
+//   • disaster.*          → DisasterDetail (if disaster_id available)
+//   • reroute.triggered   → Home map with reroute geometry applied
+//   • route.updated       → Home map with updated reroute geometry
+//   • evacuation.*        → EvacuationPlans screen
+//   • coordination.*      → DisasterCommand screen
+//   • Other               → marks as read (no navigation)
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, StyleSheet, SafeAreaView, StatusBar, TouchableOpacity,
-  FlatList, RefreshControl,
+  View, ScrollView, StyleSheet, StatusBar,
+  TouchableOpacity, Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { Text } from '@atoms/Text';
-import { colors } from '@theme/colors';
-import { spacing, borderRadius } from '@theme/spacing';
-import Svg, { Path } from 'react-native-svg';
-import { notificationStore, StoredNotification } from '@services/notificationStore';
-import { authRequest } from '@services/authService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView }    from 'react-native-safe-area-context';
+import { useNavigation }   from '@react-navigation/native';
+import { Text }            from '@atoms/Text';
+import { colors }          from '@theme/colors';
+import { spacing }         from '@theme/spacing';
+import Svg, { Path }       from 'react-native-svg';
+import { disasterStore, SEVERITY_COLOR, COLOUR_MAP } from '@services/disasterStore';
+import type { StoredAlert }   from '@services/disasterStore';
+import AsyncStorage            from '@react-native-async-storage/async-storage';
+import { formatTimeAgo }   from '@utils/formatters';
 
-// ── Severity colours from citizen-integration.md Section 10 ──────────────
-const SEV_COLOR: Record<string, string> = {
-  CRITICAL: '#ef4444',
-  HIGH:     '#f97316',
-  MEDIUM:   '#eab308',
-  LOW:      '#3b82f6',
-  INFO:     '#22c55e',
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────
 
-const EVENT_ICON: Record<string, string> = {
-  'disaster.evaluated':    '⚠️',
-  'disaster.verified':     '✅',
-  'disaster.resolved':     '🏁',
-  'disaster.false_alarm':  '❌',
-  'reroute.triggered':     '🔀',
-  'route.updated':         '🛣️',
-  'disaster.cleared':      '✅',
-  'vehicle.location_updated': '🚗',
-  'simulation.complete':   '🏁',
-  'evacuation.triggered':  '🚨',
-};
+const formatTime = formatTimeAgo;
 
+// Human-readable labels for event types shown in the card badge
 const EVENT_LABEL: Record<string, string> = {
-  'disaster.evaluated':    'New Disaster Alert',
-  'disaster.verified':     'Emergency Confirmed',
-  'disaster.resolved':     'Incident Resolved',
-  'disaster.false_alarm':  'False Alarm',
-  'reroute.triggered':     'Route Affected',
-  'route.updated':         'Route Updated',
-  'disaster.cleared':      'Roads Cleared',
-  'vehicle.location_updated': 'Vehicle Update',
-  'simulation.complete':   'Simulation Complete',
-  'evacuation.triggered':  'Evacuation Alert',
+  'disaster.evaluated':      'New Disaster',
+  'disaster.verified':       'Verified',
+  'disaster.dispatched':     'Dispatched',
+  'disaster.updated':        'Updated',
+  'disaster.resolved':       'Resolved',
+  'disaster.false_alarm':    'False Alarm',
+  'disaster.cleared':        'Cleared',
+  'disaster.backup_requested': 'Backup',
+  'disaster.unit_completed': 'Unit Done',
+  'reroute.triggered':       'Reroute',
+  'route.updated':           'Route Change',
+  'evacuation.triggered':    'Evacuation',
+  'coordination.team_assigned': 'Assigned',
+  'coordination.escalation': 'Escalation',
+  'vehicle.location_updated': 'Vehicle',
+  'simulation.complete':     'Simulation',
 };
 
-const getTimeAgo = (iso: string): string => {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1)   return 'Just now';
-  if (m < 60)  return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24)  return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+// Icons shown next to event_type badge
+const EVENT_ICON: Record<string, string> = {
+  'disaster.evaluated':     '🔴',
+  'disaster.verified':      '✅',
+  'disaster.dispatched':    '🚒',
+  'disaster.updated':       '📋',
+  'disaster.resolved':      '✅',
+  'disaster.false_alarm':   '🔕',
+  'disaster.cleared':       '🟢',
+  'disaster.backup_requested': '🆘',
+  'reroute.triggered':      '🗺️',
+  'route.updated':          '🔄',
+  'evacuation.triggered':   '🚨',
+  'coordination.team_assigned': '👥',
+  'coordination.escalation': '⬆️',
+  'vehicle.location_updated': '🚗',
+  'simulation.complete':    '✓',
 };
+
+// Determine whether this alert can navigate somewhere
+const getNavHint = (alert: StoredAlert): string | null => {
+  const et = alert.event_type;
+  const disasterId = alert.data?.disaster_id ?? alert.data?.id;
+
+  if (et.startsWith('disaster.') && disasterId)        return 'Tap to view disaster →';
+  if (et === 'reroute.triggered' || et === 'route.updated') return 'Tap to view on map →';
+  if (et.startsWith('evacuation.'))                    return 'Tap to view evacuation plans →';
+  if (et.startsWith('coordination.'))                  return 'Tap to view command →';
+  return null;
+};
+
+// ─── Component ────────────────────────────────────────────────────────────
 
 export const AlertsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  const [notifications, setNotifications] = useState<StoredNotification[]>([]);
-  const [refreshing, setRefreshing]        = useState(false);
-  const [tab, setTab]                      = useState<'all'|'critical'|'info'>('all');
+  const [, forceRender] = useState(0);
+  const [role, setRole] = useState<string | null>(null); // null = not yet read
 
   useEffect(() => {
-    // Load from store on mount
-    load();
-    // Subscribe to real-time changes (new notifications arrive while screen is open)
-    const unsub = notificationStore.subscribe(setNotifications);
-    // Mark all as read when screen opens
-    notificationStore.markAllRead();
-    return () => unsub();
+    disasterStore.loadPersistedAlerts();
+    // Read stored role — hide Clear All only for confirmed responders
+    AsyncStorage.getItem('@auth/user_role').then(r => setRole(r));
+    const unsub = disasterStore.subscribe(() => forceRender(n => n + 1));
+    return unsub;
   }, []);
 
-  const load = async () => {
-    const all = await notificationStore.getAll();
-    setNotifications(all);
-    await notificationStore.markAllRead();
+  const alerts = disasterStore.getState().alerts;
+  const unread  = alerts.filter(a => !a.isRead).length;
+
+  const getColor = (a: StoredAlert): string => {
+    if (a.colour && COLOUR_MAP[a.colour]) return COLOUR_MAP[a.colour];
+    return SEVERITY_COLOR[a.severity] ?? '#6B7280';
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
+  // ── Smart tap handler — role-aware ───────────────────────────────────────
+  const handleTap = (alert: StoredAlert) => {
+    if (!alert.isRead) disasterStore.markAlertRead(alert.id);
 
-  const filtered = notifications.filter(n => {
-    if (tab === 'critical') {
-      return n.severity === 'CRITICAL' || n.severity === 'HIGH';
+    const et         = alert.event_type;
+    const data       = alert.data ?? {};
+    const disasterId = data.disaster_id ?? data.id;
+    const isCitizen  = role !== 'responder';
+
+    // ── Disaster events ────────────────────────────────────────────────────
+    if (et.startsWith('disaster.') && disasterId) {
+      // Citizens → citizen-safe screen (no deployment/unit data)
+      // Responders → full detail with deployments tab
+      navigation.navigate(
+        isCitizen ? ('DisasterAlertDetail' as any) : ('DisasterDetail' as any),
+        isCitizen ? { disasterId, alert } : { disasterId },
+      );
+      return;
     }
-    if (tab === 'info') {
-      return n.severity === 'INFO' || n.severity === 'LOW' ||
-             ['disaster.resolved', 'disaster.cleared', 'disaster.false_alarm'].includes(n.event_type);
-    }
-    return true;
-  });
 
-  const critCount = notifications.filter(n => n.severity === 'CRITICAL' || n.severity === 'HIGH').length;
-
-  const handleAlertPress = async (item: StoredNotification) => {
-    // Mark read
-    await notificationStore.markRead(item.timestamp);
-    load();
-
-    // reroute.triggered: use cached geometry (pre-fetched when alert arrived)
-    if (item.event_type === 'reroute.triggered' || item.event_type === 'route.updated') {
-      const data = item.data ?? {};
-      const disasterId = data.disaster_id as string;
-
-      // Use cached geometry stored when alert first arrived — avoids 404 on expired plans
-      if (item.cachedRoutePts && item.cachedRoutePts.length > 1) {
-        console.log('[AlertsScreen] Using cached geometry:', item.cachedRoutePts.length, 'pts');
+    // ── Reroute / route.updated → Home map ────────────────────────────────
+    if (et === 'reroute.triggered' || et === 'route.updated') {
+      const storedAlert = alert as any;
+      if (storedAlert.cachedRoutePts && storedAlert.cachedRoutePts.length > 1) {
         navigation.navigate('Home' as any, {
-          reroutePts:      item.cachedRoutePts,
-          rerouteDisaster: disasterId,
-          rerouteMeta:     item.cachedRouteMeta ?? null,
+          reroutePts:      storedAlert.cachedRoutePts,
+          rerouteMeta:     storedAlert.cachedRouteMeta ?? null,
+          rerouteDisaster: disasterId ?? '',
         });
-        return;
-      }
-
-      // Fallback: try live fetch (only works if plan still active)
-      const routeAssignments: Record<string, string> = data.route_assignments ?? {};
-      const routes: any[] = data.routes ?? [];
-      try {
-        const stored = await AsyncStorage.getItem('@auth/user_data');
-        const user = stored ? JSON.parse(stored) : null;
-        const routeId = user ? routeAssignments[user.id] : null;
-        if (!routeId) { navigation.navigate('Home' as any); return; }
-
-        console.log('[AlertsScreen] No cache, fetching live geometry:', disasterId, routeId);
-        const routeData = await authRequest<any>(`/reroute/status/${disasterId}/route/${routeId}`);
-        const pts: [number, number][] = (routeData?.points ?? []).map(
-          (p: number[]) => [p[1], p[0]] as [number, number]
+      } else if (disasterId) {
+        navigation.navigate(
+          isCitizen ? ('DisasterAlertDetail' as any) : ('DisasterDetail' as any),
+          { disasterId },
         );
-        const routeMeta = routes.find((r: any) => r.route_id === routeId);
-        navigation.navigate('Home' as any, {
-          reroutePts:      pts,
-          rerouteDisaster: disasterId,
-          rerouteMeta:     routeMeta
-            ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters }
-            : null,
-        });
-      } catch (e: any) {
-        console.error('[AlertsScreen] Reroute fetch failed:', e.message);
-        navigation.navigate('Home' as any);
       }
       return;
     }
 
-    // disaster.evaluated / verified: go to map (disaster marker already drawn)
-    if (['disaster.evaluated', 'disaster.verified', 'disaster.backup_requested',
-         'evacuation.triggered'].includes(item.event_type)) {
-      navigation.navigate('Home' as any);
+    // ── Evacuation → EvacuationPlans (has its own citizen/responder split) ─
+    if (et.startsWith('evacuation.')) {
+      navigation.navigate('EvacuationPlans' as any);
+      return;
     }
+
+    // ── Coordination events ────────────────────────────────────────────────
+    if (et.startsWith('coordination.')) {
+      if (isCitizen) {
+        // No command screen for citizens — show disaster detail if available
+        if (disasterId) {
+          navigation.navigate('DisasterAlertDetail' as any, { disasterId });
+        }
+        // else: alert already marked read, stay on screen
+      } else {
+        navigation.navigate('DisasterCommand' as any);
+      }
+      return;
+    }
+
+    // All other events — already marked read above, no navigation needed
   };
 
-  const renderItem = ({ item }: { item: StoredNotification }) => {
-    const colour    = SEV_COLOR[item.severity] ?? '#6B7280';
-    const icon      = EVENT_ICON[item.event_type] ?? '📋';
-    const label     = EVENT_LABEL[item.event_type] ?? item.event_type.replace(/\./g, ' ');
-    const tappable  = ['reroute.triggered', 'route.updated', 'disaster.evaluated',
-                       'disaster.verified', 'disaster.backup_requested',
-                       'evacuation.triggered'].includes(item.event_type);
-
-    return (
-      <TouchableOpacity
-        style={[S.card, !item.isRead && S.cardUnread, { borderLeftColor: colour }]}
-        onPress={() => handleAlertPress(item)}
-        activeOpacity={tappable ? 0.75 : 1}
-      >
-        {!item.isRead && <View style={[S.unreadDot, { backgroundColor: colour }]} />}
-
-        <View style={S.cardTop}>
-          <View style={[S.iconCircle, { backgroundColor: colour + '18' }]}>
-            <Text style={{ fontSize: 20 }}>{icon}</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: spacing.md }}>
-            <View style={S.cardTitleRow}>
-              <Text style={S.cardLabel}>{label}</Text>
-              <View style={[S.sevPill, { backgroundColor: colour + '20' }]}>
-                <Text style={[S.sevTxt, { color: colour }]}>{item.severity}</Text>
-              </View>
-            </View>
-            <Text style={S.cardTitle} numberOfLines={2}>{item.title}</Text>
-          </View>
-        </View>
-
-        <Text style={S.cardMessage} numberOfLines={3}>{item.message}</Text>
-
-        <Text style={S.cardTime}>{getTimeAgo(item.storedAt ?? item.timestamp)}</Text>
-        {tappable && (
-          <Text style={S.tapHint}>
-            {['reroute.triggered', 'route.updated'].includes(item.event_type)
-              ? 'Tap to view route on map'
-              : 'Tap to open map'}
-          </Text>
-        )}
-      </TouchableOpacity>
-    );
+  const handleClearAll = () => {
+    Alert.alert('Clear All Alerts', 'Remove all alerts from your inbox?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear All', style: 'destructive', onPress: () => disasterStore.clearAlerts() },
+    ]);
   };
 
+  // ─── Render ─────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView style={S.safe} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header */}
       <View style={S.header}>
         <TouchableOpacity style={S.hBtn} onPress={() => navigation.goBack()}>
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M19 12H5M12 19l-7-7 7-7" stroke={colors.textPrimary}
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M19 12H5M12 19l-7-7 7-7"
+              stroke={colors.textPrimary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
         </TouchableOpacity>
-        <Text variant="h4">Active Alerts</Text>
-        <TouchableOpacity
-          style={S.hBtn}
-          onPress={async () => { await notificationStore.clear(); setNotifications([]); }}
-        >
-          <Text style={{ fontSize: 12, color: '#9CA3AF', fontWeight: '600' }}>Clear</Text>
+
+        <View style={{ alignItems: 'center' }}>
+          <Text variant="h4">Alerts</Text>
+          {unread > 0 && (
+            <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '600' }}>
+              {unread} unread
+            </Text>
+          )}
+        </View>
+
+        <TouchableOpacity style={S.hBtn} onPress={() => disasterStore.markAllAlertsRead()}>
+          <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>Read All</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
-      <View style={S.tabs}>
-        {[
-          { key: 'all',      label: 'All',      count: notifications.length },
-          { key: 'critical', label: 'Critical',  count: critCount },
-          { key: 'info',     label: 'Updates',   count: notifications.length - critCount },
-        ].map(t => (
-          <TouchableOpacity
-            key={t.key}
-            style={[S.tab, tab === t.key && S.tabActive]}
-            onPress={() => setTab(t.key as any)}
-          >
-            <Text style={[S.tabTxt, tab === t.key && S.tabTxtActive]}>
-              {t.label} ({t.count})
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <FlatList
-        data={filtered}
-        keyExtractor={(item, i) => item.timestamp + i}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: spacing.md, flexGrow: 1 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
+      {/* List */}
+      <ScrollView contentContainerStyle={{ padding: spacing.md }}>
+        {alerts.length === 0 ? (
           <View style={S.empty}>
-            <Text style={{ fontSize: 48 }}>🔔</Text>
-            <Text style={S.emptyTitle}>No Notifications Yet</Text>
-            <Text style={S.emptySub}>
-              Real-time alerts from the Emergency Response System will appear here as they arrive.
+            <Text style={{ fontSize: 52, lineHeight: 66 }}>🔔</Text>
+            <Text style={S.emptyTitle}>No alerts yet</Text>
+            <Text style={S.emptyBody}>
+              Real-time WebSocket events will appear here as they come in.
             </Text>
           </View>
-        }
-      />
+        ) : (
+          <View>
+            {alerts.map((alert, i) => {
+              const col     = getColor(alert);
+              const navHint = getNavHint(alert);
+              const label   = EVENT_LABEL[alert.event_type] ?? alert.event_type;
+              const icon    = EVENT_ICON[alert.event_type] ?? '📢';
+
+              return (
+                <TouchableOpacity
+                  key={alert.id ?? `alert-${i}`}
+                  style={[S.card, { borderLeftColor: col }, !alert.isRead && S.cardUnread]}
+                  onPress={() => handleTap(alert)}
+                  activeOpacity={navHint ? 0.75 : 0.95}
+                >
+                  {/* Top row: severity + event type + service + unread dot */}
+                  <View style={S.topRow}>
+                    <View style={[S.sevDot, { backgroundColor: col }]} />
+                    <Text style={[S.sevLabel, { color: col }]}>{alert.severity}</Text>
+
+                    <View style={[S.eventPill, { backgroundColor: col + '18' }]}>
+                      <Text style={{ fontSize: 10, marginRight: 3 }}>{icon}</Text>
+                      <Text style={[S.eventTxt, { color: col }]}>{label}</Text>
+                    </View>
+
+                    <Text style={S.serviceLabel} numberOfLines={1}>
+                      {alert.service}
+                    </Text>
+
+                    {!alert.isRead && <View style={[S.unreadDot, { backgroundColor: col }]} />}
+                  </View>
+
+                  {/* Title */}
+                  <Text style={S.alertTitle}>{alert.title}</Text>
+
+                  {/* Message */}
+                  <Text style={S.alertMsg} numberOfLines={3}>{alert.message}</Text>
+
+                  {/* Footer: time + nav hint + read status */}
+                  <View style={S.footer}>
+                    <Text style={S.alertTime}>{formatTime(alert.timestamp)}</Text>
+                    {navHint ? (
+                      <Text style={[S.navHint, { color: col }]}>{navHint}</Text>
+                    ) : alert.isRead ? (
+                      <Text style={S.readLabel}>✓ Read</Text>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* Clear all — citizens only */}
+            {role !== 'responder' && (
+              <TouchableOpacity style={S.clearBtn} onPress={handleClearAll}>
+                <Text style={S.clearBtnTxt}>🗑️  Clear All Alerts</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
+// ─── Styles ───────────────────────────────────────────────────────────────
+
 const S = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: '#F8FAFC' },
-  header: {
+  safe:       { flex: 1, backgroundColor: '#F8FAFC' },
+  header:     {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
-  },
-  hBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-
-  tabs: {
-    flexDirection: 'row', backgroundColor: colors.white,
+    backgroundColor: colors.white,
     borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
   },
-  tab:       { flex: 1, paddingVertical: spacing.md, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: colors.primary },
-  tabTxt:    { fontSize: 13, color: '#9CA3AF', fontWeight: '500' },
-  tabTxtActive: { color: colors.primary, fontWeight: '700' },
+  hBtn:       { width: 50, height: 40, justifyContent: 'center', alignItems: 'center' },
 
-  card: {
-    backgroundColor: '#fff', borderRadius: borderRadius.lg, padding: spacing.md,
-    marginBottom: spacing.sm, borderLeftWidth: 3, borderLeftColor: '#E5E7EB',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
-    position: 'relative',
-  },
-  cardUnread: { backgroundColor: '#FAFCFF' },
-  unreadDot: {
-    position: 'absolute', top: spacing.md, right: spacing.md,
-    width: 8, height: 8, borderRadius: 4,
-  },
-  cardTop:      { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.sm },
-  iconCircle:   { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 },
-  cardLabel:    { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.5, textTransform: 'uppercase' },
-  sevPill:      { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  sevTxt:       { fontSize: 10, fontWeight: '800' },
-  cardTitle:    { fontSize: 14, fontWeight: '600', color: '#1F2937', lineHeight: 20 },
-  cardMessage:  { fontSize: 13, color: '#6B7280', lineHeight: 19, marginBottom: spacing.xs },
-  cardTime:     { fontSize: 11, color: '#9CA3AF' },
-  tapHint:     { fontSize: 11, color: '#3B82F6', marginTop: 5, fontWeight: '600' },
+  empty:      { alignItems: 'center', paddingTop: 80, paddingHorizontal: spacing.xl },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginTop: 12 },
+  emptyBody:  { fontSize: 13, color: '#9CA3AF', textAlign: 'center', marginTop: 8, lineHeight: 20 },
 
-  empty:      { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, paddingHorizontal: spacing.xl },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#374151', marginTop: spacing.md },
-  emptySub:   { fontSize: 14, color: '#9CA3AF', textAlign: 'center', marginTop: spacing.sm, lineHeight: 20 },
+  card:       {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderLeftWidth: 4,
+    padding: spacing.md,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardUnread: { backgroundColor: '#FFFBEB' },
+
+  topRow:     {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 6, marginBottom: 8,
+  },
+  sevDot:     { width: 8, height: 8, borderRadius: 4 },
+  sevLabel:   { fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
+  eventPill:  {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8,
+  },
+  eventTxt:   { fontSize: 10, fontWeight: '700' },
+  serviceLabel: {
+    fontSize: 10, color: '#9CA3AF',
+    marginLeft: 'auto', maxWidth: 80,
+  },
+  unreadDot:  { width: 8, height: 8, borderRadius: 4 },
+
+  alertTitle: { fontSize: 15, fontWeight: '700', color: '#1F2937', marginBottom: 4 },
+  alertMsg:   { fontSize: 13, color: '#6B7280', lineHeight: 19 },
+
+  footer:     {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  alertTime:  { fontSize: 11, color: '#9CA3AF' },
+  navHint:    { fontSize: 11, fontWeight: '700' },
+  readLabel:  { fontSize: 10, color: '#9CA3AF' },
+
+  clearBtn:   {
+    marginTop: 12, paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  clearBtnTxt: { color: '#6B7280', fontWeight: '600', fontSize: 14 },
 });
 
 export default AlertsScreen;

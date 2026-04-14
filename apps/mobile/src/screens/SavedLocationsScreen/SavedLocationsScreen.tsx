@@ -1,13 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/SavedLocationsScreen/SavedLocationsScreen.tsx
-// FIXED: @/components/atoms/Text → @atoms/Text
-//        Back button now calls navigation.goBack()
+// FIXED: SafeAreaView from react-native-safe-area-context (not react-native)
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React from 'react';
-import {
-  View, FlatList, StyleSheet, SafeAreaView, StatusBar, TouchableOpacity,
-} from 'react-native';
+import { View, FlatList, StyleSheet, StatusBar, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { LocationCard } from '@molecules/LocationCard';
 import { Text } from '@atoms/Text';
@@ -53,11 +51,11 @@ export const SavedLocationsScreen: React.FC = () => {
   const navigation = useNavigation();
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
             <Path
               d="M19 12H5M12 19l-7-7 7-7"
@@ -69,7 +67,7 @@ export const SavedLocationsScreen: React.FC = () => {
           </Svg>
         </TouchableOpacity>
         <Text variant="h4" color="textPrimary">Saved Locations</Text>
-        <TouchableOpacity style={styles.headerBtn}>
+        <TouchableOpacity style={styles.headerBtn} activeOpacity={0.7}>
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
             <Circle cx="12" cy="12" r="10" stroke={colors.primary} strokeWidth="2" />
             <Path d="M12 8v8M8 12h8" stroke={colors.primary} strokeWidth="2" strokeLinecap="round" />

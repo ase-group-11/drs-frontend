@@ -37,7 +37,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   content: {
-    paddingHorizontal: spacing.md,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xl,  // extra right padding so last chip isn't clipped
     paddingVertical: spacing.sm,
     gap: spacing.sm,
   },

@@ -1,24 +1,37 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/screens/ActiveMissionsScreen/ActiveMissionsScreen.tsx
-// All buttons functional. Static data shown when API has no missions.
+//
+// Active Missions with per-disaster group chat in mission detail.
+//
+// Mission Detail has 2 tabs:
+//   Details — mission info, deployment details, action buttons
+//   Group Chat — per-disaster chat (AsyncStorage, key = @disaster_chat:{disaster_id})
+//
+// All responders assigned to the SAME disaster share one chat room.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, ScrollView, StyleSheet, SafeAreaView, StatusBar, TouchableOpacity,
+  View, ScrollView, StyleSheet, StatusBar, TouchableOpacity,
   ActivityIndicator, Alert, Linking, Modal, TextInput,
+  FlatList, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { Text }  from '@atoms/Text';
-import { colors } from '@theme/colors';
-import { spacing, borderRadius } from '@theme/spacing';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
+import { Text } from '@atoms/Text';
+import { spacing } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
-import { authService, authRequest } from '@services/authService';
+import { authService, authRequest, getUserUnitInfo } from '@services/authService';
 import { wsService } from '@services/wsService';
+import { showLocalNotification } from '@services/notificationService';
+import { disasterStore } from '@services/disasterStore';
+import { disasterService } from '@services/disasterService';
+import { API, WS_URL } from '@services/apiConfig';
+import { formatTime, formatTimeAgo } from '@utils/formatters';
 
 const RED = '#DC2626';
 
-// ─── Types ────────────────────────────────────────────────────────────────
 interface Mission {
   id: string;
   disaster_id: string;
@@ -35,69 +48,171 @@ interface Mission {
   unit_members: number;
 }
 
-// ─── Static data ──────────────────────────────────────────────────────────
-const now = Date.now();
-// Static data removed — real API data only
+interface ChatMessage {
+  id: string;
+  seq?: number;
+  sender: string;       // sender_name from backend
+  senderId: string;     // sender_id from backend
+  sender_type?: string; // 'admin' | 'unit'
+  text: string;         // message field from backend
+  timestamp: string;    // sent_at from backend
+  type?: 'message' | 'system' | 'error' | 'ping' | 'pong';
+  isSystem?: boolean;
+}
 
-// ─── Lookups ──────────────────────────────────────────────────────────────
-const SEV_COLOR: Record<string, string> = {
-  CRITICAL: '#DC2626', HIGH: '#F97316', MEDIUM: '#EAB308', LOW: '#3B82F6',
-};
-const STATUS_COLOR: Record<string, string> = {
-  dispatched: '#DC2626', en_route: '#F97316', on_scene: '#8B5CF6',
-  in_progress: '#EF4444', completed: '#22C55E', cancelled: '#6B7280',
-};
+const SEV_COLOR: Record<string, string> = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#3b82f6' };
+const STATUS_COLOR: Record<string, string> = { dispatched: '#DC2626', en_route: '#F97316', on_scene: '#8B5CF6', in_progress: '#EF4444', completed: '#22C55E', cancelled: '#6B7280' };
 const TYPE_EMOJI: Record<string, string> = {
-  FIRE: '🔥', FLOOD: '🌊', STORM: '⛈️', EARTHQUAKE: '🏚️',
-  HURRICANE: '🌀', TORNADO: '🌪️', TSUNAMI: '🌊',
-  DROUGHT: '☀️', HEATWAVE: '🌡️', COLDWAVE: '❄️', OTHER: '⚠️',
+  FLOOD: '🌊', FIRE: '🔥', EARTHQUAKE: '🏚️', HURRICANE: '🌀',
+  TORNADO: '🌪️', TSUNAMI: '🌊', DROUGHT: '☀️', HEATWAVE: '🌡️',
+  COLDWAVE: '🥶', STORM: '⛈️', OTHER: '⚠️',
 };
 const STATUS_OPTIONS = [
-  { id: 'dispatched',  emoji: '📋', label: 'Dispatched',  desc: 'Unit assigned & confirmed' },
-  { id: 'en_route',    emoji: '🚗', label: 'En Route',    desc: 'Traveling to scene' },
-  { id: 'on_scene',    emoji: '📍', label: 'On Scene',    desc: 'Arrived at location' },
-  { id: 'in_progress', emoji: '⚡', label: 'In Progress', desc: 'Actively responding' },
-  { id: 'completed',   emoji: '✅', label: 'Completed',   desc: 'Task finished' },
+  { id: 'EN_ROUTE',    emoji: '🚗', label: 'En Route',    desc: 'Traveling to scene' },
+  { id: 'ON_SCENE',    emoji: '📍', label: 'On Scene',    desc: 'Arrived at location' },
+  { id: 'IN_PROGRESS', emoji: '⚡', label: 'In Progress', desc: 'Actively responding' },
+  { id: 'COMPLETED',   emoji: '✅', label: 'Completed',   desc: 'Task finished' },
 ];
 
-const formatAgo = (iso: string) => {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60)           return 'just now';
-  if (s < 3600)         return `${Math.floor(s / 60)} mins ago`;
-  return `${Math.floor(s / 3600)} hr${Math.floor(s / 3600) > 1 ? 's' : ''} ago`;
+// Parse UTC ISO timestamp from backend (may be missing Z suffix)
+const parseUTCTimestamp = (ts: string): Date => {
+  if (!ts) return new Date();
+  const normalized = ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z';
+  return new Date(normalized);
 };
+// Use shared timezone-safe formatter for chat message times
+const formatChatTime = (ts: string): string => formatTime(ts);
 
-// ─── Component ────────────────────────────────────────────────────────────
+const sortMessages = (msgs: ChatMessage[]): ChatMessage[] =>
+  [...msgs].sort((a, b) => {
+    const ta = parseUTCTimestamp(a.timestamp).getTime();
+    const tb = parseUTCTimestamp(b.timestamp).getTime();
+    if (ta !== tb) return ta - tb;
+    if (a.seq != null && b.seq != null) return a.seq - b.seq;
+    return 0;
+  });
+
+const formatAgo = (iso: string) => formatTimeAgo(iso);
+
 export const ActiveMissionsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const [tab, setTab] = useState<'active' | 'completed'>('active');
+  const [active, setActive] = useState<Mission[]>([]);
+  const [completed, setCompleted] = useState<Mission[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [unitLabel, setUnitLabel] = useState('Unit');
 
-  // Connect WS for responder real-time alerts
-  React.useEffect(() => {
-    wsService.connect(true); // responder mode — no location ping
-    return () => wsService.disconnect();
-  }, []);
+  // Detail view
+  const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
+  const [missionDetail, setMissionDetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailTab, setDetailTab] = useState<'details' | 'chat'>('details');
+  const [isCompletedMission, setIsCompletedMission] = useState(false);  // true = read-only history
 
-  const [tab, setTab]               = useState<'active' | 'completed'>('active');
-  const [active, setActive]         = useState<Mission[]>([]);
-  const [completed, setCompleted]   = useState<Mission[]>([]);
-  const [error, setError]           = useState<string | null>(null);
-  const [loading, setLoading]       = useState(false);
-  const [unitLabel, setUnitLabel]   = useState('Unit F-12');
-
-  // Status modal state
-  const [modal, setModal]               = useState<Mission | null>(null);
-  const [selStatus, setSelStatus]       = useState('');
-  const [sitrep, setSitrep]             = useState('');
-  const [tags, setTags]                 = useState<string[]>([]);
-  const [minorInjuries, setMinorInjuries]   = useState(0);
+  // Status modal
+  const [statusModal, setStatusModal] = useState<Mission | null>(null);
+  const [selStatus, setSelStatus] = useState('');
+  const [sitrep, setSitrep] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [minorInjuries, setMinorInjuries] = useState(0);
   const [seriousInjuries, setSeriousInjuries] = useState(0);
   const [locationVerified, setLocationVerified] = useState(false);
   const [requestBackupFlag, setRequestBackupFlag] = useState(false);
   const [isFalseAlarm, setIsFalseAlarm] = useState(false);
   const [assessmentNotes, setAssessmentNotes] = useState('');
-  const [submitting, setSubmitting]     = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { fetchMissions(); }, []);
+  // Chat state — real-time WebSocket
+  const [messages, setMessages]         = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput]       = useState('');
+  const [userName, setUserName]         = useState('');
+  const [userId, setUserId]             = useState('');
+  const [unreadChat, setUnreadChat]     = useState(0);
+  const [chatConnected, setChatConnected] = useState(false);
+  const [chatConnecting, setChatConnecting] = useState(false);
+  const [chatError, setChatError]       = useState<string | null>(null);
+  const [membersOnline, setMembersOnline] = useState(0);
+  const [chatHistoryLoading, setChatHistoryLoading] = useState(false);
+  const chatWsRef   = useRef<WebSocket | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+  const chatDisasterRef = useRef<string | null>(null);
+  const isCompletedRef  = useRef<boolean>(false);
+  const userIdRef       = useRef<string>('');
+  const detailTabRef    = useRef<'details' | 'chat'>('details');
+
+  // Subscribe to disasterStore so any external mission changes reflect immediately
+  useEffect(() => {
+    const unsub = disasterStore.subscribe(() => {
+      const storeMissions = disasterStore.getState().activeMissions;
+      if (storeMissions.length === 0) return; // store cleared — don't override local list
+      // Re-map store missions to local Mission shape if store has fresher data
+      setActive(prev => prev.map(m => {
+        const updated = storeMissions.find(s => s.id === m.id || s.deployment_id === m.id);
+        if (!updated) return m;
+        return { ...m, status: (updated.deployment_status ?? m.status).toLowerCase() };
+      }).filter(m => storeMissions.some(s => s.id === m.id || s.deployment_id === m.id)));
+    });
+    return unsub;
+  }, []);
+
+  // WS — subscribe to alerts only, do NOT connect/disconnect the singleton
+  // wsService lifecycle is owned by HomeScreen; calling disconnect() here
+  // would kill the connection for the entire app when navigating back.
+  useEffect(() => {
+    const unsub = wsService.onAlert((alert) => {
+      if (['disaster.dispatched', 'disaster.verified', 'disaster.updated', 'disaster.resolved',
+           'disaster.false_alarm', 'disaster.unit_completed', 'coordination.team_assigned'].includes(alert.event_type)) {
+        fetchMissions();
+      }
+      if (alert.event_type === 'disaster.backup_requested') Alert.alert('🆘 BACKUP', alert.message, [{ text: 'OK' }]);
+      if (alert.event_type === 'evacuation.triggered') Alert.alert('🚨 EVACUATION', alert.message ?? '', [{ text: 'View', onPress: () => navigation.navigate('EvacuationPlans' as any) }, { text: 'OK' }]);
+    });
+    return () => { unsub(); }; // only unsubscribe, never disconnect
+  }, []);
+
+  useEffect(() => {
+    fetchMissions();
+    loadUser();
+  }, []);
+
+  // Handle deep link from notification tap — openMissionId param
+  useEffect(() => {
+    const params = route?.params as any;
+    if (!params?.openMissionId) return;
+    // Wait for missions to load then open the matching mission
+    const timer = setTimeout(() => {
+      setActive(prev => {
+        const mission = prev.find(m => m.id === params.openMissionId || m.disaster_id === params.openMissionId);
+        if (mission) {
+          openDetail(mission);
+          // Switch directly to chat tab
+          setTimeout(() => {
+            setDetailTab('chat');
+            detailTabRef.current = 'chat';
+          }, 300);
+        }
+        return prev;
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [route?.params]);
+
+  // Refresh whenever screen comes into focus (e.g. navigating back from detail)
+  useFocusEffect(useCallback(() => {
+    fetchMissions();
+  }, []));
+
+  const loadUser = async () => {
+    try {
+      const u = await authService.getStoredUser() as any;
+      setUserName(u?.full_name ?? u?.employee_id ?? 'Me');
+      const uid = u?.id ?? '';
+      setUserId(uid);
+      userIdRef.current = uid;
+    } catch {}
+  };
 
   const fetchMissions = async () => {
     setLoading(true);
@@ -105,577 +220,891 @@ export const ActiveMissionsScreen: React.FC = () => {
       const user = await authService.getStoredUser();
       if (!user?.id) { setLoading(false); return; }
 
-      // The deployment API needs the emergency_units UUID (not employee_id).
-      // Look up which unit this team member belongs to via unit_crew table.
-      let unitUUID: string | null = null;
-      let unitCode = 'Unit F-12';
-      try {
-        const unitsData = await authRequest<any>('/emergency-units/');
-        const units: any[] = unitsData?.units ?? [];
-        // Find the unit where this team member is crew or commander
-        // The API returns crew_count but not crew list, so we try each unit's
-        // crew endpoint. Simpler: filter by department matching user's department.
-        const userDept = (user.department ?? '').toUpperCase();
-        const myUnit = units.find((u: any) =>
-          u.department?.toUpperCase() === userDept
-        ) ?? units[0];
-        if (myUnit?.id) {
-          unitUUID = myUnit.id;
-          unitCode = myUnit.unit_code ?? myUnit.unit_name ?? 'Unit';
-        }
-      } catch {
-        // Could not resolve unit — fall back to static data
-      }
-
+      // Use getUserUnitInfo() — same as File 1, avoids inline /emergency-units/ fetch
+      const { unitId, unitCodes } = await getUserUnitInfo();
+      const unitCode = unitCodes.length > 0 ? unitCodes[0] : 'Unit';
       setUnitLabel(unitCode);
-
-      if (!unitUUID) { setLoading(false); return; }
+      if (!unitId) { setLoading(false); return; }
 
       const [a, c] = await Promise.all([
-        authRequest<any>(`/deployments/unit/${unitUUID}/active`),
-        authRequest<any>(`/deployments/unit/${unitUUID}/completed?limit=20`),
+        authRequest<any>(API.deployments.unitActive(unitId)),
+        authRequest<any>(API.deployments.unitCompleted(unitId, 20)),
       ]);
 
       const toM = (m: any): Mission => ({
-        id:              m.id,
-        disaster_id:     m.disaster_id ?? m.id,
-        disaster_type:   (m.disaster?.disaster_type ?? m.disaster_type ?? 'OTHER').toUpperCase(),
-        severity:        (m.disaster?.severity      ?? m.severity      ?? 'MEDIUM').toUpperCase(),
-        location_address: m.disaster?.location_address ?? m.location_address ?? 'Unknown location',
-        coordinates:     m.disaster?.coordinates ?? { lat: 53.3498, lon: -6.2603 },
-        status:          (m.status ?? 'dispatched').toLowerCase(),
-        assigned_at:     m.assigned_at ?? m.created_at ?? new Date().toISOString(),
-        distance_km:     m.distance_km  ? String(m.distance_km)     : '—',
-        people_affected: m.people_affected ? String(m.people_affected) : '—',
-        eta_minutes:     m.eta_minutes  ? String(m.eta_minutes)     : '—',
-        unit_id:         m.unit_id ?? 'Unit F-12',
-        unit_members:    m.unit_members ?? 4,
+        id: m.id ?? m.deployment_id,
+        disaster_id: m.disaster_id ?? m.disaster?.id ?? m.id,
+        disaster_type: (m.disaster?.disaster_type ?? m.disaster?.type ?? m.disaster_type ?? 'OTHER').toUpperCase(),
+        severity: (m.disaster?.severity ?? m.severity ?? 'MEDIUM').toUpperCase(),
+        location_address: m.disaster?.location_address ?? m.location_address ?? 'Unknown',
+        coordinates: m.disaster?.location ?? m.disaster?.coordinates ?? { lat: 53.3498, lon: -6.2603 },
+        status: (m.deployment_status ?? m.status ?? 'dispatched').toLowerCase(),
+        assigned_at: m.timeline?.assigned_at ?? m.assigned_at ?? m.timeline?.dispatched_at ?? m.created_at ?? new Date().toISOString(),
+        distance_km: m.distance_km ? String(m.distance_km) : '—',
+        people_affected: m.disaster?.people_affected ? String(m.disaster.people_affected) : '—',
+        eta_minutes: m.eta_minutes ? String(m.eta_minutes) : '—',
+        unit_id: m.unit_id ?? m.unit?.unit_code ?? unitCode,
+        unit_members: m.unit?.crew_count ?? m.unit_members ?? 4,
       });
 
-      if ((a?.active_missions?.length   ?? 0) > 0) setActive(a.active_missions.map(toM));
-      if ((c?.completed_missions?.length ?? 0) > 0) setCompleted(c.completed_missions.map(toM));
-    } catch (e: any) {
-      console.error('[ActiveMissions] Failed to load:', e);
-      setError(e.message || 'Could not load missions. Check your connection.');
-      setActive([]);
-      setCompleted([]);
-    }
+      const al = a?.active_missions ?? a?.missions ?? (Array.isArray(a) ? a : []);
+      const cl = c?.completed_missions ?? c?.missions ?? (Array.isArray(c) ? c : []);
+      setActive(al.map(toM));
+      setCompleted(cl.map(toM));
+      disasterStore.setActiveMissions(al);
+    } catch (e: any) { setError(e.message || 'Failed'); }
     setLoading(false);
   };
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const openModal = (m: Mission) => {
-    setModal(m);
-    setSelStatus(m.status);
-    setSitrep('');
-    setTags([]);
-    setMinorInjuries(0);
-    setSeriousInjuries(0);
-    setLocationVerified(false);
-    setRequestBackupFlag(false);
-    setIsFalseAlarm(false);
-    setAssessmentNotes('');
+  const openDetail = async (m: Mission, fromCompleted = false) => {
+    console.log('[openDetail] mission id:', m.id, 'disaster_id:', m.disaster_id);
+    setSelectedMission(m);
+    setDetailTab('details'); detailTabRef.current = 'details';
+    setDetailLoading(true);
+    setIsCompletedMission(fromCompleted);
+    isCompletedRef.current = fromCompleted; // update ref immediately for useEffect
+    setMessages([]);
+    setChatError(null);
+
+    try {
+      const detail = await disasterService.getDeploymentDetail(m.id);
+      setMissionDetail(detail);
+    } catch { setMissionDetail(null); }
+    setDetailLoading(false);
+    // WS connection is managed by useEffect on selectedMission below
+  };
+
+  const navigateToDisaster = (m: Mission) => {
+    navigation.navigate('Home' as any, { flyToLat: m.coordinates.lat, flyToLon: m.coordinates.lon, flyToLabel: m.location_address });
+  };
+
+  // ── Chat — real WebSocket via /ws/chat/{disaster_id} ───────────────
+
+  // ── Chat WS refs — StrictMode-safe (same pattern as admin web hook) ─────
+  const isChatMounted    = useRef(false);
+  const hasConnectedRef  = useRef(false);
+  const reconnectTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectCount   = useRef(0);
+  const MAX_RECONNECTS   = 10;
+  const RECONNECT_DELAY  = 3000;
+
+  const disconnectChat = useCallback(() => {
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+    reconnectCount.current = MAX_RECONNECTS;
+    if (chatWsRef.current) {
+      chatWsRef.current.onclose = null;
+      chatWsRef.current.close();
+      chatWsRef.current = null;
+    }
+    setChatConnected(false);
+    setChatConnecting(false);
+    chatDisasterRef.current = null;
+  }, []);
+
+  const connectChat = useCallback(async (disasterId: string) => {
+    if (!isChatMounted.current) return;
+    // Close any stale socket without triggering onclose reconnect
+    if (chatWsRef.current) {
+      chatWsRef.current.onclose = null;
+      chatWsRef.current.close();
+      chatWsRef.current = null;
+    }
+    const token = await AsyncStorage.getItem('@auth/access_token');
+    if (!token) { setChatError('Not authenticated.'); return; }
+    // Re-check after async token fetch — component might have unmounted
+    if (!isChatMounted.current) return;
+
+    const url = `${WS_URL}${API.chat.ws(disasterId)}?token=${token}`;
+    console.log('[Chat WS] Connecting:', url.replace(token, token.slice(0,16)+'...'));
+    const ws = new WebSocket(url);
+    chatWsRef.current = ws;
+    chatDisasterRef.current = disasterId;
+    setChatConnecting(true);
+    setChatError(null);
+
+    // Capture mounted state at connection time — each WS instance checks its own flag
+    // MUST be defined before any ws.on* callbacks that use it
+    const thisWsActive = () => isChatMounted.current && chatWsRef.current === ws;
+
+    ws.onopen = () => {
+      if (!thisWsActive()) { ws.close(); return; }
+      console.log('[Chat WS] Connected ✓ disaster:', disasterId);
+      setChatConnected(true);
+      setChatConnecting(false);
+      setChatError(null);
+      reconnectCount.current = 0;
+    };
+
+    ws.onmessage = (event) => {
+      // Log every raw frame so we can confirm messages arrive at JS layer
+      console.log('[Chat WS] RAW frame received:', event.data?.slice(0, 120));
+      if (!thisWsActive()) {
+        console.warn('[Chat WS] Frame received but connection no longer active — ignoring');
+        return;
+      }
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'history') {
+          const hist: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
+            id: m.id, seq: m.seq,
+            sender: m.sender_name ?? 'Unknown', senderId: m.sender_id ?? '',
+            sender_type: m.sender_type ?? 'unit',
+            text: m.message ?? '', timestamp: m.sent_at ?? new Date().toISOString(),
+            type: 'message',
+          }));
+          // Merge with existing messages — don't wipe optimistic/buffered ones
+          // that the server hasn't flushed to DB yet
+          setMessages(prev => {
+            const merged = sortMessages([...hist, ...prev.filter(p =>
+              !hist.some(h => h.id === p.id)
+            )]);
+            return merged;
+          });
+          if (data.members_online != null) setMembersOnline(data.members_online);
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
+          return;
+        }
+
+        if (data.type === 'system') {
+          setMessages(prev => [...prev, {
+            id: `sys-${Date.now()}`, sender: 'System', senderId: 'system',
+            text: data.message ?? '', timestamp: data.sent_at ?? new Date().toISOString(),
+            isSystem: true, type: 'system',
+          }]);
+          return;
+        }
+
+        if (data.type === 'error') {
+          setChatError(data.message ?? 'Chat error');
+          if (data.code === 4003) loadChatHistory(disasterId);
+          return;
+        }
+
+        if (data.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'ping' }));
+          return;
+        }
+
+        if (data.type === 'message') {
+          console.log('[Chat WS] ▶ Message from:', data.sender_name, '—', data.message);
+          if (!thisWsActive()) { console.warn('[Chat WS] Message arrived after disconnect'); return; }
+          const isOwn = data.sender_id === userIdRef.current;
+          setMessages(prev => {
+            if (prev.some(m => m.id === data.id)) return prev;
+            // Remove optimistic message with same text+sender if present
+            const withoutOptimistic = prev.filter(m =>
+              !(m.id.startsWith('optimistic-') && m.text === data.message && m.senderId === data.sender_id)
+            );
+            return sortMessages([...withoutOptimistic, {
+              id: data.id, seq: data.seq,
+              sender: data.sender_name ?? 'Unknown', senderId: data.sender_id ?? '',
+              sender_type: data.sender_type ?? 'unit',
+              text: data.message ?? '', timestamp: data.sent_at ?? new Date().toISOString(),
+              type: 'message',
+            }]);
+          });
+          // Notify if message is from someone else
+          if (!isOwn) {
+            if (detailTabRef.current !== 'chat') {
+              // User is on Details tab — show badge + local notification
+              setUnreadChat(n => n + 1);
+              // Get the mission_id to pass to notification for deep linking
+              const missionId = chatDisasterRef.current ?? '';
+              showLocalNotification(
+                `💬 ${data.sender_name ?? 'New message'}`,
+                data.message ?? '',
+                'INFO',
+                { event_type: 'chat.message', mission_id: missionId },
+              ).catch(() => {
+                Alert.alert(
+                  `💬 ${data.sender_name ?? 'New message'}`,
+                  data.message ?? '',
+                  [
+                    { text: 'View', onPress: () => {
+                      setDetailTab('chat');
+                      detailTabRef.current = 'chat';
+                      setUnreadChat(0);
+                      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+                    }},
+                    { text: 'Dismiss' },
+                  ],
+                );
+              });
+            }
+          }
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+        }
+      } catch { /* non-JSON — ignore */ }
+    };
+
+    ws.onerror = () => ws.close();
+
+    ws.onclose = (e) => {
+      if (!isChatMounted.current) return; // full unmount — skip
+      setChatConnected(false);
+      setChatConnecting(false);
+      console.log('[Chat WS] Closed code:', e.code, 'reason:', e.reason);
+      const reason = (e.reason ?? '').toLowerCase();
+      const is403 = e.code === 1006 && reason.includes('403');
+      const is401 = e.code === 1006 && (reason.includes('401') || reason.includes('unauthorized'));
+
+      if (e.code === 4001 || is401) {
+        setChatError('Authentication failed. Please log out and log back in.');
+      } else if (e.code === 4003 || is403) {
+        setChatError('You are not assigned to this disaster. Showing message history.');
+        loadChatHistory(disasterId);
+      } else if (e.code === 4004) {
+        setChatError('Disaster not found.');
+      } else if (e.code === 4009) {
+        setChatError('Chat is closed — disaster no longer active.');
+      } else if (e.code === 1000) {
+        // Normal close — do nothing
+      } else {
+        // Unexpected drop — auto-reconnect (same as admin web)
+        if (reconnectCount.current < MAX_RECONNECTS) {
+          reconnectCount.current += 1;
+          console.log('[Chat WS] Reconnecting in 3s... attempt', reconnectCount.current);
+          reconnectTimer.current = setTimeout(() => {
+            if (isChatMounted.current) connectChat(disasterId);
+          }, RECONNECT_DELAY);
+        } else {
+          setChatError('Connection lost. Tap Reconnect to try again.');
+        }
+      }
+    };
+  }, []);
+
+  // ── WS lifecycle — StrictMode-safe (50ms guard, same as admin web) ───────
+  useEffect(() => {
+    if (!selectedMission || isCompletedRef.current) {
+      if (!selectedMission) disconnectChat();
+      if (selectedMission && isCompletedRef.current) loadChatHistory(selectedMission.disaster_id);
+      return;
+    }
+
+    isChatMounted.current   = true;
+    hasConnectedRef.current = false;
+    reconnectCount.current  = 0;
+
+    // 50ms delay prevents double-connect in React dev StrictMode
+    const initTimer = setTimeout(() => {
+      if (!isChatMounted.current || hasConnectedRef.current) return;
+      hasConnectedRef.current = true;
+      // Don't clear messages on initial connect — keep any existing ones visible
+      // They'll be merged with history when server sends the history frame
+      connectChat(selectedMission.disaster_id);
+    }, 50);
+
+    return () => {
+      clearTimeout(initTimer);
+      isChatMounted.current   = false;
+      hasConnectedRef.current = false;
+      if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+      if (chatWsRef.current) {
+        chatWsRef.current.onclose = null;
+        chatWsRef.current.close();
+        chatWsRef.current = null;
+      }
+      setChatConnected(false);
+      setChatConnecting(false);
+    };
+  }, [selectedMission?.id]);
+  const loadChat = (disasterId: string) => {
+    connectChat(disasterId);
+  };
+
+  // Read-only history for completed/resolved missions via REST
+  const loadChatHistory = async (disasterId: string) => {
+    setChatHistoryLoading(true);
+    setChatError(null);
+    try {
+      const data = await authRequest<any>(API.chat.history(disasterId, 200));
+      const hist: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
+        id:          m.id,
+        seq:         m.seq,
+        sender:      m.sender_name ?? 'Unknown',
+        senderId:    m.sender_id   ?? '',
+        sender_type: m.sender_type ?? 'unit',
+        text:        m.message     ?? '',
+        timestamp:   m.sent_at     ?? new Date().toISOString(),
+        type:        'message',
+      }));
+      setMessages(sortMessages(hist));
+      if (hist.length > 0) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
+      }
+    } catch (e: any) {
+      // 403 = not assigned, 404 = no history yet — both are non-critical
+      if (e.status === 403 || e.status === 404) {
+        setMessages([]);
+      } else {
+        setChatError(e.message || 'Could not load chat history.');
+      }
+    } finally {
+      setChatHistoryLoading(false);
+    }
+  };
+
+  const sendMessage = () => {
+    const text = chatInput.trim();
+    if (!text || !chatWsRef.current || chatWsRef.current.readyState !== WebSocket.OPEN) return;
+    // Optimistic update — show message immediately, server echo will dedup by id
+    const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+    const optimisticMsg: ChatMessage = {
+      id:          optimisticId,
+      seq:         Date.now(), // high seq so it sorts to bottom
+      sender:      userName || 'Me',
+      senderId:    userId,
+      sender_type: 'unit',
+      text,
+      timestamp:   new Date().toISOString(),
+      type:        'message',
+    };
+    setMessages(prev => sortMessages([...prev, optimisticMsg]));
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+    chatWsRef.current.send(JSON.stringify({ message: text }));
+    setChatInput('');
+  };
+
+  // ── Status modal ───────────────────────────────────────────────────
+  const openStatusModal = (m: Mission) => {
+    setStatusModal(m); setSelStatus(''); setSitrep(''); setTags([]);
+    setMinorInjuries(0); setSeriousInjuries(0); setLocationVerified(false);
+    setRequestBackupFlag(false); setIsFalseAlarm(false); setAssessmentNotes('');
   };
 
   const submitStatus = async () => {
-    if (!selStatus || !modal) return;
+    if (!selStatus || !statusModal) return;
     setSubmitting(true);
     try {
-      await authRequest(`/deployments/${modal.id}/update-status`, {
-        method: 'POST',
-        body: JSON.stringify({
-          new_status:               selStatus.toUpperCase(),
-          situation_report:         sitrep || undefined,
-          tags:                     tags.length > 0 ? tags : undefined,
-          minor_injuries:           minorInjuries,
-          serious_injuries:         seriousInjuries,
-          location_verified:        locationVerified,
-          request_immediate_backup: requestBackupFlag,
-          assessment_notes:         assessmentNotes || undefined,
-          // is_false_alarm triggers disaster.false_alarm WS event
-        }),
+      await disasterService.updateDeploymentStatus(statusModal.id, {
+        new_status: selStatus, situation_report: sitrep || undefined,
+        tags: tags.length > 0 ? tags : undefined, minor_injuries: minorInjuries,
+        serious_injuries: seriousInjuries, location_verified: locationVerified,
+        request_immediate_backup: requestBackupFlag, assessment_notes: assessmentNotes || undefined,
+        is_false_alarm: isFalseAlarm,
       });
-
-      if (isFalseAlarm) {
-        Alert.alert('False Alarm Reported', 'The incident has been marked as a false alarm. Emergency services have been notified.');
+      Alert.alert('✅ Updated', `Status: ${selStatus.replace(/_/g, ' ')}`);
+      const sl = selStatus.toLowerCase();
+      if (sl === 'completed' || isFalseAlarm) {
+        // Optimistic remove then full re-fetch so completed tab also populates
+        setActive(prev => prev.filter(x => x.id !== statusModal.id));
+        disasterStore.removeMission(statusModal.id);
+        fetchMissions();
       } else {
-        Alert.alert('✅ Status Updated', `Status: ${selStatus.replace(/_/g, ' ').toUpperCase()}`);
+        setActive(prev => prev.map(x => x.id === statusModal.id ? { ...x, status: sl } : x));
+        disasterStore.updateMissionStatus(statusModal.id, selStatus);
       }
-
-      // Update local state
-      if (selStatus === 'completed' || isFalseAlarm) {
-        const m = active.find(x => x.id === modal.id);
-        setActive(prev => prev.filter(x => x.id !== modal.id));
-        if (m) setCompleted(prev => [{ ...m, status: isFalseAlarm ? 'cancelled' : 'completed' }, ...prev]);
-      } else {
-        setActive(prev => prev.map(x => x.id === modal.id ? { ...x, status: selStatus } : x));
-      }
-      setModal(null);
-    } catch (e: any) {
-      // Fall back to local update if API fails
-      if (selStatus === 'completed') {
-        const m = active.find(x => x.id === modal.id);
-        setActive(prev => prev.filter(x => x.id !== modal.id));
-        if (m) setCompleted(prev => [{ ...m, status: 'completed' }, ...prev]);
-      } else {
-        setActive(prev => prev.map(x => x.id === modal.id ? { ...x, status: selStatus } : x));
-      }
-      Alert.alert('✅ Updated (Offline)', `Status: ${selStatus.replace(/_/g, ' ').toUpperCase()}`);
-      setModal(null);
-    }
+      setStatusModal(null);
+    } catch (e: any) { Alert.alert('Error', e.message || 'Failed'); }
     setSubmitting(false);
   };
 
-  const navigate = (m: Mission) => {
-    Alert.alert('Navigate to Scene', m.location_address, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Open in Map',
-        onPress: () => navigation.navigate('Home' as any, {
-          flyToLat:   m.coordinates.lat,
-          flyToLon:   m.coordinates.lon,
-          flyToLabel: m.location_address,
-        }),
-      },
-    ]);
-  };
-
-  const contactCommand = () =>
-    Alert.alert('📞 Contact Command', 'Connect to Incident Commander?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Call HQ', onPress: () => Linking.openURL('tel:999') },
-    ]);
-
-  const requestBackup = (m: Mission) =>
-    Alert.alert('🆘 Request Backup', `Request additional units for:\n${m.location_address}`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Send Request', style: 'destructive',
-        onPress: () => Alert.alert('✅ Backup Requested', 'Command notified. Additional units en route.'),
-      },
-    ]);
-
   const list = tab === 'active' ? active : completed;
-  const hasCritical = active.some(m => m.severity === 'CRITICAL');
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // MISSION DETAIL VIEW (with chat tab)
+  // ═══════════════════════════════════════════════════════════════════
+  if (selectedMission) {
+    const m = selectedMission;
+    const sevCol = SEV_COLOR[m.severity] ?? '#6B7280';
+
+    const renderBubble = ({ item }: { item: ChatMessage }) => {
+      // System messages (join/leave) — centred grey pill
+      if (item.isSystem || item.type === 'system') {
+        return (
+          <View style={S.systemMsgWrap}>
+            <Text style={S.systemMsg}>{item.text}</Text>
+          </View>
+        );
+      }
+      const isMe = item.senderId === userId;
+      const isAdmin = item.sender_type === 'admin';
+      return (
+        <View style={[S.bubbleWrap, isMe ? S.bubbleWrapMe : S.bubbleWrapOther]}>
+          {!isMe && (
+            <View style={S.bubbleHeader}>
+              {isAdmin && (
+                <View style={S.adminBadge}>
+                  <Text style={S.adminBadgeTxt}>CMD</Text>
+                </View>
+              )}
+              <Text style={S.bubbleSender} numberOfLines={1}>{item.sender}</Text>
+            </View>
+          )}
+          <Text style={[S.bubbleText, isMe && { color: '#fff' }]}>{item.text}</Text>
+          <Text style={[S.bubbleTime, isMe && { color: 'rgba(255,255,255,0.65)' }]}>
+            {formatChatTime(item.timestamp)}
+          </Text>
+        </View>
+      );
+    };
+
+    return (
+      <SafeAreaView style={S.safe} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="light-content" backgroundColor={RED} />
+        <View style={S.header}>
+          <TouchableOpacity style={S.hBtn} onPress={() => { disconnectChat(); setSelectedMission(null); setMissionDetail(null); setMessages([]); setUnreadChat(0); detailTabRef.current = 'details'; }}>
+            <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+              <Path d="M19 12H5M12 19l-7-7 7-7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </TouchableOpacity>
+          <Text style={S.hTitle}>Mission Detail</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        {/* Detail tabs: Details | Group Chat */}
+        <View style={S.tabs}>
+          <TouchableOpacity style={[S.tab, detailTab === 'details' && S.tabOn]} onPress={() => setDetailTab('details')}>
+            <Text style={[S.tabTxt, detailTab === 'details' && S.tabTxtOn]}>Details</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[S.tab, detailTab === 'chat' && S.tabOn]}
+            onPress={() => { setDetailTab('chat'); detailTabRef.current = 'chat'; setUnreadChat(0); setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100); }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={[S.tabTxt, detailTab === 'chat' && S.tabTxtOn]}>
+                {isCompletedMission ? 'Chat History' : `Group Chat${unreadChat > 0 ? ` (${unreadChat})` : ''}`}
+              </Text>
+              {!isCompletedMission && chatConnected && (
+                <View style={[S.chatLiveDot, { marginBottom: 6 }]} />
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── DETAILS TAB ── */}
+        {detailTab === 'details' && (
+          <ScrollView contentContainerStyle={{ padding: spacing.md }}>
+            <View style={[S.card, { borderLeftWidth: 4, borderLeftColor: sevCol }]}>
+              <Text style={{ fontSize: 28, lineHeight: 36 }}>{TYPE_EMOJI[m.disaster_type] ?? '⚠️'}</Text>
+              <Text style={{ fontSize: 17, lineHeight: 24, fontWeight: '700', color: '#1F2937', marginTop: 4 }}>
+                {m.disaster_type.replace(/_/g, ' ')} — {m.severity}
+              </Text>
+              <Text style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>{m.location_address}</Text>
+              <Text style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>Assigned {formatAgo(m.assigned_at)}</Text>
+              <View style={[S.statusBadge, { backgroundColor: STATUS_COLOR[m.status] ?? '#6B7280', alignSelf: 'flex-start', marginTop: 8 }]}>
+                <Text style={S.statusBadgeTxt}>{m.status.replace(/_/g, ' ').toUpperCase()}</Text>
+              </View>
+            </View>
+
+            {detailLoading ? <ActivityIndicator color={RED} style={{ margin: 20 }} /> : missionDetail ? (
+              <View style={S.card}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937', marginBottom: 8 }}>Deployment Details</Text>
+                {missionDetail.priority_level && <Text style={S.infoRow}>Priority: <Text style={S.infoVal}>{missionDetail.priority_level}</Text></Text>}
+                {missionDetail.situation_report && <Text style={S.infoRow}>Sitrep: <Text style={S.infoVal}>{missionDetail.situation_report}</Text></Text>}
+                {missionDetail.timeline && Object.entries(missionDetail.timeline).map(([k, v]) => v ? (
+                  <Text key={k} style={S.infoRow}>{k.replace(/_/g, ' ')}: <Text style={S.infoVal}>{formatTime(v as string)}</Text></Text>
+                ) : null)}
+              </View>
+            ) : null}
+
+            {m.status !== 'completed' && (
+            <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+              <TouchableOpacity style={S.btnRed} onPress={() => navigateToDisaster(m)}>
+                <Text style={S.btnRedTxt}>🧭  Navigate to Disaster</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={S.btnOutline} onPress={() => openStatusModal(m)}>
+                <Text style={S.btnOutTxt}>📱  Update Status</Text>
+              </TouchableOpacity>
+              {/* Traffic Override — only available for active missions on this disaster */}
+              <TouchableOpacity
+                style={S.btnOverride}
+                onPress={() => navigation.navigate('RerouteOverride' as any, { disasterId: m.disaster_id })}
+                activeOpacity={0.8}
+              >
+                <Text style={S.btnOverrideTxt}>🚦  Traffic Override</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={S.btnOutline}
+                onPress={() => Alert.alert('📞 Contact Command', 'Call HQ?',
+                  [{ text: 'Cancel', style: 'cancel' }, { text: 'Call', onPress: () => Linking.openURL('tel:999') }])}>
+                <Text style={S.btnOutTxt}>📞  Contact Command</Text>
+              </TouchableOpacity>
+            </View>
+            )}
+            <View style={{ height: 60 }} />
+          </ScrollView>
+        )}
+
+        {/* ── GROUP CHAT TAB ── */}
+        {detailTab === 'chat' && (
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
+
+            {/* ── COMPLETED MISSION: read-only history ── */}
+            {isCompletedMission ? (
+              <>
+                {/* Read-only banner */}
+                <View style={S.historyBanner}>
+                  <Text style={S.historyBannerIcon}>🔒</Text>
+                  <Text style={S.historyBannerTxt}>Read-only — mission completed</Text>
+                  <TouchableOpacity
+                    onPress={() => selectedMission && loadChatHistory(selectedMission.disaster_id)}
+                    style={S.historyRefreshBtn}
+                    disabled={chatHistoryLoading}
+                  >
+                    <Text style={S.historyRefreshTxt}>{chatHistoryLoading ? '…' : '↻'}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Error */}
+                {!!chatError && (
+                  <View style={S.chatErrorBar}>
+                    <Text style={S.chatErrorTxt}>{chatError}</Text>
+                  </View>
+                )}
+
+                {/* Loading */}
+                {chatHistoryLoading && messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color={RED} />
+                    <Text style={{ color: '#6B7280', marginTop: 12, fontSize: 13 }}>Loading chat history…</Text>
+                  </View>
+                ) : messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
+                    <Text style={{ fontSize: 40, lineHeight: 52 }}>💬</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#374151', marginTop: 8 }}>No Chat History</Text>
+                    <Text style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', marginTop: 4 }}>
+                      No messages were sent during this mission.
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    ref={flatListRef}
+                    data={messages}
+                    keyExtractor={i => i.id}
+                    renderItem={renderBubble}
+                    contentContainerStyle={{ padding: spacing.md, paddingBottom: 20 }}
+                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                  />
+                )}
+                {/* No input bar for completed missions */}
+              </>
+            ) : (
+              <>
+                {/* ── ACTIVE MISSION: live WebSocket chat ── */}
+
+                {/* Connection status bar */}
+                <View style={[S.chatStatusBar, chatConnected ? S.chatStatusBarOn : S.chatStatusBarOff]}>
+                  <View style={[S.chatStatusDot, {
+                    backgroundColor: chatConnected ? '#22C55E' : chatConnecting ? '#F59E0B' : '#9CA3AF'
+                  }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={S.chatStatusTxt}>
+                      {chatConnecting ? 'Connecting…' : chatConnected ? `Live · ${membersOnline > 0 ? `${membersOnline} online` : 'connected'}` : 'Disconnected'}
+                    </Text>
+                    {!chatConnected && !chatConnecting && selectedMission && (
+                      <Text style={{ fontSize: 10, color: '#9CA3AF' }}>
+                        Disaster #{selectedMission.disaster_id?.slice(0, 8)}
+                      </Text>
+                    )}
+                  </View>
+                  {!chatConnected && !chatConnecting && (
+                    <TouchableOpacity
+                      onPress={() => { setChatError(null); selectedMission && connectChat(selectedMission.disaster_id); }}
+                      style={S.chatRetryBtn}
+                    >
+                      <Text style={S.chatRetryTxt}>Reconnect</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Error banner */}
+                {!!chatError && (
+                  <View style={S.chatErrorBar}>
+                    <Text style={S.chatErrorTxt}>{chatError}</Text>
+                  </View>
+                )}
+
+                {/* Connecting spinner / empty state / messages */}
+                {chatConnecting && messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color={RED} />
+                    <Text style={{ color: '#6B7280', marginTop: 12, fontSize: 13 }}>Joining group chat…</Text>
+                  </View>
+                ) : messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
+                    <Text style={{ fontSize: 40, lineHeight: 52 }}>💬</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#374151', marginTop: 8 }}>Mission Group Chat</Text>
+                    <Text style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', marginTop: 4 }}>
+                      Real-time chat for all responders assigned to this disaster.{`\n`}Messages are saved on the server.
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    ref={flatListRef}
+                    data={messages}
+                    keyExtractor={i => i.id}
+                    renderItem={renderBubble}
+                    contentContainerStyle={{ padding: spacing.md, paddingBottom: 8 }}
+                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                  />
+                )}
+
+                {/* Only show input bar when actually connected — hidden in history fallback (403) */}
+                {chatConnected && (
+                <View style={S.chatBar}>
+                  <TextInput
+                    style={S.chatInput}
+                    placeholder="Type a message…"
+                    placeholderTextColor="#9CA3AF"
+                    value={chatInput}
+                    onChangeText={setChatInput}
+                    multiline
+                    maxLength={500}
+                    editable={true}
+                  />
+                  <TouchableOpacity
+                    style={[S.sendBtn, !chatInput.trim() && { opacity: 0.4 }]}
+                    onPress={sendMessage}
+                    disabled={!chatInput.trim()}
+                  >
+                    <Text style={S.sendBtnTxt}>Send</Text>
+                  </TouchableOpacity>
+                </View>
+                )}
+              </>
+            )}
+          </KeyboardAvoidingView>
+        )}
+
+        {renderStatusModal()}
+      </SafeAreaView>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // STATUS MODAL
+  // ═══════════════════════════════════════════════════════════════════
+  function renderStatusModal() {
+    return (
+      <Modal visible={!!statusModal} transparent animationType="slide" onRequestClose={() => setStatusModal(null)}>
+        <View style={S.overlay}><View style={S.modalCard}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.lg }}>
+            <Text style={{ fontSize: 18, lineHeight: 24, fontWeight: '700' }}>Update Status</Text>
+            <TouchableOpacity onPress={() => setStatusModal(null)}><Text style={{ fontSize: 22, lineHeight: 28, color: '#9CA3AF' }}>✕</Text></TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {STATUS_OPTIONS.map(opt => (
+              <TouchableOpacity key={opt.id} style={[S.statusOpt, selStatus === opt.id && S.statusOptOn]} onPress={() => setSelStatus(opt.id)}>
+                <Text style={{ fontSize: 24, lineHeight: 32, marginRight: 12 }}>{opt.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: selStatus === opt.id ? '700' : '400', fontSize: 15 }}>{opt.label}</Text>
+                  <Text style={{ fontSize: 13, color: '#6B7280' }}>{opt.desc}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            <Text style={S.fieldLabel}>Situation Report</Text>
+            <TextInput style={S.sitrep} placeholder="Describe situation..." placeholderTextColor="#9CA3AF"
+              value={sitrep} onChangeText={setSitrep} multiline maxLength={500} textAlignVertical="top" />
+            <Text style={S.fieldLabel}>Tags</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {['flood', 'fire', 'vehicles-trapped', 'building-damage', 'road-blocked', 'hazmat', 'medical', 'rescue'].map(tag => (
+                <TouchableOpacity key={tag} style={[S.tagChip, tags.includes(tag) && S.tagChipOn]}
+                  onPress={() => setTags(p => p.includes(tag) ? p.filter(t => t !== tag) : [...p, tag])}>
+                  <Text style={[S.tagTxt, tags.includes(tag) && S.tagTxtOn]}>{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>Minor Injuries</Text>
+                <View style={S.counterRow}>
+                  <TouchableOpacity style={S.cBtn} onPress={() => setMinorInjuries(Math.max(0, minorInjuries - 1))}><Text style={S.cBtnTxt}>−</Text></TouchableOpacity>
+                  <Text style={S.cVal}>{minorInjuries}</Text>
+                  <TouchableOpacity style={[S.cBtn, { backgroundColor: RED }]} onPress={() => setMinorInjuries(minorInjuries + 1)}><Text style={[S.cBtnTxt, { color: '#fff' }]}>+</Text></TouchableOpacity>
+                </View>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>Serious Injuries</Text>
+                <View style={S.counterRow}>
+                  <TouchableOpacity style={S.cBtn} onPress={() => setSeriousInjuries(Math.max(0, seriousInjuries - 1))}><Text style={S.cBtnTxt}>−</Text></TouchableOpacity>
+                  <Text style={S.cVal}>{seriousInjuries}</Text>
+                  <TouchableOpacity style={[S.cBtn, { backgroundColor: RED }]} onPress={() => setSeriousInjuries(seriousInjuries + 1)}><Text style={[S.cBtnTxt, { color: '#fff' }]}>+</Text></TouchableOpacity>
+                </View>
+              </View>
+            </View>
+            <View style={{ marginTop: 12, gap: 8 }}>
+              <CheckRow label="Location verified" checked={locationVerified} onToggle={() => setLocationVerified(v => !v)} color="#22C55E" />
+              <CheckRow label="Request backup" checked={requestBackupFlag} onToggle={() => setRequestBackupFlag(v => !v)} color="#F97316" />
+            </View>
+            {selStatus === 'ON_SCENE' && (
+              <View style={[S.falseAlarmBox, isFalseAlarm && { borderColor: RED, backgroundColor: '#FEF2F2' }]}>
+                <CheckRow label="Mark as False Alarm" checked={isFalseAlarm} onToggle={() => setIsFalseAlarm(v => !v)} color={RED} />
+              </View>
+            )}
+            <Text style={S.fieldLabel}>Assessment Notes</Text>
+            <TextInput style={[S.sitrep, { minHeight: 60 }]} placeholder="Additional observations..."
+              placeholderTextColor="#9CA3AF" value={assessmentNotes} onChangeText={setAssessmentNotes} multiline maxLength={300} textAlignVertical="top" />
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 20, marginBottom: 40 }}>
+              <TouchableOpacity style={[S.modalBtn, { flex: 1, backgroundColor: '#F3F4F6' }]} onPress={() => setStatusModal(null)}>
+                <Text style={{ color: '#6B7280', fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[S.modalBtn, { flex: 2, backgroundColor: selStatus ? RED : '#D1D5DB' }]}
+                onPress={submitStatus} disabled={!selStatus || submitting}>
+                {submitting ? <ActivityIndicator color="#fff" size="small" /> :
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>{isFalseAlarm ? '⚠️ Report False Alarm' : 'Submit Update'}</Text>}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View></View>
+      </Modal>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // MISSION LIST VIEW
+  // ═══════════════════════════════════════════════════════════════════
   return (
-    <SafeAreaView style={S.safe}>
+    <SafeAreaView style={S.safe} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor={RED} />
-
-      {/* Header */}
       <View style={S.header}>
         <TouchableOpacity style={S.hBtn} onPress={() => navigation.goBack()}>
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M19 12H5M12 19l-7-7 7-7" stroke="#fff" strokeWidth="2"
-              strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M19 12H5M12 19l-7-7 7-7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
         </TouchableOpacity>
         <View style={{ alignItems: 'center' }}>
-          <Text style={S.hTitle}>My Tasks</Text>
-          <Text style={S.hSub}>{unitLabel}</Text>
+          <Text style={S.hTitle}>Active Missions</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>{unitLabel}</Text>
         </View>
         <TouchableOpacity style={S.hBtn} onPress={fetchMissions}>
-          {loading
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={{ color: '#fff', fontSize: 20 }}>↻</Text>}
+          {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontSize: 20, lineHeight: 26 }}>↻</Text>}
         </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
       <View style={S.tabs}>
-        {[
-          { key: 'active'    as const, label: `Assigned (${active.length})` },
-          { key: 'completed' as const, label: `Completed (${completed.length})` },
-        ].map(t => (
-          <TouchableOpacity
-            key={t.key}
-            style={[S.tab, tab === t.key && S.tabOn]}
-            onPress={() => setTab(t.key)}
-          >
-            <Text style={[S.tabTxt, tab === t.key && S.tabTxtOn]}>{t.label}</Text>
+        {(['active', 'completed'] as const).map(k => (
+          <TouchableOpacity key={k} style={[S.tab, tab === k && S.tabOn]} onPress={() => setTab(k)}>
+            <Text style={[S.tabTxt, tab === k && S.tabTxtOn]}>{k === 'active' ? `Active (${active.length})` : `Done (${completed.length})`}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
+      {!!error && (
+        <View style={{ backgroundColor: '#FEE2E2', margin: 12, padding: 14, borderRadius: 10, borderLeftWidth: 3, borderLeftColor: RED }}>
+          <Text style={{ color: '#991B1B', fontSize: 13 }}>{error}</Text>
+          <TouchableOpacity onPress={fetchMissions}><Text style={{ color: RED, fontWeight: '700', marginTop: 6 }}>Retry</Text></TouchableOpacity>
+        </View>
+      )}
 
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.md }}>
-
-        {/* Urgent banner */}
-        {tab === 'active' && hasCritical && (
-          <View style={S.urgentBanner}>
-            <Text style={S.urgentTxt}>🔴  URGENT TASKS</Text>
-          </View>
-        )}
-
+      <ScrollView contentContainerStyle={{ padding: spacing.md }}>
         {list.length === 0 ? (
-          <View style={S.empty}>
-            <Text style={{ fontSize: 48 }}>{tab === 'active' ? '✅' : '📋'}</Text>
-            <Text variant="bodyLarge" color="textSecondary" style={{ marginTop: spacing.md }}>
-              {tab === 'active' ? 'No active missions' : 'No completed missions'}
-            </Text>
+          <View style={{ alignItems: 'center', paddingTop: 80 }}>
+            <Text style={{ fontSize: 48, lineHeight: 62 }}>{tab === 'active' ? '✅' : '📋'}</Text>
+            <Text style={{ fontSize: 16, color: '#6B7280', marginTop: 12 }}>{tab === 'active' ? 'No active missions' : 'No completed missions'}</Text>
           </View>
-        ) : list.map(m => {
-          const sevColor    = SEV_COLOR[m.severity]          ?? '#6B7280';
-          const statusColor = STATUS_COLOR[m.status]         ?? '#6B7280';
-          const emoji       = TYPE_EMOJI[m.disaster_type]    ?? '⚠️';
-          const isActive    = tab === 'active';
-
-          return (
-            <View key={m.id} style={[S.card, { borderLeftColor: sevColor }]}>
-
-              {/* Top row */}
-              <View style={S.cardTop}>
-                <View style={{ flex: 1 }}>
-                  <View style={S.idRow}>
-                    <Text style={S.cardId}>#{m.disaster_id}</Text>
-                    <View style={[S.sevBadge, { backgroundColor: sevColor }]}>
-                      <Text style={S.sevTxt}>{m.severity}</Text>
-                    </View>
-                  </View>
-                  <Text style={S.cardTitle}>{emoji}  {m.disaster_type.replace(/_/g, ' ')}</Text>
-                  <Text style={S.cardAddr}>{m.location_address}</Text>
-                  <Text style={S.cardTime}>Assigned {formatAgo(m.assigned_at)}</Text>
-                </View>
+        ) : list.map(m => (
+          <TouchableOpacity key={m.id} style={[S.card, { borderLeftWidth: 4, borderLeftColor: SEV_COLOR[m.severity] ?? '#6B7280' }]}
+            onPress={() => openDetail(m, tab === 'completed')} activeOpacity={0.8}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Text style={{ fontSize: 11, color: '#9CA3AF', fontWeight: '600' }}>#{m.disaster_id?.slice(0, 8)}</Text>
+              <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, backgroundColor: SEV_COLOR[m.severity] ?? '#6B7280' }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{m.severity}</Text>
               </View>
-
-              {/* Unit row */}
-              <View style={S.unitRow}>
-                <Text style={S.unitTxt}>👥  {m.unit_id}  ·  {m.unit_members} members</Text>
-              </View>
-
-              {/* Status bar (active only) */}
-              {isActive && (
-                <View style={[S.statusBar, { backgroundColor: statusColor + '18', borderColor: statusColor + '50' }]}>
-                  <View style={[S.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={[S.statusTxt, { color: statusColor }]}>
-                    {m.status.replace(/_/g, ' ').toUpperCase()}
-                  </Text>
-                  {m.eta_minutes !== '0' && m.eta_minutes !== '—' && (
-                    <Text style={[S.etaTxt, { color: statusColor }]}>ETA: {m.eta_minutes} mins</Text>
-                  )}
-                </View>
-              )}
-
-              {/* Stats */}
-              <View style={S.statsRow}>
-                <Stat icon="📍" label="Distance"  value={`${m.distance_km} km`} />
-                <Stat icon="👥" label="Affected"  value={m.people_affected} />
-                <Stat icon="⏱️" label="ETA"       value={m.eta_minutes === '0' ? 'Done' : `${m.eta_minutes} min`} />
-              </View>
-
-              {/* Action buttons (active only) */}
-              {isActive && (
-                <View style={S.actions}>
-                  <TouchableOpacity style={S.btnBlue}    onPress={() => navigate(m)}>
-                    <Text style={S.btnBlueTxt}>🧭  Navigate</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={S.btnOutline} onPress={() => openModal(m)}>
-                    <Text style={S.btnOutTxt}>📱  Update Status</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={S.btnOutline} onPress={contactCommand}>
-                    <Text style={S.btnOutTxt}>📞  Contact Command</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[S.btnOutline, { borderColor: RED }]} onPress={() => requestBackup(m)}>
-                    <Text style={[S.btnOutTxt, { color: RED }]}>🆘  Request Backup</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
             </View>
-          );
-        })}
-
+            <Text style={{ fontSize: 17, lineHeight: 24, fontWeight: '700', color: '#1F2937' }}>{TYPE_EMOJI[m.disaster_type] ?? '⚠️'}  {m.disaster_type.replace(/_/g, ' ')}</Text>
+            <Text style={{ fontSize: 13, color: '#6B7280' }}>{m.location_address}</Text>
+            <Text style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>Assigned {formatAgo(m.assigned_at)}</Text>
+            <View style={[S.statusBadge, { backgroundColor: STATUS_COLOR[m.status] ?? '#6B7280', alignSelf: 'flex-start', marginTop: 8 }]}>
+              <Text style={S.statusBadgeTxt}>{m.status.replace(/_/g, ' ').toUpperCase()}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
         <View style={{ height: 60 }} />
       </ScrollView>
-
-      {/* ── Status update modal ── */}
-      <Modal visible={!!modal} transparent animationType="slide" onRequestClose={() => setModal(null)}>
-        <View style={S.overlay}>
-          <View style={S.modalCard}>
-
-            <View style={S.modalHdr}>
-              <View>
-                <Text variant="h4">Update Status</Text>
-                <Text variant="bodySmall" color="textSecondary">#{modal?.disaster_id}</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setModal(null)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={{ fontSize: 22, color: '#9CA3AF' }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text variant="h5" style={{ marginBottom: spacing.sm }}>Select New Status</Text>
-
-              {STATUS_OPTIONS.map(opt => (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={[S.statusOpt, selStatus === opt.id && S.statusOptOn]}
-                  onPress={() => setSelStatus(opt.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={{ fontSize: 26, marginRight: spacing.md }}>{opt.emoji}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: selStatus === opt.id ? '700' : '400', fontSize: 15 }}>
-                      {opt.label}
-                    </Text>
-                    <Text style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{opt.desc}</Text>
-                  </View>
-                  {selStatus === opt.id && (
-                    <View style={S.check}>
-                      <Text style={{ color: '#fff', fontSize: 11 }}>✓</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-
-              {/* Situation Report */}
-              <Text variant="h5" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
-                Situation Report
-              </Text>
-              <TextInput
-                style={S.sitrep}
-                placeholder="Describe current situation, actions taken, and any observations..."
-                placeholderTextColor="#9CA3AF"
-                value={sitrep}
-                onChangeText={setSitrep}
-                multiline
-                maxLength={500}
-                textAlignVertical="top"
-              />
-              <Text style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'right', marginTop: 4 }}>
-                {sitrep.length}/500
-              </Text>
-
-              {/* Casualties */}
-              <Text variant="h5" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>Casualties</Text>
-              <View style={S.casualtyRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={S.casualtyLabel}>Minor Injuries</Text>
-                  <View style={S.counterRow}>
-                    <TouchableOpacity style={S.counterBtn} onPress={() => setMinorInjuries(Math.max(0, minorInjuries - 1))}>
-                      <Text style={S.counterBtnTxt}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={S.counterVal}>{minorInjuries}</Text>
-                    <TouchableOpacity style={[S.counterBtn, { backgroundColor: '#DC2626' }]} onPress={() => setMinorInjuries(minorInjuries + 1)}>
-                      <Text style={[S.counterBtnTxt, { color: '#fff' }]}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <View style={{ flex: 1, marginLeft: spacing.md }}>
-                  <Text style={S.casualtyLabel}>Serious Injuries</Text>
-                  <View style={S.counterRow}>
-                    <TouchableOpacity style={S.counterBtn} onPress={() => setSeriousInjuries(Math.max(0, seriousInjuries - 1))}>
-                      <Text style={S.counterBtnTxt}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={S.counterVal}>{seriousInjuries}</Text>
-                    <TouchableOpacity style={[S.counterBtn, { backgroundColor: '#DC2626' }]} onPress={() => setSeriousInjuries(seriousInjuries + 1)}>
-                      <Text style={[S.counterBtnTxt, { color: '#fff' }]}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-
-              {/* Checkboxes */}
-              <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
-                <TouchableOpacity style={S.checkRow} onPress={() => setLocationVerified(v => !v)}>
-                  <View style={[S.checkbox, locationVerified && S.checkboxOn]}>
-                    {locationVerified && <Text style={{ color: '#fff', fontSize: 10 }}>✓</Text>}
-                  </View>
-                  <Text style={S.checkLabel}>Location verified — I am on scene</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={S.checkRow} onPress={() => setRequestBackupFlag(v => !v)}>
-                  <View style={[S.checkbox, requestBackupFlag && { backgroundColor: '#F97316', borderColor: '#F97316' }]}>
-                    {requestBackupFlag && <Text style={{ color: '#fff', fontSize: 10 }}>✓</Text>}
-                  </View>
-                  <Text style={S.checkLabel}>Request immediate backup</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* False Alarm — only show on ON_SCENE */}
-              {selStatus === 'on_scene' && (
-                <View style={[S.falseAlarmBox, isFalseAlarm && { borderColor: '#DC2626', backgroundColor: '#FEF2F2' }]}>
-                  <TouchableOpacity style={S.checkRow} onPress={() => setIsFalseAlarm(v => !v)}>
-                    <View style={[S.checkbox, isFalseAlarm && { backgroundColor: '#DC2626', borderColor: '#DC2626' }]}>
-                      {isFalseAlarm && <Text style={{ color: '#fff', fontSize: 10 }}>✓</Text>}
-                    </View>
-                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                      <Text style={[S.checkLabel, { fontWeight: '700', color: '#DC2626' }]}>Mark as False Alarm</Text>
-                      <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
-                        No emergency found. This will notify all users and close the disaster.
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Assessment notes */}
-              <Text variant="h5" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>Assessment Notes</Text>
-              <TextInput
-                style={[S.sitrep, { minHeight: 60 }]}
-                placeholder="Additional observations, resource needs..."
-                placeholderTextColor="#9CA3AF"
-                value={assessmentNotes}
-                onChangeText={setAssessmentNotes}
-                multiline
-                maxLength={300}
-                textAlignVertical="top"
-              />
-
-              {/* Timeline link */}
-              {modal?.disaster_id && (
-                <TouchableOpacity
-                  style={S.timelineLink}
-                  onPress={() => {
-                    setModal(null);
-                    navigation.navigate('DisasterTimeline' as any, { disasterId: modal?.disaster_id });
-                  }}
-                >
-                  <Text style={S.timelineLinkTxt}>📋  View Incident Timeline</Text>
-                </TouchableOpacity>
-              )}
-
-              <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.xxxl }}>
-                <TouchableOpacity
-                  style={[S.modalBtn, { flex: 1, backgroundColor: '#F3F4F6' }]}
-                  onPress={() => setModal(null)}
-                >
-                  <Text style={{ color: '#6B7280', fontWeight: '600' }}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[S.modalBtn, { flex: 2, backgroundColor: selStatus ? (isFalseAlarm ? '#DC2626' : RED) : '#D1D5DB' }]}
-                  onPress={submitStatus}
-                  disabled={!selStatus || submitting}
-                >
-                  {submitting
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ color: '#fff', fontWeight: '700' }}>
-                        {isFalseAlarm ? '⚠️ Report False Alarm' : 'Submit Update'}
-                      </Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {renderStatusModal()}
     </SafeAreaView>
   );
 };
 
-const Stat: React.FC<{ icon: string; label: string; value: string }> = ({ icon, label, value }) => (
-  <View style={S.stat}>
-    <Text style={{ fontSize: 14 }}>{icon}</Text>
-    <Text style={S.statVal}>{value}</Text>
-    <Text style={S.statLbl}>{label}</Text>
-  </View>
+const CheckRow: React.FC<{ label: string; checked: boolean; onToggle: () => void; color: string }> = ({ label, checked, onToggle, color }) => (
+  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }} onPress={onToggle}>
+    <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: checked ? color : '#D1D5DB', backgroundColor: checked ? color : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
+      {checked && <Text style={{ color: '#fff', fontSize: 10 }}>✓</Text>}
+    </View>
+    <Text style={{ flex: 1, fontSize: 14, color: '#374151' }}>{label}</Text>
+  </TouchableOpacity>
 );
 
 const S = StyleSheet.create({
-  safe:  { flex: 1, backgroundColor: '#F8FAFC' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: RED,
-  },
-  hBtn:  { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  hTitle:{ color: '#fff', fontSize: 18, fontWeight: '700' },
-  hSub:  { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
-
-  tabs:     { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  tab:      { flex: 1, paddingVertical: spacing.md, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
-  tabOn:    { borderBottomColor: RED },
-  tabTxt:   { fontSize: 14, color: '#6B7280', fontWeight: '500' },
+  safe: { flex: 1, backgroundColor: '#F8FAFC' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: RED },
+  hBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  hTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  tabs: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  tab: { flex: 1, paddingVertical: 14, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
+  tabOn: { borderBottomColor: RED },
+  tabTxt: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
   tabTxtOn: { color: RED, fontWeight: '700' },
-
-  dutyBar:  {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#F0FDF4', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: '#BBF7D0', gap: spacing.xs,
-  },
-  dutyDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
-  dutyTxt:  { flex: 1, fontSize: 12, fontWeight: '600', color: '#166534' },
-  endBtn:   { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, backgroundColor: '#fff', borderRadius: 6, borderWidth: 1, borderColor: '#D1D5DB' },
-  endTxt:   { fontSize: 12, fontWeight: '600', color: '#374151' },
-
-  urgentBanner: { backgroundColor: '#FEF2F2', borderRadius: borderRadius.md, padding: spacing.sm, marginBottom: spacing.sm, borderLeftWidth: 3, borderLeftColor: RED },
-  urgentTxt:    { color: RED, fontWeight: '700', fontSize: 13 },
-
-  card: {
-    backgroundColor: '#fff', borderRadius: borderRadius.lg, borderLeftWidth: 4,
-    marginBottom: spacing.md, padding: spacing.md,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3,
-  },
-  cardTop:  { marginBottom: spacing.sm },
-  idRow:    { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
-  cardId:   { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
-  sevBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  sevTxt:   { color: '#fff', fontSize: 10, fontWeight: '800' },
-  cardTitle:{ fontSize: 17, fontWeight: '700', color: '#1F2937', marginBottom: 2 },
-  cardAddr: { fontSize: 13, color: '#6B7280' },
-  cardTime: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-
-  unitRow:  { backgroundColor: '#F8FAFC', borderRadius: 8, padding: spacing.sm, marginBottom: spacing.sm },
-  unitTxt:  { fontSize: 13, fontWeight: '600', color: '#374151' },
-
-  statusBar:  {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm, borderWidth: 1, marginBottom: spacing.sm,
-  },
-  statusDot:  { width: 8, height: 8, borderRadius: 4, marginRight: spacing.xs },
-  statusTxt:  { flex: 1, fontSize: 13, fontWeight: '800' },
-  etaTxt:     { fontSize: 13, fontWeight: '700' },
-
-  statsRow:   { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.md },
-  stat:       { flex: 1, alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 8, padding: spacing.sm },
-  statVal:    { fontSize: 14, fontWeight: '700', color: '#1F2937', marginTop: 2 },
-  statLbl:    { fontSize: 10, color: '#9CA3AF', marginTop: 1 },
-
-  actions:      { gap: spacing.sm, marginBottom: spacing.sm },
-  btnBlue:      { backgroundColor: '#DC2626', borderRadius: borderRadius.md, paddingVertical: spacing.md, alignItems: 'center' },
-  btnBlueTxt:   { color: '#fff', fontWeight: '700', fontSize: 14 },
-  btnOutline:   { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: borderRadius.md, paddingVertical: spacing.md, alignItems: 'center', backgroundColor: '#fff' },
-  btnOutTxt:    { color: '#374151', fontWeight: '600', fontSize: 14 },
-
-  progressBtn:  { paddingVertical: spacing.sm, alignItems: 'center' },
-  progressTxt:  { color: '#DC2626', fontSize: 13, fontWeight: '600' },
-
+  card: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 10, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  statusBadgeTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  infoRow: { fontSize: 13, color: '#6B7280', marginBottom: 4 },
+  infoVal: { color: '#1F2937', fontWeight: '600' },
+  btnRed: { backgroundColor: RED, borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
+  btnRedTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  btnOutline: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingVertical: 14, alignItems: 'center', backgroundColor: '#fff' },
+  btnOutTxt: { color: '#374151', fontWeight: '600', fontSize: 14 },
+  btnOverride: { borderWidth: 1.5, borderColor: '#FECACA', borderRadius: 10, paddingVertical: 14, alignItems: 'center', backgroundColor: '#FEF2F2' },
+  btnOverrideTxt: { color: RED, fontWeight: '700', fontSize: 14 },
+  // Chat
+  // Bubble wrapper (replaces old bubble/bubbleMe/bubbleOther)
+  bubbleWrap:      { maxWidth: '78%', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, marginBottom: 8 },
+  bubbleWrapMe:    { alignSelf: 'flex-end', backgroundColor: RED, borderBottomRightRadius: 4 },
+  bubbleWrapOther: { alignSelf: 'flex-start', backgroundColor: '#fff', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#E5E7EB' },
+  bubbleHeader:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 },
+  bubbleSender:    { fontSize: 11, fontWeight: '700', color: RED, flexShrink: 1 },
+  bubbleText:      { fontSize: 14, color: '#1F2937', lineHeight: 20 },
+  bubbleTime:      { fontSize: 10, color: '#9CA3AF', marginTop: 3, textAlign: 'right' },
+  chatBar:         { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingVertical: 10, paddingBottom: 14, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB', gap: 8 },
+  chatInput:       { flex: 1, minHeight: 42, maxHeight: 100, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 21, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: '#1F2937', backgroundColor: '#F9FAFB' },
+  sendBtn:         { backgroundColor: RED, borderRadius: 21, paddingHorizontal: 18, paddingVertical: 11, justifyContent: 'center', alignItems: 'center' },
+  sendBtnTxt:      { color: '#fff', fontWeight: '700', fontSize: 14 },
   // Modal
-  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalCard:  { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.xl, maxHeight: '92%' },
-  modalHdr:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.lg },
-  statusOpt:  { flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderRadius: borderRadius.md, marginBottom: spacing.sm, borderWidth: 1.5, borderColor: '#E5E7EB' },
-  statusOptOn:{ borderColor: RED, backgroundColor: '#FFF5F5' },
-  check:      { width: 22, height: 22, borderRadius: 11, backgroundColor: RED, justifyContent: 'center', alignItems: 'center' },
-  sitrep:     { minHeight: 100, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: borderRadius.md, padding: spacing.md, fontSize: 14, color: '#1F2937', backgroundColor: '#F9FAFB' },
-  modalBtn:   { paddingVertical: spacing.md, borderRadius: borderRadius.md, alignItems: 'center' },
-
-  // Casualties
-  casualtyRow:   { flexDirection: 'row', gap: spacing.sm },
-  casualtyLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: spacing.xs },
-  counterRow:    { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  counterBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
-  counterBtnTxt: { fontSize: 18, fontWeight: '700', color: '#374151' },
-  counterVal:    { fontSize: 18, fontWeight: '800', color: '#1F2937', minWidth: 32, textAlign: 'center' },
-
-  // Checkboxes
-  checkRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  checkbox:   { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB', justifyContent: 'center', alignItems: 'center', marginTop: 1 },
-  checkboxOn: { backgroundColor: '#22C55E', borderColor: '#22C55E' },
-  checkLabel: { fontSize: 14, color: '#374151', flex: 1 },
-
-  // False alarm
-  falseAlarmBox: { marginTop: spacing.md, padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
-
-  // Timeline
-  timelineLink:    { marginTop: spacing.md, paddingVertical: spacing.sm, alignItems: 'center' },
-  timelineLinkTxt: { color: '#DC2626', fontSize: 13, fontWeight: '600' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '92%' },
+  modalBtn: { paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
+  statusOpt: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1.5, borderColor: '#E5E7EB' },
+  statusOptOn: { borderColor: RED, backgroundColor: '#FFF5F5' },
+  fieldLabel: { fontSize: 14, fontWeight: '700', color: '#374151', marginTop: 16, marginBottom: 8 },
+  sitrep: { minHeight: 100, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, fontSize: 14, color: '#1F2937', backgroundColor: '#F9FAFB' },
+  tagChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+  tagChipOn: { borderColor: RED, backgroundColor: '#FEF2F2' },
+  tagTxt: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  tagTxtOn: { color: RED },
+  counterRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
+  cBtnTxt: { fontSize: 18, lineHeight: 24, fontWeight: '700', color: '#374151' },
+  cVal: { fontSize: 18, lineHeight: 24, fontWeight: '800', color: '#1F2937', minWidth: 32, textAlign: 'center' },
+  falseAlarmBox: { marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+  // Chat WS status
+  chatStatusBar:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 6 },
+  chatStatusBarOn:  { backgroundColor: '#F0FDF4' },
+  chatStatusBarOff: { backgroundColor: '#F9FAFB' },
+  chatStatusDot:    { width: 8, height: 8, borderRadius: 4 },
+  chatStatusTxt:    { fontSize: 12, fontWeight: '600', color: '#374151', flex: 1 },
+  chatRetryBtn:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: RED },
+  chatRetryTxt:     { color: '#fff', fontSize: 11, fontWeight: '700' },
+  chatErrorBar:     { backgroundColor: '#FEF2F2', paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#FCA5A5' },
+  chatErrorTxt:     { color: '#991B1B', fontSize: 12 },
+  chatLiveDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
+  // System message
+  systemMsgWrap:    { alignItems: 'center', marginVertical: 10 },
+  systemMsg:        { fontSize: 11, color: '#6B7280', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12 },
+  // Admin badge in chat
+  adminBadge:       { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, backgroundColor: RED },
+  adminBadgeTxt:    { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  bubbleSeq:        { fontSize: 9, color: '#D1D5DB' },
+  // Completed mission history banner
+  historyBanner:      {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+  },
+  historyBannerIcon:  { fontSize: 13, lineHeight: 18 },
+  historyBannerTxt:   { flex: 1, fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  historyRefreshBtn:  { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: '#E5E7EB' },
+  historyRefreshTxt:  { fontSize: 14, fontWeight: '700', color: '#374151' },
 });
 
 export default ActiveMissionsScreen;

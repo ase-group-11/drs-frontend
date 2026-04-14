@@ -24,22 +24,29 @@ target 'mobile' do
   )
 
   # ============================================
-  # MAPBOX CONFIGURATION - ADDED
+  # MAPBOX CONFIGURATION
   # ============================================
   pre_install do |installer|
     $RNMapboxMaps.pre_install(installer)
   end
 
   post_install do |installer|
-    # Mapbox post install (MUST come first)
+    # 1. Mapbox post install (must come first)
     $RNMapboxMaps.post_install(installer)
-    
-    # React Native post install
+
+    # 2. React Native post install
     react_native_post_install(
       installer,
       config[:reactNativePath],
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # 3. Allow non-modular includes (required for Mapbox + RN compatibility)
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
+    end
   end
 end

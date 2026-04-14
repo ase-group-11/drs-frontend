@@ -1,4 +1,5 @@
 import type { Country } from '@types/auth';
+import { EXPO_PUBLIC_API_URL } from '@env';
 
 export const COUNTRIES: Country[] = [
   { code: 'IE', dialCode: '+353', name: 'Ireland', flag: '🇮🇪' },
@@ -30,9 +31,6 @@ export const OTP_RESEND_TIMEOUT = 60; // seconds
 
 export const API_TIMEOUT = 30000; // 30 seconds
 
-// API Base URL - Update this to your actual backend URL
-// For local development: http://localhost:8000/api/v1
-// For production: https://api.drs.dublin.ie/api/v1
-export const API_BASE_URL = __DEV__ 
-  ? 'http://localhost:8000/api/v1'  // Development
-  : 'https://api.drs.dublin.ie/api/v1'; // Production
+// API Base URL — loaded from .env via react-native-dotenv (@env)
+// Set EXPO_PUBLIC_API_URL in your .env file
+export const API_BASE_URL = EXPO_PUBLIC_API_URL;

@@ -1,21 +1,28 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FILE: src/services/wsService.ts
-// WebSocket real-time notification service
-// Citizen:  sends location ping every 3 min for geo-targeting
-// Responder: no location ping needed (role-based delivery)
+// WebSocket real-time notification service — SINGLETON
+//
+// Dispatches every event to the global disasterStore:
+//   - Every event → store.addAlert()  (persisted in Alerts page)
+//   - disaster.evaluated → fetch active disasters, cache in store
+//   - disaster.dispatched → update store in-place (no API)
+//   - disaster.updated → fetch single disaster, merge into store
+//   - disaster.resolved → move to resolved in store
+//   - disaster.false_alarm → move to resolved + badge
+//   - coordination.team_assigned → auto vehicle registration
 //
 // Connection: ws://host/api/v1/ws/notifications?token={access_token}
 // ═══════════════════════════════════════════════════════════════════════════
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
+import { showLocalNotification } from './notificationService';
 import { API_BASE_URL } from '@constants/index';
+import { API, WS_URL } from './apiConfig';
+import { disasterStore } from './disasterStore';
+import type { WSAlert } from './disasterStore';
 
-// Convert http(s) base URL to ws(s)
-// API_BASE_URL already contains /api/v1 — strip it so we don't double-up
-// e.g. http://localhost:8000/api/v1  →  ws://localhost:8000
-const WS_BASE = API_BASE_URL
-  .replace(/^http/, 'ws')
-  .replace(/\/api\/v1\/?$/, '');
+// WS base URL imported from apiConfig (strips /api/v1, swaps http→ws)
 
 export type WSEventType =
   | 'disaster.evaluated'
@@ -35,17 +42,6 @@ export type WSEventType =
   | 'coordination.team_assigned'
   | 'coordination.escalation';
 
-export interface WSAlert {
-  service:    string;
-  event_type: WSEventType;
-  severity:   'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
-  colour:     string;
-  title:      string;
-  message:    string;
-  data:       Record<string, any>;
-  timestamp:  string;
-}
-
 type AlertHandler  = (alert: WSAlert) => void;
 type ConnectHandler = (connected: boolean) => void;
 
@@ -62,7 +58,7 @@ class WsService {
   private maxReconnectDelay = 30000;
   private shouldReconnect = false;
 
-  // ── Public API ────────────────────────────────────────────────────────────
+  // ── Public API ────────────────────────────────────────────────────────
 
   onAlert(handler: AlertHandler): () => void {
     this.handlers.push(handler);
@@ -77,7 +73,6 @@ class WsService {
   updateLocation(lat: number, lon: number) {
     this.currentLat = lat;
     this.currentLon = lon;
-    // Immediately send updated location if connected and citizen
     if (this.ws?.readyState === WebSocket.OPEN && !this.isResponder) {
       this._sendPing();
     }
@@ -87,48 +82,72 @@ class WsService {
     this.isResponder     = responder;
     this.shouldReconnect = true;
 
-    // Always try to get a fresh token — expired tokens cause 403 on WS upgrade
+    // Clear any stale API URL cached from old dev builds (e.g. localhost:8000)
+    // The URL is always taken from the compiled constant now, not AsyncStorage
+    await AsyncStorage.removeItem('@config/api_base_url').catch(() => {});
+
     let token = await this._getFreshToken();
     if (!token) { console.warn('[WS] No token — cannot connect'); return; }
 
     this._openConnection(token);
   }
 
-  /** Get stored access token — tokens are 1-year lived so no refresh needed */
   private async _getFreshToken(): Promise<string | null> {
     const token = await AsyncStorage.getItem('@auth/access_token');
     if (!token) {
-      console.warn('[WS] No access_token in storage');
+      console.warn('[WS] No access_token in storage — not logged in');
       return null;
     }
 
-    // Basic sanity check — JWT should have 3 dot-separated parts
     const parts = token.split('.');
     if (parts.length !== 3) {
-      console.error('[WS] Stored token is malformed (not a JWT):', token.substring(0, 20) + '...');
+      console.error('[WS] Stored token is malformed');
       return null;
     }
 
-    // Decode the payload to check expiry and type
     try {
       const payloadJson = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
       const payload = JSON.parse(payloadJson);
-      console.log('[WS] Token payload — type:', payload.type, 'user_type:', payload.user_type, 'sub:', payload.sub?.substring(0,8));
+      const userType = payload.user_type ?? 'user';
+      console.log('[WS] Token — type:', payload.type, '| user_type:', userType, '| sub:', payload.sub);
 
-      // Backend requires payload.type === "access"
       if (payload.type !== 'access') {
         console.error('[WS] Token type is not "access":', payload.type);
         return null;
       }
 
-      // Check expiry
-      if (payload.exp && Date.now() / 1000 > payload.exp) {
-        console.error('[WS] Token is expired. exp:', new Date(payload.exp * 1000).toISOString());
-        return null;
+      // Token expires within 60 seconds — try to refresh proactively
+      if (payload.exp) {
+        const secondsLeft = payload.exp - Date.now() / 1000;
+        if (secondsLeft <= 0) {
+          console.error('[WS] Token is expired — cannot connect');
+          return null;
+        }
+        if (secondsLeft < 60) {
+          console.warn('[WS] Token expires in', Math.round(secondsLeft), 's — trying refresh');
+          try {
+            const refreshToken = await AsyncStorage.getItem('@auth/refresh_token');
+            if (refreshToken) {
+              const API_BASE_URL_VAL = API_BASE_URL;
+              const res = await fetch(`${API_BASE_URL_VAL}/auth/token/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                await AsyncStorage.setItem('@auth/access_token', data.access_token);
+                console.log('[WS] Token refreshed successfully');
+                return data.access_token;
+              }
+            }
+          } catch (e) {
+            console.warn('[WS] Token refresh failed — using existing token');
+          }
+        }
       }
     } catch (e) {
       console.warn('[WS] Could not decode token payload:', e);
-      // Still try — server will reject if truly invalid
     }
 
     return token;
@@ -138,7 +157,7 @@ class WsService {
     this.shouldReconnect = false;
     this._clearTimers();
     if (this.ws) {
-      this.ws.onclose = null; // prevent reconnect
+      this.ws.onclose = null;
       this.ws.close();
       this.ws = null;
     }
@@ -149,12 +168,12 @@ class WsService {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  // ── Internal ──────────────────────────────────────────────────────────────
+  // ── Internal ──────────────────────────────────────────────────────────
 
   private _openConnection(token: string) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
-    const url = `${WS_BASE}/api/v1/ws/notifications?token=${token}`;
+    const url = `${WS_URL}${API.notifications.ws()}?token=${token}`;
     console.log('[WS] Connecting:', url.replace(token, '***'));
 
     try {
@@ -167,36 +186,59 @@ class WsService {
 
     this.ws.onopen = () => {
       console.log('[WS] Connected');
-      this.reconnectDelay = 3000; // reset backoff
+      this.reconnectDelay = 3000;
       this._notifyConnect(true);
 
-      // Send initial location ping (citizen only)
-      if (!this.isResponder) {
-        this._sendPing();
-        // Repeat every 3 minutes
-        this.pingInterval = setInterval(() => this._sendPing(), 3 * 60 * 1000);
-      }
+      // Send location frame immediately on connect (all users).
+      // Backend step 4 reads this within 15s to enable geo-targeting.
+      // Also send a keepalive ping every 25s to stay within the backend's
+      // 30s receive timeout — prevents silent disconnection.
+      this._sendPing();
+      this.pingInterval = setInterval(() => this._sendPing(), 25 * 1000);
     };
 
     this.ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
+      // Wrap in an immediately-invoked async function so we can await
+      // addAlert (AsyncStorage write) and _dispatchToStore (fetch calls)
+      // without making the onmessage handler itself async (which React Native
+      // WebSocket doesn't support directly).
+      void (async () => {
+        try {
+          const msg = JSON.parse(event.data);
 
-        // Server keepalive ping — respond
-        if (msg.type === 'ping') {
-          this._sendPing();
-          return;
-        }
+          // Server keepalive ping — respond with client ping
+          if (msg.type === 'ping') {
+            this._sendPing();
+            return;
+          }
 
-        // Real alert
-        if (msg.event_type) {
+          // Server pong — no action needed
+          if (msg.type === 'pong') return;
+
+          // Real alert — must have event_type field
+          if (!msg.event_type) return;
+
           const alert: WSAlert = msg as WSAlert;
-          console.log('[WS] Alert:', alert.event_type, alert.severity);
+          console.log('[WS] ▶ Alert received:', alert.event_type, '|', alert.severity, '|', alert.title);
+
+          // ─── 1. Persist to store (awaited — ensures AsyncStorage write) ──
+          await disasterStore.addAlert(alert);
+
+          // ─── 2. Dispatch store mutations (awaited — ensures fetches complete) ─
+          await this._dispatchToStore(alert);
+
+          // ─── 3. Notify screen-level handlers (HomeScreen, ActiveMissions etc) ─
           this.handlers.forEach(h => h(alert));
+
+          // ─── 4. Show Alert.alert for important events on ANY screen ──────
+          // HomeScreen shows a banner when it's visible, but on other screens
+          // we use Alert.alert so the user always sees critical notifications.
+          this._showGlobalAlert(alert);
+
+        } catch (e) {
+          console.warn('[WS] onmessage error:', e);
         }
-      } catch {
-        // Non-JSON frame — ignore
-      }
+      })();
     };
 
     this.ws.onerror = (e) => {
@@ -211,14 +253,190 @@ class WsService {
     };
   }
 
+  /**
+   * Central dispatcher — maps WS events to store mutations.
+   * This is the ONLY place where store state is modified from WS events.
+   */
+  private async _dispatchToStore(alert: WSAlert) {
+    const data = alert.data ?? {};
+    const disasterId = data.disaster_id as string | undefined;
+
+    switch (alert.event_type) {
+      // ── disaster.evaluated: fetch full list, cache in store ──────
+      case 'disaster.evaluated': {
+        try {
+          const token = await AsyncStorage.getItem('@auth/access_token');
+          if (!token) break;
+          const res = await fetch(`${API_BASE_URL}${API.disasters.active()}`, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const list = json?.disasters ?? (Array.isArray(json) ? json : []);
+            disasterStore.setActiveDisasters(list);
+          }
+        } catch (e) {
+          console.warn('[WS dispatch] Failed to fetch active disasters:', e);
+        }
+        break;
+      }
+
+      // ── disaster.dispatched: update in-place, no API call ───────
+      case 'disaster.dispatched': {
+        if (disasterId) disasterStore.markDispatched(disasterId);
+        break;
+      }
+
+      // ── disaster.updated: fetch single disaster, merge ──────────
+      case 'disaster.updated': {
+        if (!disasterId) break;
+        try {
+          const token = await AsyncStorage.getItem('@auth/access_token');
+          if (!token) break;
+          const res = await fetch(`${API_BASE_URL}${API.disasters.byId(disasterId)}`, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          });
+          if (res.ok) {
+            const updated = await res.json();
+            disasterStore.mergeDisasterUpdate(disasterId, updated);
+          }
+        } catch (e) {
+          console.warn('[WS dispatch] Failed to fetch disaster update:', e);
+        }
+        break;
+      }
+
+      // ── disaster.resolved: move to resolved section ─────────────
+      case 'disaster.resolved': {
+        if (disasterId) disasterStore.resolveDisaster(disasterId);
+        break;
+      }
+
+      // ── disaster.false_alarm: move to resolved + badge ──────────
+      case 'disaster.false_alarm': {
+        if (disasterId) disasterStore.markFalseAlarm(disasterId);
+        break;
+      }
+
+      // ── coordination.team_assigned: auto vehicle registration ───
+      case 'coordination.team_assigned': {
+        try {
+          const token = await AsyncStorage.getItem('@auth/access_token');
+          const userData = await AsyncStorage.getItem('@auth/user_data');
+          if (!token || !userData) break;
+          const user = JSON.parse(userData);
+          // Auto-register vehicle as "emergency"
+          const res = await fetch(`${API_BASE_URL}${API.vehicles.register()}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id:      user.id,
+              current_lat:  53.3498,  // Dublin default — ideally use device GPS
+              current_lng:  -6.2603,
+              dest_lat:     data.disaster_lat ?? 53.35,
+              dest_lng:     data.disaster_lng ?? -6.26,
+              vehicle_type: 'emergency',
+            }),
+          });
+          if (res.ok) {
+            const reg = await res.json();
+            disasterStore.setVehicleRegistration({
+              registered:    true,
+              user_id:       reg.user_id,
+              vehicle_type:  reg.vehicle_type,
+              dest_lat:      reg.dest_lat,
+              dest_lng:      reg.dest_lng,
+              expires_at:    reg.expires_at,
+            });
+            console.log('[WS dispatch] Vehicle registered as emergency');
+          }
+        } catch (e) {
+          console.warn('[WS dispatch] Vehicle registration failed:', e);
+        }
+        break;
+      }
+
+      // ── disaster.verified, disaster.backup_requested,
+      //    disaster.unit_completed, reroute.triggered,
+      //    route.updated, disaster.cleared, vehicle.location_updated,
+      //    coordination.escalation, evacuation.triggered
+      //    → no store mutation needed beyond the alert (which is already added)
+      //    → screen-level handlers deal with these via onAlert()
+      default:
+        break;
+    }
+  }
+
   private _sendPing() {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
-    const frame: any = { type: 'ping' };
-    if (!this.isResponder) {
-      frame.lat = this.currentLat;
-      frame.lon = this.currentLon;
+    // Always include lat/lon — backend uses it for geo-targeting for both
+    // citizens and responders. Without it, the backend marks geo-targeting
+    // as disabled for this user and they may miss location-scoped alerts.
+    this.ws.send(JSON.stringify({
+      type: 'ping',
+      lat:  this.currentLat,
+      lon:  this.currentLon,
+    }));
+  }
+
+  private _showGlobalAlert(alert: WSAlert) {
+    const et       = alert.event_type;
+    const severity = alert.severity ?? 'INFO';
+    const title    = alert.title   ?? 'DRS Alert';
+    const message  = alert.message ?? '';
+
+    // Use the isResponder flag set during connect() — no AsyncStorage read needed
+    const isResponder = this.isResponder;
+
+    // Citizen-only events — never show to responders
+    const CITIZEN_EVENTS: Record<string, string> = {
+      'disaster.evaluated':   '⚠️ Disaster Alert',
+      'disaster.verified':    '✅ Disaster Verified',
+      'disaster.resolved':    '✅ Disaster Resolved',
+      'disaster.false_alarm': 'ℹ️ False Alarm',
+      'evacuation.triggered': '🚨 Evacuation Activated',
+      'evacuation.updated':   '🔄 Evacuation Updated',
+      'reroute.triggered':    '🗺️ Route Change',
+      'route.updated':        '🔄 Route Updated',
+    };
+
+    // Responder-only events — never show to citizens
+    const RESPONDER_EVENTS: Record<string, string> = {
+      'disaster.dispatched':        '🚨 Dispatched to Disaster',
+      'disaster.updated':           '🔄 Disaster Updated',
+      'disaster.backup_requested':  '🆘 Backup Requested',
+      'disaster.unit_completed':    '✅ Mission Complete',
+      'coordination.escalation':    '⚠️ Escalation',
+      'coordination.team_assigned': '👥 Team Assigned',
+    };
+
+    // Pick the right title based on role
+    let notifTitle: string | undefined;
+    if (isResponder) {
+      notifTitle = RESPONDER_EVENTS[et] ?? CITIZEN_EVENTS[et];
+    } else {
+      notifTitle = CITIZEN_EVENTS[et]; // citizens never see responder events
     }
-    this.ws.send(JSON.stringify(frame));
+
+    if (!notifTitle) return; // event not relevant to this user's role
+
+    // Build notification data for deep linking on tap
+    const notifData: Record<string, string> = {
+      event_type: et,
+      severity,
+    };
+    const alertData = alert.data ?? {};
+    if (alertData.disaster_id) notifData.disaster_id = String(alertData.disaster_id);
+
+    // Show local push notification — appears on any screen, even background
+    showLocalNotification(
+      notifTitle,
+      message || title,
+      severity,
+      notifData,
+    ).catch(() => {
+      Alert.alert(notifTitle!, message || title, [{ text: 'OK' }]);
+    });
   }
 
   private _scheduleReconnect(token: string) {
