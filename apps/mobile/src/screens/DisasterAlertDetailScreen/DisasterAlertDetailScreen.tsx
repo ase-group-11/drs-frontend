@@ -136,7 +136,7 @@ const SAFETY_ADVICE: Record<string, SafetyAdvice> = {
 };
 
 const getSafetyAdvice = (type: string): SafetyAdvice =>
-  SAFETY_ADVICE[type?.toUpperCase()] ?? SAFETY_ADVICE.DEFAULT;
+  SAFETY_ADVICE[type?.toUpperCase()] ?? SAFETY_ADVICE.OTHER;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

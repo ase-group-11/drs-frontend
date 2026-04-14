@@ -709,10 +709,14 @@ export const EvacuationPlansScreen: React.FC = () => {
     if (!filterDisasterId || plans.length === 0) return;
     const match = plans.find(p => p.disaster_id === filterDisasterId);
     if (match) {
-      // Auto-open the matching plan detail
       loadPlanDetail(match.id);
+    } else {
+      Alert.alert(
+        'No Evacuation Plan',
+        'No evacuation plan has been activated for this disaster yet. Check back shortly or contact emergency services.',
+        [{ text: 'OK' }],
+      );
     }
-    // else: no plan for this disaster yet — list shows all plans normally
   }, [plans, filterDisasterId]);
 
   const onRefresh = async () => {
@@ -746,8 +750,9 @@ export const EvacuationPlansScreen: React.FC = () => {
       );
 
       setPlans(enriched);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Could not load evacuation plans:', e);
+      Alert.alert('Could Not Load Plans', e?.message || 'Failed to load evacuation plans. Please try again.');
     }
   };
 

@@ -196,7 +196,7 @@ export const AlertsScreen: React.FC = () => {
           } catch {
             // Plan expired — just open map, WS overlay may still be drawn
           }
-          navigation.navigate('Home' as any);
+          navigation.navigate('Home' as any, { routeUnavailable: true });
         }
       } else if (disasterId) {
         navigation.navigate('DisasterDetail' as any, { disasterId });

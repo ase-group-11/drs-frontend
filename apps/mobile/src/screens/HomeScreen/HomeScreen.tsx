@@ -62,7 +62,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   const [selectedFilter, setSelectedFilter]       = useState('all');
   const [loading, setLoading]                     = useState(true);
   // Citizen GPS location — sent to backend every 30s for geo-targeted alerts
-  const { location: citizenLocation }             = useUserLocation();
+  const { location: citizenLocation, permissionDenied: locationDenied } = useUserLocation();
   const [userName, setUserName]                   = useState('User');
   const [userPhone, setUserPhone]                 = useState('');
   const [userInitials, setUserInitials]           = useState('U');
@@ -79,6 +79,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   const [isResponder, setIsResponder]             = useState(false);
   const [responderData, setResponderData]         = useState<any>(null);
   const [responderRouteActive, setResponderRouteActive] = useState(false);
+  const [citizenRouteActive, setCitizenRouteActive]     = useState(false);
+  const [loadError, setLoadError]                 = useState(false);
   const [missionCount, setMissionCount]           = useState(0);
   const mapRef      = useRef<any>(null);
   const pendingNav       = useRef<{ lat: number; lon: number; label: string } | null>(null);
@@ -97,8 +99,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
             params.reroutePts,
             params.rerouteMeta ?? null,
           );
+          setCitizenRouteActive(true);
         }
       }, 800);
+    } else if (params?.routeUnavailable) {
+      setActiveAlert({
+        event_type: 'route.unavailable', severity: 'LOW',
+        title: 'Route Not Available',
+        message: 'Your reroute plan has expired or is not yet available. Check back shortly.',
+        service: '', colour: '', data: {}, timestamp: new Date().toISOString(),
+      } as any);
     }
   }, [route?.params]);
 
@@ -174,9 +184,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
                       dist: routeData.length_meters ?? 0,
                     };
                     mapRef.current?.applyRerouteAlertWithGeometry?.(disasterId, pts, meta);
+                    setCitizenRouteActive(true);
+                  } else {
+                    setActiveAlert({
+                      event_type: 'route.info', severity: 'MEDIUM',
+                      title: 'Route Unavailable',
+                      message: 'Your assigned route could not be loaded. Check back shortly.',
+                      service: '', colour: '', data: {}, timestamp: new Date().toISOString(),
+                    } as any);
                   }
                 } catch (e) {
                   console.warn('[HomeScreen] Citizen route fetch failed:', e);
+                  setActiveAlert({
+                    event_type: 'route.error', severity: 'MEDIUM',
+                    title: 'Route Unavailable',
+                    message: 'Could not load your assigned route. Please try again.',
+                    service: '', colour: '', data: {}, timestamp: new Date().toISOString(),
+                  } as any);
                 }
               }
             })
@@ -312,10 +336,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         .filter((d: any) => d.location.latitude && d.location.longitude);
 
       setDisasters(converted);
+      setLoadError(false);
       console.log('[HomeScreen] Disasters from store:', converted.length);
       setLoading(false);
     } catch (error) {
       console.error('Failed to load disasters:', error);
+      setLoadError(true);
       setLoading(false);
     }
   };
@@ -382,14 +408,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     // to the disasterStore, which triggers the store subscription above.
     // No need to call loadDisasters() here — store is the single source of truth.
 
-    // disaster.cleared — roads reopened, clear reroute overlay and status
-    if (alert.event_type === 'disaster.cleared') {
+    // disaster.cleared / disaster.resolved — roads reopened, clear reroute overlay
+    if (alert.event_type === 'disaster.cleared' || alert.event_type === 'disaster.resolved') {
       mapRef.current?.clearReroute?.();
-    }
-
-    // disaster.resolved — disaster is over, also clear reroute overlay
-    if (alert.event_type === 'disaster.resolved') {
-      mapRef.current?.clearReroute?.();
+      setCitizenRouteActive(false);
+      setResponderRouteActive(false);
     }
 
     // Citizen reroute — citizen-integration.md Section 8
@@ -673,18 +696,39 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         </TouchableOpacity>
       )}
 
-      {/* ── Responder: Clear Route button — shown while a disaster route is drawn ── */}
-      {responderRouteActive && (
+      {/* ── Clear Route button — citizen or responder ── */}
+      {(responderRouteActive || citizenRouteActive) && (
         <TouchableOpacity
           style={styles.clearRouteBtn}
           onPress={() => {
             mapRef.current?.clearReroute?.();
             setResponderRouteActive(false);
+            setCitizenRouteActive(false);
           }}
           activeOpacity={0.85}
         >
           <Text style={styles.clearRouteBtnText}>✕  Clear Route</Text>
         </TouchableOpacity>
+      )}
+
+      {/* ── Disaster load error — retry banner ── */}
+      {loadError && !loading && (
+        <TouchableOpacity
+          style={[styles.clearRouteBtn, { backgroundColor: '#DC2626', bottom: (responderRouteActive || citizenRouteActive) ? 80 : 24 }]}
+          onPress={() => { setLoadError(false); setLoading(true); loadDisasters(); }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.clearRouteBtnText}>⚠️  Failed to load disasters — Tap to retry</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Location permission denied banner (citizen only) ── */}
+      {!isResponder && locationDenied && (
+        <View style={[styles.clearRouteBtn, { backgroundColor: '#92400E', bottom: loadError ? 136 : 24, paddingVertical: 10 }]}>
+          <Text style={[styles.clearRouteBtnText, { fontSize: 12 }]}>
+            📍 Location access denied — alerts may not be geo-targeted to your area
+          </Text>
+        </View>
       )}
 
       {/* ── Left slide drawer using original working Modal + fade ── */}

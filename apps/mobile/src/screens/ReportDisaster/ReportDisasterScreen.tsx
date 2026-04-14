@@ -81,6 +81,13 @@ export const ReportDisasterScreen = () => {
       const user = await authService.getStoredUser();
       if (!user) throw new Error('You must be logged in to submit a report.');
 
+      // Validate coordinates before submission
+      const lat = reportData.location?.latitude;
+      const lon = reportData.location?.longitude;
+      if (!lat || !lon || isNaN(Number(lat)) || isNaN(Number(lon))) {
+        throw new Error('Invalid location — please go back and select a valid address on the map.');
+      }
+
       // Map frontend ids → backend enum values
       const typeMap: Record<string, string> = {
         flood:      'FLOOD',
