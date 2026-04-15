@@ -137,77 +137,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       if (action.type === 'flyTo' && mapRef.current?.navigateToScene) {
         mapRef.current.navigateToScene(action.lat, action.lon, action.label);
         clearInterval(interval);
-        // If this flyTo came from "Navigate to Disaster", fetch the active reroute
-        // plan and draw the route overlay so the responder can see the path.
-        if (action.disasterId) {
-          const disasterId = action.disasterId;
-          setResponderRouteActive(false);
-          authRequest<any>(API.reroute.plans())
-            .then(async (res: any) => {
-              // plans endpoint may return array or single plan
-              const plans: any[] = Array.isArray(res) ? res : (res?.plans ?? [res]);
-              const plan = plans.find((p: any) => p.disaster_id === disasterId);
-              if (!plan) return;
-
-              if (isResponder) {
-                // Responder: use the first chosen route
-                const routes: any[] = plan?.chosen_routes ?? [];
-                if (routes.length > 0 && Array.isArray(routes[0].points) && routes[0].points.length > 1) {
-                  // Backend returns [lat, lon]; Mapbox needs [lon, lat]
-                  const pts: [number, number][] = routes[0].points.map(
-                    (p: number[]) => [p[1], p[0]] as [number, number],
-                  );
-                  const meta = {
-                    time: routes[0].travel_time_seconds ?? 0,
-                    dist: routes[0].length_meters ?? 0,
-                  };
-                  mapRef.current?.applyRerouteAlertWithGeometry?.(disasterId, pts, meta);
-                  setResponderRouteActive(true);
-                }
-              } else {
-                // Citizen: look up their specific assigned route
-                try {
-                  const stored = await AsyncStorage.getItem('@auth/user_data');
-                  const user = stored ? JSON.parse(stored) : null;
-                  const routeAssignments: Record<string, string> = plan.route_assignments ?? {};
-                  const assignedRouteId = user ? routeAssignments[user.id] : null;
-                  if (!assignedRouteId) return; // not yet assigned — fly only
-                  const routeData = await authRequest<any>(
-                    API.reroute.status(disasterId, assignedRouteId),
-                  );
-                  const pts: [number, number][] = (routeData?.points ?? []).map(
-                    (p: number[]) => [p[1], p[0]] as [number, number],
-                  );
-                  if (pts.length > 1) {
-                    const meta = {
-                      time: routeData.travel_time_seconds ?? 0,
-                      dist: routeData.length_meters ?? 0,
-                    };
-                    mapRef.current?.applyRerouteAlertWithGeometry?.(disasterId, pts, meta);
-                    setCitizenRouteActive(true);
-                  } else {
-                    setActiveAlert({
-                      event_type: 'route.info', severity: 'MEDIUM',
-                      title: 'Route Unavailable',
-                      message: 'Your assigned route could not be loaded. Check back shortly.',
-                      service: '', colour: '', data: {}, timestamp: new Date().toISOString(),
-                    } as any);
-                  }
-                } catch (e) {
-                  console.warn('[HomeScreen] Citizen route fetch failed:', e);
-                  setActiveAlert({
-                    event_type: 'route.error', severity: 'MEDIUM',
-                    title: 'Route Unavailable',
-                    message: 'Could not load your assigned route. Please try again.',
-                    service: '', colour: '', data: {}, timestamp: new Date().toISOString(),
-                  } as any);
-                }
-              }
-            })
-            .catch(() => { /* No plan yet — map still flies to disaster */ });
+        // If this flyTo came from "Navigate to Disaster", draw a route from the
+        // responder's current GPS position to the disaster using Mapbox directions.
+        if (action.disasterId && isResponder) {
+          mapRef.current?.showEvacuationRoute?.(action.lat, action.lon, action.label);
+          setResponderRouteActive(true);
         }
       } else if (action.type === 'evacuationRoute' && mapRef.current?.showEvacuationRoute) {
         mapRef.current.showEvacuationRoute(action.lat, action.lon, action.label);
+        setResponderRouteActive(true);
         clearInterval(interval);
       } else {
         // mapRef method not ready yet — put action back and retry next tick
@@ -548,6 +486,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
     // ERT-specific events — store already updated by wsService dispatch
     if (isResponder) {
+      // Unit completed — refresh disaster list since status may have changed
+      if (alert.event_type === 'disaster.unit_completed') {
+        try {
+          const data = await authRequest<any>(API.disasters.active());
+          const list = data?.disasters ?? (Array.isArray(data) ? data : []);
+          disasterStore.setActiveDisasters(list);
+        } catch (e) {
+          console.warn('[HomeScreen] unit_completed disaster refresh failed', e);
+        }
+      }
+
       // No loadDisasters() needed — disasterStore subscription handles re-render
       if (alert.event_type === 'coordination.escalation') {
         // Escalation — always show persistent banner, never auto-dismiss
@@ -702,7 +651,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       {/* ── Clear Route button — citizen or responder ── */}
       {(responderRouteActive || citizenRouteActive) && (
         <TouchableOpacity
-          style={styles.clearRouteBtn}
+          style={[styles.clearRouteBtn, { bottom: citizenRouteActive ? 130 : 90 }]}
           onPress={() => {
             mapRef.current?.clearReroute?.();
             setResponderRouteActive(false);
@@ -717,7 +666,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       {/* ── Disaster load error — retry banner ── */}
       {loadError && !loading && (
         <TouchableOpacity
-          style={[styles.clearRouteBtn, { backgroundColor: '#DC2626', bottom: (responderRouteActive || citizenRouteActive) ? 80 : 24 }]}
+          style={[styles.clearRouteBtn, { backgroundColor: '#DC2626', bottom: (responderRouteActive || citizenRouteActive) ? 148 : 90 }]}
           onPress={() => { setLoadError(false); setLoading(true); loadDisasters(); }}
           activeOpacity={0.85}
         >

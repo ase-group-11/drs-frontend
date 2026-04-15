@@ -724,6 +724,13 @@ export const ActiveMissionsScreen: React.FC = () => {
               >
                 <Text style={S.btnOverrideTxt}>🚦  Traffic Override</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[S.btnOverride, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}
+                onPress={() => navigation.navigate('EvacuationPlans' as any, { disasterId: m.disaster_id })}
+                activeOpacity={0.8}
+              >
+                <Text style={[S.btnOverrideTxt, { color: '#DC2626' }]}>🚨  Evacuation Plans</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={S.btnOutline}
                 onPress={() => Alert.alert('📞 Contact Command', 'Call HQ?',
                   [{ text: 'Cancel', style: 'cancel' }, { text: 'Call', onPress: () => Linking.openURL('tel:999') }])}>

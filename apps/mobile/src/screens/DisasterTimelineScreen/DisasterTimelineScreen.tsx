@@ -19,6 +19,7 @@ import { spacing, borderRadius } from '@theme/spacing';
 import Svg, { Path } from 'react-native-svg';
 import { authRequest } from '@services/authService';
 import { API } from '@services/apiConfig';
+import { wsService } from '@services/wsService';
 import { formatDateTime } from '@utils/formatters';
 
 // Disaster statuses → effective report status
@@ -56,6 +57,19 @@ export const DisasterTimelineScreen: React.FC = () => {
   const id = reportId ?? disasterId;
 
   useEffect(() => { if (id) load(); }, [id]);
+
+  // Real-time status updates via WS events
+  useEffect(() => {
+    if (!id) return;
+    const REFRESH_EVENTS = [
+      'disaster.updated', 'disaster.dispatched', 'disaster.verified',
+      'disaster.resolved', 'disaster.cleared', 'disaster.unit_completed',
+      'disaster.false_alarm',
+    ];
+    return wsService.onAlert((alert: any) => {
+      if (REFRESH_EVENTS.includes(alert.event_type)) load();
+    });
+  }, [id]);
 
   const load = async () => {
     setError('');

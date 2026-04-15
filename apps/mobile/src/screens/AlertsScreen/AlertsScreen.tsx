@@ -180,11 +180,15 @@ export const AlertsScreen: React.FC = () => {
               const routeData = await authRequest<any>(
                 API.reroute.status(disasterId, routeId)
               );
-              const pts: [number, number][] = (routeData?.points ?? []).map(
+              // Response is a plan object — find the assigned route inside chosen_routes
+              const assignedRoute = (routeData?.chosen_routes ?? []).find(
+                (r: any) => (r.route_id ?? r.id) === routeId
+              ) ?? routeData?.chosen_routes?.[0];
+              const pts: [number, number][] = (assignedRoute?.points ?? []).map(
                 (p: number[]) => [p[1], p[0]] as [number, number]
               );
-              const meta = routeData?.travel_time_seconds
-                ? { time: routeData.travel_time_seconds, dist: routeData.length_meters ?? 0 }
+              const meta = assignedRoute?.travel_time_seconds
+                ? { time: assignedRoute.travel_time_seconds, dist: assignedRoute.length_meters ?? 0 }
                 : null;
               if (pts.length > 1) {
                 navigation.navigate('Home' as any, {
