@@ -174,13 +174,32 @@ export const AlertsScreen: React.FC = () => {
             const storedUser = await AsyncStorage.getItem('@auth/user_data');
             const user = storedUser ? JSON.parse(storedUser) : null;
             const routeAssignments = alert.data?.route_assignments ?? {};
-            const routeId = user?.id ? routeAssignments[user.id] : null;
+            let routeId: string | null = user?.id ? routeAssignments[user.id] : null;
+
+            // route_assignments may be empty (backend didn't populate WS payload)
+            // Fall back to /reroute/plans which returns the user's current plan
+            if (!routeId && disasterId) {
+              const plans = await authRequest<any>(API.reroute.plans());
+              const planList = Array.isArray(plans) ? plans : (plans as any)?.plans ?? [];
+              console.log('[Reroute] plans count:', planList.length, 'looking for disasterId:', disasterId);
+              planList.forEach((p: any, i: number) => {
+                console.log(`[Reroute] plan[${i}] keys:`, Object.keys(p), 'disaster_id:', p.disaster_id, 'id:', p.id);
+              });
+              const plan = planList.find((p: any) => p.disaster_id === disasterId)
+                ?? planList.find((p: any) => p.status === 'active');
+              const assignments = plan?.route_assignments ?? {};
+              console.log('[Reroute] matched plan disaster_id:', plan?.disaster_id, 'userId:', user?.id);
+              console.log('[Reroute] route_assignments keys:', Object.keys(assignments));
+              console.log('[Reroute] user in assignments?', user?.id ? assignments[user.id] : 'no user');
+              // Only use user's own assignment — do NOT fall back to another user's route
+              routeId = user?.id ? (assignments[user.id] ?? null) : null;
+              console.log('[Reroute] routeId from plan.route_assignments:', routeId);
+            }
 
             if (routeId && disasterId) {
               const routeData = await authRequest<any>(
                 API.reroute.status(disasterId, routeId)
               );
-              // Response is a plan object — find the assigned route inside chosen_routes
               const assignedRoute = (routeData?.chosen_routes ?? []).find(
                 (r: any) => (r.route_id ?? r.id) === routeId
               ) ?? routeData?.chosen_routes?.[0];

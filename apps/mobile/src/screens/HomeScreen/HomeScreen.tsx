@@ -326,7 +326,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       try {
         console.log('[Reroute] No cache - fetching geometry now:', routeId);
         const routeData = await authRequest<any>(API.reroute.status(disasterId, routeId));
-        pts = (routeData?.points ?? []).map(
+        const assignedRoute = (routeData?.chosen_routes ?? []).find(
+          (r: any) => (r.route_id ?? r.id) === routeId
+        ) ?? routeData?.chosen_routes?.[0];
+        pts = (assignedRoute?.points ?? []).map(
           (p: number[]) => [p[1], p[0]] as [number, number]
         );
         console.log('[Reroute] Geometry fetched on tap:', pts?.length, 'points');
@@ -367,11 +370,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       try {
         const stored = await AsyncStorage.getItem('@auth/user_data');
         const user = stored ? JSON.parse(stored) : null;
-        const userRouteId = user ? routeAssignments[user.id] : null;
+        let userRouteId = user ? routeAssignments[user.id] : null;
+        console.log('[Reroute] userId:', user?.id, 'userRouteId:', userRouteId, 'assignmentKeys:', Object.keys(routeAssignments));
+
+        // route_assignments may be empty — fall back to /reroute/plans
+        if (!userRouteId && disasterId) {
+          try {
+            const plans = await authRequest<any>(API.reroute.plans());
+            const planList = Array.isArray(plans) ? plans : (plans as any)?.plans ?? [];
+            const plan = planList.find((p: any) => p.disaster_id === disasterId)
+              ?? planList.find((p: any) => p.status === 'active');
+            userRouteId = user?.id ? (plan?.route_assignments?.[user.id] ?? null) : null;
+            console.log('[Reroute] Plans fallback — userId:', user?.id, 'planDisasterId:', plan?.disaster_id, 'assignmentKeys:', Object.keys(plan?.route_assignments ?? {}), 'routeId:', userRouteId);
+          } catch { /* ignore — fall through to area alert */ }
+        }
 
         if (!userRouteId) {
-          // User NOT in route_assignments — general area alert, no route to draw
-          console.log('[Reroute] Not in route_assignments — showing area alert');
+          // User NOT in route_assignments and no plan found — general area alert
+          console.log('[Reroute] No route found — showing area alert');
           setActiveAlert({
             ...alert,
             title:   'Rerouting in Your Area',
@@ -387,15 +403,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
         // Fetch geometry immediately while plan is still active in the DB
         let cachedPts: [number, number][] | null = null;
+        await notificationStore.saveNotification(alert);
         try {
           const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
-          cachedPts = (routeData?.points ?? []).map(
+          const assignedRoute = (routeData?.chosen_routes ?? []).find(
+            (r: any) => (r.route_id ?? r.id) === userRouteId
+          ) ?? routeData?.chosen_routes?.[0];
+          cachedPts = (assignedRoute?.points ?? []).map(
             (p: number[]) => [p[1], p[0]] as [number, number]
           );
           console.log('[Reroute] Geometry pre-fetched:', cachedPts.length, 'points');
-          // Cache geometry so AlertsScreen can use it without re-fetching
-          const meta = routeMeta
-            ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters }
+          const meta = assignedRoute?.travel_time_seconds
+            ? { time: assignedRoute.travel_time_seconds, dist: assignedRoute.length_meters ?? 0 }
             : null;
           await notificationStore.updateCachedGeometry(alert.timestamp, cachedPts, meta);
         } catch (e) {
