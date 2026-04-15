@@ -31,23 +31,22 @@ import type { RootStackParamList } from '@types/navigation';
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 interface HomeScreenProps { navigation: HomeScreenNavigationProp; route?: any; }
 
-// All possible disaster type labels/icons — only types that exist in the backend.
-// Filters are derived DYNAMICALLY from whichever types are present in loaded disasters.
-const TYPE_META: Record<string, { label: string; icon: string }> = {
-  fire:        { label: '🔥 Fire',        icon: '🔥' },
-  flood:       { label: '🌊 Flood',       icon: '🌊' },
-  storm:       { label: '⛈️ Storm',        icon: '⛈️' },
-  earthquake:  { label: '🏚️ Earthquake',  icon: '🏚️' },
-  hurricane:   { label: '🌀 Hurricane',   icon: '🌀' },
-  tornado:     { label: '🌪️ Tornado',     icon: '🌪️' },
-  tsunami:     { label: '🌊 Tsunami',     icon: '🌊' },
-  drought:     { label: '🏜️ Drought',     icon: '🏜️' },
-  heatwave:    { label: '🌡️ Heatwave',    icon: '🌡️' },
-  coldwave:    { label: '🧊 Coldwave',    icon: '🧊' },
-  other:       { label: '⚠️ Other',       icon: '⚠️' },
-};
-
-const ALL_FILTER: DisasterFilter = { id: 'all', label: '📍 All', icon: '📍' };
+// Static filter tabs — always show all backend-supported disaster types.
+// The map just shows empty if no disasters of that type exist currently.
+const FILTERS: DisasterFilter[] = [
+  { id: 'all',        label: '📍 All',        icon: '📍' },
+  { id: 'fire',       label: '🔥 Fire',       icon: '🔥', type: 'fire' },
+  { id: 'flood',      label: '🌊 Flood',      icon: '🌊', type: 'flood' },
+  { id: 'storm',      label: '⛈️ Storm',       icon: '⛈️', type: 'storm' },
+  { id: 'earthquake', label: '🏚️ Earthquake', icon: '🏚️', type: 'earthquake' },
+  { id: 'hurricane',  label: '🌀 Hurricane',  icon: '🌀', type: 'hurricane' },
+  { id: 'tornado',    label: '🌪️ Tornado',    icon: '🌪️', type: 'tornado' },
+  { id: 'tsunami',    label: '🌊 Tsunami',    icon: '🌊', type: 'tsunami' },
+  { id: 'drought',    label: '🏜️ Drought',    icon: '🏜️', type: 'drought' },
+  { id: 'heatwave',   label: '🌡️ Heatwave',   icon: '🌡️', type: 'heatwave' },
+  { id: 'coldwave',   label: '🧊 Coldwave',   icon: '🧊', type: 'coldwave' },
+  { id: 'other',      label: '⚠️ Other',      icon: '⚠️', type: 'other' },
+];
 
 const getInitials = (name: string): string => {
   const parts = name.trim().split(' ');
@@ -56,34 +55,14 @@ const getInitials = (name: string): string => {
     : name.substring(0, 2).toUpperCase();
 };
 
-// Build dynamic filter tabs from whatever disaster types are currently loaded.
-// Always starts with "All". Only types that exist in the list are shown —
-// no phantom filter tabs for types the backend has never reported.
-const buildFilters = (disasterList: Disaster[]): DisasterFilter[] => {
-  const seen = new Set<string>();
-  disasterList.forEach(d => { if (d.type) seen.add(d.type.toLowerCase()); });
-  const typeTabs: DisasterFilter[] = Array.from(seen)
-    .filter(t => TYPE_META[t]) // only show types we have metadata for
-    .sort()
-    .map(t => ({
-      id:    t,
-      label: TYPE_META[t].label,
-      icon:  TYPE_META[t].icon,
-      type:  t as any,
-    }));
-  return [ALL_FILTER, ...typeTabs];
-};
-
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => {
   const [disasters, setDisasters]                 = useState<Disaster[]>([]);
   const insets     = useSafeAreaInsets();
-  // Dynamic filters — only types present in loaded disasters (+ always "All")
-  const [activeFilters, setActiveFilters]         = useState<DisasterFilter[]>([ALL_FILTER]);
   const [filteredDisasters, setFilteredDisasters] = useState<Disaster[]>([]);
   const [selectedFilter, setSelectedFilter]       = useState('all');
   const [loading, setLoading]                     = useState(true);
   // Citizen GPS location — sent to backend every 30s for geo-targeted alerts
-  const { location: citizenLocation }             = useUserLocation();
+  const { location: citizenLocation, permissionDenied: locationDenied } = useUserLocation();
   const [userName, setUserName]                   = useState('User');
   const [userPhone, setUserPhone]                 = useState('');
   const [userInitials, setUserInitials]           = useState('U');
@@ -99,6 +78,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   } | null>(null);
   const [isResponder, setIsResponder]             = useState(false);
   const [responderData, setResponderData]         = useState<any>(null);
+  const [responderRouteActive, setResponderRouteActive] = useState(false);
+  const [citizenRouteActive, setCitizenRouteActive]     = useState(false);
+  const [loadError, setLoadError]                 = useState(false);
   const [missionCount, setMissionCount]           = useState(0);
   const mapRef      = useRef<any>(null);
   const pendingNav       = useRef<{ lat: number; lon: number; label: string } | null>(null);
@@ -117,8 +99,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
             params.reroutePts,
             params.rerouteMeta ?? null,
           );
+          setCitizenRouteActive(true);
         }
       }, 800);
+    } else if (params?.routeUnavailable) {
+      setActiveAlert({
+        event_type: 'route.unavailable', severity: 'LOW',
+        title: 'Route Not Available',
+        message: 'Your reroute plan has expired or is not yet available. Check back shortly.',
+        service: '', colour: '', data: {}, timestamp: new Date().toISOString(),
+      } as any);
     }
   }, [route?.params]);
 
@@ -147,8 +137,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       if (action.type === 'flyTo' && mapRef.current?.navigateToScene) {
         mapRef.current.navigateToScene(action.lat, action.lon, action.label);
         clearInterval(interval);
+        // If this flyTo came from "Navigate to Disaster", draw a route from the
+        // responder's current GPS position to the disaster using Mapbox directions.
+        if (action.disasterId && isResponder) {
+          mapRef.current?.showEvacuationRoute?.(action.lat, action.lon, action.label);
+          setResponderRouteActive(true);
+        }
       } else if (action.type === 'evacuationRoute' && mapRef.current?.showEvacuationRoute) {
         mapRef.current.showEvacuationRoute(action.lat, action.lon, action.label);
+        setResponderRouteActive(true);
         clearInterval(interval);
       } else {
         // mapRef method not ready yet — put action back and retry next tick
@@ -157,7 +154,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     }, 200);
 
     return () => clearInterval(interval);
-  }, []));
+  }, [isResponder]));
 
   useEffect(() => {
     loadDisasters();
@@ -185,7 +182,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         }))
         .filter((d: any) => d.location.latitude && d.location.longitude);
       setDisasters(converted);
-      setActiveFilters(buildFilters(converted));
     });
 
     // Connect WebSocket for real-time alerts
@@ -220,6 +216,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
   // Citizens only — responders use a separate deployment location endpoint.
   useEffect(() => {
     if (isResponder) return; // responders handled separately
+    if (locationDenied) return; // don't send Dublin defaults when permission is denied
     const [lon, lat] = citizenLocation;
     // Send immediately on location change
     wsService.updateLocation(lat, lon);
@@ -228,7 +225,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       wsService.updateLocation(lat, lon);
     }, 30_000);
     return () => clearInterval(interval);
-  }, [citizenLocation, isResponder]);
+  }, [citizenLocation, isResponder, locationDenied]);
 
   useEffect(() => {
     if (selectedFilter === 'all') {
@@ -278,11 +275,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         .filter((d: any) => d.location.latitude && d.location.longitude);
 
       setDisasters(converted);
-      setActiveFilters(buildFilters(converted));
+      setLoadError(false);
       console.log('[HomeScreen] Disasters from store:', converted.length);
       setLoading(false);
     } catch (error) {
       console.error('Failed to load disasters:', error);
+      setLoadError(true);
       setLoading(false);
     }
   };
@@ -328,7 +326,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       try {
         console.log('[Reroute] No cache - fetching geometry now:', routeId);
         const routeData = await authRequest<any>(API.reroute.status(disasterId, routeId));
-        pts = (routeData?.points ?? []).map(
+        const assignedRoute = (routeData?.chosen_routes ?? []).find(
+          (r: any) => (r.route_id ?? r.id) === routeId
+        ) ?? routeData?.chosen_routes?.[0];
+        pts = (assignedRoute?.points ?? []).map(
           (p: number[]) => [p[1], p[0]] as [number, number]
         );
         console.log('[Reroute] Geometry fetched on tap:', pts?.length, 'points');
@@ -349,9 +350,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
     // to the disasterStore, which triggers the store subscription above.
     // No need to call loadDisasters() here — store is the single source of truth.
 
-    // disaster.cleared — roads reopened, clear reroute overlay and status
-    if (alert.event_type === 'disaster.cleared') {
+    // disaster.cleared / disaster.resolved — roads reopened, clear reroute overlay and banners
+    if (alert.event_type === 'disaster.cleared' || alert.event_type === 'disaster.resolved') {
       mapRef.current?.clearReroute?.();
+      setCitizenRouteActive(false);
+      setResponderRouteActive(false);
+      setPendingReroute(null);
+      setActiveAlert(null);
     }
 
     // Citizen reroute — citizen-integration.md Section 8
@@ -365,11 +370,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
       try {
         const stored = await AsyncStorage.getItem('@auth/user_data');
         const user = stored ? JSON.parse(stored) : null;
-        const userRouteId = user ? routeAssignments[user.id] : null;
+        let userRouteId = user ? routeAssignments[user.id] : null;
+        console.log('[Reroute] userId:', user?.id, 'userRouteId:', userRouteId, 'assignmentKeys:', Object.keys(routeAssignments));
+
+        // route_assignments may be empty — fall back to /reroute/plans
+        if (!userRouteId && disasterId) {
+          try {
+            const plans = await authRequest<any>(API.reroute.plans());
+            const planList = Array.isArray(plans) ? plans : (plans as any)?.plans ?? [];
+            const plan = planList.find((p: any) => p.disaster_id === disasterId)
+              ?? planList.find((p: any) => p.status === 'active');
+            userRouteId = user?.id ? (plan?.route_assignments?.[user.id] ?? null) : null;
+            console.log('[Reroute] Plans fallback — userId:', user?.id, 'planDisasterId:', plan?.disaster_id, 'assignmentKeys:', Object.keys(plan?.route_assignments ?? {}), 'routeId:', userRouteId);
+          } catch { /* ignore — fall through to area alert */ }
+        }
 
         if (!userRouteId) {
-          // User NOT in route_assignments — general area alert, no route to draw
-          console.log('[Reroute] Not in route_assignments — showing area alert');
+          // User NOT in route_assignments and no plan found — general area alert
+          console.log('[Reroute] No route found — showing area alert');
           setActiveAlert({
             ...alert,
             title:   'Rerouting in Your Area',
@@ -385,22 +403,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
         // Fetch geometry immediately while plan is still active in the DB
         let cachedPts: [number, number][] | null = null;
+        await notificationStore.saveNotification(alert);
         try {
           const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
-          cachedPts = (routeData?.points ?? []).map(
+          const assignedRoute = (routeData?.chosen_routes ?? []).find(
+            (r: any) => (r.route_id ?? r.id) === userRouteId
+          ) ?? routeData?.chosen_routes?.[0];
+          cachedPts = (assignedRoute?.points ?? []).map(
             (p: number[]) => [p[1], p[0]] as [number, number]
           );
           console.log('[Reroute] Geometry pre-fetched:', cachedPts.length, 'points');
-          // Update the stored notification with cached geometry so AlertsScreen can use it
-          const all = await notificationStore.getAll();
-          const idx = all.findIndex(n => n.timestamp === alert.timestamp);
-          if (idx !== -1) {
-            all[idx].cachedRoutePts  = cachedPts ?? undefined;
-            all[idx].cachedRouteMeta = routeMeta
-              ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters }
-              : null;
-            await AsyncStorage.setItem('@notifications/alerts', JSON.stringify(all));
-          }
+          const meta = assignedRoute?.travel_time_seconds
+            ? { time: assignedRoute.travel_time_seconds, dist: assignedRoute.length_meters ?? 0 }
+            : null;
+          await notificationStore.updateCachedGeometry(alert.timestamp, cachedPts, meta);
         } catch (e) {
           console.warn('[Reroute] Geometry pre-fetch failed (will retry on tap):', e);
         }
@@ -445,13 +461,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
           const routeData = await authRequest<any>(API.reroute.status(disasterId, userRouteId));
           cachedPts = (routeData?.points ?? []).map((p: number[]) => [p[1], p[0]] as [number, number]);
           console.log('[route.updated] New geometry:', cachedPts.length, 'pts');
-          const all = await notificationStore.getAll();
-          const idx = all.findIndex(n => n.timestamp === alert.timestamp);
-          if (idx !== -1) {
-            all[idx].cachedRoutePts  = cachedPts ?? undefined;
-            all[idx].cachedRouteMeta = routeMeta ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters } : null;
-            await AsyncStorage.setItem('@notifications/alerts', JSON.stringify(all));
-          }
+          const meta2 = routeMeta ? { time: routeMeta.travel_time_seconds, dist: routeMeta.length_meters } : null;
+          await notificationStore.updateCachedGeometry(alert.timestamp, cachedPts, meta2);
         } catch (e) { console.warn('[route.updated] Geometry fetch failed:', e); }
 
         setPendingReroute({ disasterId, routeId: userRouteId,
@@ -494,6 +505,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
 
     // ERT-specific events — store already updated by wsService dispatch
     if (isResponder) {
+      // Unit completed — refresh disaster list since status may have changed
+      if (alert.event_type === 'disaster.unit_completed') {
+        try {
+          const data = await authRequest<any>(API.disasters.active());
+          const list = data?.disasters ?? (Array.isArray(data) ? data : []);
+          disasterStore.setActiveDisasters(list);
+        } catch (e) {
+          console.warn('[HomeScreen] unit_completed disaster refresh failed', e);
+        }
+      }
+
       // No loadDisasters() needed — disasterStore subscription handles re-render
       if (alert.event_type === 'coordination.escalation') {
         // Escalation — always show persistent banner, never auto-dismiss
@@ -597,7 +619,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
         }
         filterBar={
           <FilterTabs
-            filters={activeFilters}
+            filters={FILTERS}
             selected={selectedFilter}
             onSelect={handleFilterSelect}
           />
@@ -643,6 +665,41 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation, route }) => 
             <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
           </TouchableOpacity>
         </TouchableOpacity>
+      )}
+
+      {/* ── Clear Route button — citizen or responder ── */}
+      {(responderRouteActive || citizenRouteActive) && (
+        <TouchableOpacity
+          style={[styles.clearRouteBtn, { bottom: citizenRouteActive ? 130 : 90 }]}
+          onPress={() => {
+            mapRef.current?.clearReroute?.();
+            setResponderRouteActive(false);
+            setCitizenRouteActive(false);
+          }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.clearRouteBtnText}>✕  Clear Route</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Disaster load error — retry banner ── */}
+      {loadError && !loading && (
+        <TouchableOpacity
+          style={[styles.clearRouteBtn, { backgroundColor: '#DC2626', bottom: (responderRouteActive || citizenRouteActive) ? 148 : 90 }]}
+          onPress={() => { setLoadError(false); setLoading(true); loadDisasters(); }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.clearRouteBtnText}>⚠️  Failed to load disasters — Tap to retry</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Location permission denied banner (citizen only) ── */}
+      {!isResponder && locationDenied && (
+        <View style={[styles.clearRouteBtn, { backgroundColor: '#92400E', bottom: loadError ? 136 : 24, paddingVertical: 10 }]}>
+          <Text style={[styles.clearRouteBtnText, { fontSize: 12 }]}>
+            📍 Location access denied — alerts may not be geo-targeted to your area
+          </Text>
+        </View>
       )}
 
       {/* ── Left slide drawer using original working Modal + fade ── */}
@@ -725,6 +782,26 @@ const styles = StyleSheet.create({
   alertBannerTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },
   alertBannerMsg:   { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
   alertDismiss:     { paddingLeft: 12, paddingVertical: 4 },
+  clearRouteBtn: {
+    position:        'absolute',
+    bottom:          32,
+    alignSelf:       'center',
+    backgroundColor: '#DC2626',
+    borderRadius:    24,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    zIndex:          990,
+    shadowColor:     '#000',
+    shadowOffset:    { width: 0, height: 2 },
+    shadowOpacity:   0.25,
+    shadowRadius:    4,
+    elevation:       6,
+  },
+  clearRouteBtnText: {
+    color:      '#fff',
+    fontWeight: '700',
+    fontSize:   14,
+  },
 });
 
 export default HomeScreen;

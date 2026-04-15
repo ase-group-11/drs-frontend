@@ -24,6 +24,9 @@ import { spacing }         from '@theme/spacing';
 import Svg, { Path }       from 'react-native-svg';
 import { disasterStore, SEVERITY_COLOR, COLOUR_MAP } from '@services/disasterStore';
 import type { StoredAlert }   from '@services/disasterStore';
+import { notificationStore }  from '@services/notificationStore';
+import { authRequest }        from '@services/authService';
+import { API }                from '@services/apiConfig';
 import AsyncStorage            from '@react-native-async-storage/async-storage';
 import { formatTimeAgo }   from '@utils/formatters';
 
@@ -106,7 +109,7 @@ export const AlertsScreen: React.FC = () => {
   };
 
   // ── Smart tap handler — role-aware ───────────────────────────────────────
-  const handleTap = (alert: StoredAlert) => {
+  const handleTap = async (alert: StoredAlert) => {
     if (!alert.isRead) disasterStore.markAlertRead(alert.id);
 
     const et         = alert.event_type;
@@ -115,56 +118,139 @@ export const AlertsScreen: React.FC = () => {
     const isCitizen  = role !== 'responder';
 
     // ── Disaster events ────────────────────────────────────────────────────
-    if (et.startsWith('disaster.') && disasterId) {
-      // Citizens → citizen-safe screen (no deployment/unit data)
-      // Responders → full detail with deployments tab
-      navigation.navigate(
-        isCitizen ? ('DisasterAlertDetail' as any) : ('DisasterDetail' as any),
-        isCitizen ? { disasterId, alert } : { disasterId },
-      );
-      return;
-    }
+    if (et.startsWith('disaster.')) {
 
-    // ── Reroute / route.updated → Home map ────────────────────────────────
-    if (et === 'reroute.triggered' || et === 'route.updated') {
-      const storedAlert = alert as any;
-      if (storedAlert.cachedRoutePts && storedAlert.cachedRoutePts.length > 1) {
-        navigation.navigate('Home' as any, {
-          reroutePts:      storedAlert.cachedRoutePts,
-          rerouteMeta:     storedAlert.cachedRouteMeta ?? null,
-          rerouteDisaster: disasterId ?? '',
-        });
-      } else if (disasterId) {
-        navigation.navigate(
-          isCitizen ? ('DisasterAlertDetail' as any) : ('DisasterDetail' as any),
-          { disasterId },
-        );
+      // disaster.cleared → show map (roads reopened) — both roles
+      if (et === 'disaster.cleared') {
+        navigation.navigate('Home' as any);
+        return;
+      }
+
+      // Responder-specific routing
+      if (!isCitizen) {
+        // Dispatched / backup_requested → open ActiveMissions (they need to act)
+        if (et === 'disaster.dispatched' || et === 'disaster.backup_requested') {
+          navigation.navigate('ActiveMissions' as any);
+          return;
+        }
+        // Unit completed → open CompletedMissions
+        if (et === 'disaster.unit_completed') {
+          navigation.navigate('CompletedMissions' as any);
+          return;
+        }
+        // All other disaster events → full detail screen
+        if (disasterId) {
+          navigation.navigate('DisasterDetail' as any, { disasterId });
+        }
+        return;
+      }
+
+      // Citizen disaster events → DisasterAlertDetail
+      if (disasterId) {
+        navigation.navigate('DisasterAlertDetail' as any, { disasterId, alert });
       }
       return;
     }
 
-    // ── Evacuation → EvacuationPlans (has its own citizen/responder split) ─
+    // ── Reroute / route.updated ────────────────────────────────────────────
+    // Citizens: look up pre-fetched geometry from notificationStore and pass
+    // to HomeScreen so it can draw the route without a potentially-expired API call.
+    // Responders: open DisasterDetail to manage the disaster.
+    if (et === 'reroute.triggered' || et === 'route.updated') {
+      if (isCitizen) {
+        // Look up cached geometry stored by HomeScreen when the WS event first arrived
+        const stored = await notificationStore.getAll();
+        const match  = stored.find(n => n.timestamp === alert.timestamp);
+
+        if (match?.cachedRoutePts && match.cachedRoutePts.length > 1) {
+          navigation.navigate('Home' as any, {
+            reroutePts:      match.cachedRoutePts,
+            rerouteMeta:     match.cachedRouteMeta ?? null,
+            rerouteDisaster: disasterId ?? '',
+          });
+        } else {
+          // Cached geometry missing — try live fetch as fallback
+          try {
+            const storedUser = await AsyncStorage.getItem('@auth/user_data');
+            const user = storedUser ? JSON.parse(storedUser) : null;
+            const routeAssignments = alert.data?.route_assignments ?? {};
+            let routeId: string | null = user?.id ? routeAssignments[user.id] : null;
+
+            // route_assignments may be empty (backend didn't populate WS payload)
+            // Fall back to /reroute/plans which returns the user's current plan
+            if (!routeId && disasterId) {
+              const plans = await authRequest<any>(API.reroute.plans());
+              const planList = Array.isArray(plans) ? plans : (plans as any)?.plans ?? [];
+              console.log('[Reroute] plans count:', planList.length, 'looking for disasterId:', disasterId);
+              planList.forEach((p: any, i: number) => {
+                console.log(`[Reroute] plan[${i}] keys:`, Object.keys(p), 'disaster_id:', p.disaster_id, 'id:', p.id);
+              });
+              const plan = planList.find((p: any) => p.disaster_id === disasterId)
+                ?? planList.find((p: any) => p.status === 'active');
+              const assignments = plan?.route_assignments ?? {};
+              console.log('[Reroute] matched plan disaster_id:', plan?.disaster_id, 'userId:', user?.id);
+              console.log('[Reroute] route_assignments keys:', Object.keys(assignments));
+              console.log('[Reroute] user in assignments?', user?.id ? assignments[user.id] : 'no user');
+              // Only use user's own assignment — do NOT fall back to another user's route
+              routeId = user?.id ? (assignments[user.id] ?? null) : null;
+              console.log('[Reroute] routeId from plan.route_assignments:', routeId);
+            }
+
+            if (routeId && disasterId) {
+              const routeData = await authRequest<any>(
+                API.reroute.status(disasterId, routeId)
+              );
+              const assignedRoute = (routeData?.chosen_routes ?? []).find(
+                (r: any) => (r.route_id ?? r.id) === routeId
+              ) ?? routeData?.chosen_routes?.[0];
+              const pts: [number, number][] = (assignedRoute?.points ?? []).map(
+                (p: number[]) => [p[1], p[0]] as [number, number]
+              );
+              const meta = assignedRoute?.travel_time_seconds
+                ? { time: assignedRoute.travel_time_seconds, dist: assignedRoute.length_meters ?? 0 }
+                : null;
+              if (pts.length > 1) {
+                navigation.navigate('Home' as any, {
+                  reroutePts: pts, rerouteMeta: meta, rerouteDisaster: disasterId,
+                });
+                return;
+              }
+            }
+          } catch {
+            // Plan expired — just open map, WS overlay may still be drawn
+          }
+          navigation.navigate('Home' as any, { routeUnavailable: true });
+        }
+      } else if (disasterId) {
+        navigation.navigate('DisasterDetail' as any, { disasterId });
+      }
+      return;
+    }
+
+    // ── Evacuation → EvacuationPlans ──────────────────────────────────────
+    // Both roles — citizens need to evacuate, responders manage the plan
     if (et.startsWith('evacuation.')) {
-      navigation.navigate('EvacuationPlans' as any);
+      navigation.navigate('EvacuationPlans' as any, disasterId ? { disasterId } : undefined);
       return;
     }
 
     // ── Coordination events ────────────────────────────────────────────────
     if (et.startsWith('coordination.')) {
       if (isCitizen) {
-        // No command screen for citizens — show disaster detail if available
+        // Citizens have no command screen — show disaster detail if available
         if (disasterId) {
           navigation.navigate('DisasterAlertDetail' as any, { disasterId });
         }
-        // else: alert already marked read, stay on screen
       } else {
         navigation.navigate('DisasterCommand' as any);
       }
       return;
     }
 
-    // All other events — already marked read above, no navigation needed
+    // All other events (vehicle.location_updated, simulation.complete, etc.)
+    // Already marked as read above — no navigation needed
   };
+
 
   const handleClearAll = () => {
     Alert.alert('Clear All Alerts', 'Remove all alerts from your inbox?', [

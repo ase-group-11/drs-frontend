@@ -19,7 +19,7 @@
 //   GET /api/v1/evacuations/{plan_id}/progress      → live metrics
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, ScrollView, StyleSheet, StatusBar, TouchableOpacity,
   ActivityIndicator, Alert, Linking, RefreshControl, Platform,
@@ -36,6 +36,7 @@ import { wsService } from '@services/wsService';
 import { mapActionStore } from '@services/mapActionStore';
 import { formatTime, formatDate } from '@utils/formatters';
 import { API } from '@services/apiConfig';
+import { useUserLocation } from '@hooks/useUserLocation';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -331,9 +332,17 @@ const CitizenDetailView: React.FC<{
 
               <TouchableOpacity
                 style={[S.secondaryActionBtn, { marginTop: spacing.sm }]}
-                onPress={() => onFlyTo(targetShelter.lat, targetShelter.lon, targetShelter.name)}
+                onPress={() => {
+                  mapActionStore.setPending({
+                    type: 'evacuationRoute',
+                    lat: targetShelter.lat,
+                    lon: targetShelter.lon,
+                    label: targetShelter.name ?? 'Shelter',
+                  });
+                  navigation.navigate('Home' as any);
+                }}
               >
-                <Text style={S.secondaryActionTxt}>📍 View Shelter on Map</Text>
+                <Text style={S.secondaryActionTxt}>🗺️ Get Route to Shelter</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -669,9 +678,14 @@ export const EvacuationPlansScreen: React.FC = () => {
   const [progress, setProgress]           = useState<ProgressData | null>(null);
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
   const [isResponder, setIsResponder]     = useState(false);
-  // isManager removed — only 'staff' role exists; all responders can approve/activate
   const [view, setView]                   = useState<'list' | 'detail'>('list');
-  const [userLocation, setUserLocation]   = useState<UserLocation | null>(null);
+  const hasAutoOpened                     = useRef(false);
+
+  // Use the same location hook as HomeScreen — works on both iOS and Android
+  const { location: gpsLocation } = useUserLocation();
+  const userLocation: UserLocation | null = gpsLocation
+    ? { lat: gpsLocation[1], lon: gpsLocation[0] }
+    : null;
 
   useEffect(() => {
     loadAll();
@@ -681,18 +695,12 @@ export const EvacuationPlansScreen: React.FC = () => {
       setIsResponder(role === 'responder');
     });
 
-    // Get citizen GPS location for nearest zone calculation
-    // navigator.geolocation is patched by React Native core (no extra package needed)
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        () => { /* silent — nearest zone calc falls back gracefully */ },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-      );
-    }
-
+    const EVACUATION_EVENTS = [
+      'evacuation.triggered', 'evacuation.plan_approved',
+      'evacuation.plan_activated', 'disaster.cleared', 'disaster.resolved',
+    ];
     const unsub = wsService.onAlert((alert) => {
-      if (alert.event_type === 'evacuation.triggered') loadAll();
+      if (EVACUATION_EVENTS.includes(alert.event_type)) loadAll();
     });
     return () => unsub();
   }, []);
@@ -704,15 +712,15 @@ export const EvacuationPlansScreen: React.FC = () => {
   };
 
   // After plans are loaded, if a specific disasterId was passed as param,
-  // auto-open that disaster's evacuation plan directly
+  // auto-open that disaster's evacuation plan — only once (not on every reload)
   useEffect(() => {
-    if (!filterDisasterId || plans.length === 0) return;
+    if (!filterDisasterId || plans.length === 0 || hasAutoOpened.current) return;
     const match = plans.find(p => p.disaster_id === filterDisasterId);
     if (match) {
-      // Auto-open the matching plan detail
+      hasAutoOpened.current = true;
       loadPlanDetail(match.id);
     }
-    // else: no plan for this disaster yet — list shows all plans normally
+    // No alert here — warning card in the list handles "no matching plan" case
   }, [plans, filterDisasterId]);
 
   const onRefresh = async () => {
@@ -746,13 +754,15 @@ export const EvacuationPlansScreen: React.FC = () => {
       );
 
       setPlans(enriched);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Could not load evacuation plans:', e);
+      Alert.alert('Could Not Load Plans', e?.message || 'Failed to load evacuation plans. Please try again.');
     }
   };
 
   const loadPlanDetail = async (planId: string) => {
     setLoadingPlanId(planId);
+    setProgress(null);
     try {
       const detail = await authRequest<EvacuationPlan>(`/evacuations/${planId}`);
       setSelectedPlan(detail);
@@ -776,6 +786,12 @@ export const EvacuationPlansScreen: React.FC = () => {
   const openMaps = (lat: number, lon: number, label: string) => {
     console.log('[EvacuationPlans] View on Map → flyTo:', lat, lon, label);
     mapActionStore.setPending({ type: 'flyTo', lat, lon, label });
+    navigation.navigate('Home' as any);
+  };
+
+  const openMapsWithRoute = (lat: number, lon: number, label: string) => {
+    console.log('[EvacuationPlans] Responder View on Map → evacuationRoute:', lat, lon, label);
+    mapActionStore.setPending({ type: 'evacuationRoute', lat, lon, label });
     navigation.navigate('Home' as any);
   };
 
@@ -824,7 +840,7 @@ export const EvacuationPlansScreen: React.FC = () => {
           progress={progress}
           onBack={() => { setView('list'); setSelectedPlan(null); setProgress(null); }}
           onRefresh={() => loadProgress(selectedPlan.id)}
-          onFlyTo={openMaps}
+          onFlyTo={openMapsWithRoute}
         />
       );
     }
@@ -839,12 +855,11 @@ export const EvacuationPlansScreen: React.FC = () => {
   }
 
   // ── Visible plans ───────────────────────────────────────────────────────
-  // Citizens: only show ACTIVE plans (disaster still ongoing)
-  // Hide PENDING (not yet approved), CANCELLED, and COMPLETED (disaster resolved)
-  // Responders see all non-cancelled plans for operational awareness
+  // Citizens: only show ACTIVE plans
+  // Responders see all non-cancelled plans (including PENDING so they can approve)
   const visiblePlans = plans.filter(p => {
-    if (p.plan_status === 'PENDING' || p.plan_status === 'CANCELLED') return false;
-    if (!isResponder && p.plan_status === 'COMPLETED') return false; // resolved for citizens
+    if (p.plan_status === 'CANCELLED') return false;
+    if (!isResponder && (p.plan_status === 'PENDING' || p.plan_status === 'COMPLETED')) return false;
     return true;
   });
   const activePlans = visiblePlans.filter(p => p.plan_status === 'ACTIVE');
@@ -903,6 +918,17 @@ export const EvacuationPlansScreen: React.FC = () => {
               <Text variant="bodyMedium" color="textSecondary" style={{ textAlign: 'center', marginTop: spacing.sm }}>
                 Emergency coordinators haven't created an evacuation plan for this disaster yet. All current plans are shown below.
               </Text>
+              {isResponder && (
+                <TouchableOpacity
+                  style={[S.ertBtn, { backgroundColor: '#DC2626', marginTop: spacing.sm }]}
+                  onPress={() => Alert.alert('Trigger Evacuation', 'Create an evacuation plan for this disaster?', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Trigger', style: 'destructive', onPress: () => triggerEvacuation(filterDisasterId) },
+                  ])}
+                >
+                  <Text style={S.ertBtnTxt}>🚨 Trigger Evacuation Plan</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -922,6 +948,17 @@ export const EvacuationPlansScreen: React.FC = () => {
               <Text variant="bodyMedium" color="textSecondary" style={{ textAlign: 'center', marginTop: spacing.sm }}>
                 Evacuation plans appear here when activated by emergency coordinators.
               </Text>
+              {isResponder && filterDisasterId && (
+                <TouchableOpacity
+                  style={[S.ertBtn, { backgroundColor: '#DC2626', marginTop: spacing.md }]}
+                  onPress={() => Alert.alert('Trigger Evacuation', 'Create an evacuation plan for this disaster?', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Trigger', style: 'destructive', onPress: () => triggerEvacuation(filterDisasterId) },
+                  ])}
+                >
+                  <Text style={S.ertBtnTxt}>🚨 Trigger Evacuation Plan</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             visiblePlans.map(p => (
@@ -947,11 +984,10 @@ export const EvacuationPlansScreen: React.FC = () => {
                   {/* Disaster info — type + address */}
                   {p.disaster_type ? (
                     <Text style={S.planDisasterType}>
-                      {p.disaster_type === 'FIRE' ? '🔥' :
-                       p.disaster_type === 'FLOOD' ? '🌊' :
-                       p.disaster_type === 'EARTHQUAKE' ? '🏚️' :
-                       p.disaster_type === 'STORM' ? '⛈️' : '⚠️'
-                      } {p.disaster_type}
+                      {({ FIRE:'🔥', FLOOD:'🌊', EARTHQUAKE:'🏚️', STORM:'⛈️',
+                          TORNADO:'🌪️', TSUNAMI:'🌊', HEATWAVE:'🌡️',
+                          COLDWAVE:'🧊', DROUGHT:'☀️' } as Record<string,string>
+                      )[p.disaster_type] ?? '⚠️'} {p.disaster_type}
                     </Text>
                   ) : null}
                   {p.disaster_location ? (

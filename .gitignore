@@ -4,3 +4,4 @@ apps/mobile/android/app/src/main/assets/
 *.bundle
 .DS_Store
 *.zip
+.claude/

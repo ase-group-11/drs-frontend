@@ -494,14 +494,24 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
       console.warn('[_doNavigateToScene] Invalid coords:', destLat, destLon, '— aborting');
       return;
     }
-    const origLon = userLocationRef.current[0] ?? -6.2603;
-    const origLat = userLocationRef.current[1] ?? 53.3498;
-    console.log('[_doNavigateToScene] From:', origLat.toFixed(5), origLon.toFixed(5), '->', destLat.toFixed(5), destLon.toFixed(5), '|', label, '| source:', source);
+    console.log('[_doNavigateToScene] -> dest:', destLat.toFixed(5), destLon.toFixed(5), '|', label, '| source:', source);
     setDestinationPin([destLon, destLat]);
     setDestinationLabel(label);
     setShowRoutes(source === 'search'); // only open route card for user searches
     setRouteSource(source);
     setRerouteStatus(null);
+
+    // For responder "Navigate to Disaster" alerts: just fly the camera to the
+    // disaster location and place the pin. Do NOT try to draw a driving route
+    // because the user-location origin may still be the default fallback (GPS
+    // not yet acquired), which would draw a misleading route from the wrong place.
+    if (source === 'alert') {
+      cameraRef.current?.setCamera({ centerCoordinate: [destLon, destLat], zoomLevel: 15, animationDuration: 1500 });
+      return;
+    }
+
+    const origLon = userLocationRef.current[0] ?? -6.2603;
+    const origLat = userLocationRef.current[1] ?? 53.3498;
     try {
       const route = await fetchDirectRoute(origLon, origLat, destLon, destLat);
       if (route && route.points.length > 1) {
@@ -593,40 +603,65 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
         return;
       }
       console.log('[DisasterMap] showEvacuationRoute to:', destLat, destLon, label);
-      _doNavigateToScene(destLat, destLon, label, 'evacuation');
-      try {
-        // Use real user GPS from userLocationRef (always current)
-        const userLon = userLocationRef.current[0];
-        const userLat = userLocationRef.current[1];
-        const url =
-          `https://api.mapbox.com/directions/v5/mapbox/walking/` +
-          `${userLon},${userLat};${destLon},${destLat}` +
-          `?geometries=geojson&overview=full` +
-          `&access_token=${EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN}`;
-        const res  = await fetch(url);
-        const data = await res.json();
-        const coords: [number, number][] = data?.routes?.[0]?.geometry?.coordinates ?? [];
-        if (coords.length > 1) {
-          const durationSec = data.routes[0].duration  ?? 0;
-          const distM       = data.routes[0].distance  ?? 0;
-          setRerouteOverlay(coords);
-          setRerouteDisasterId('evacuation');
-          setRerouteStatus('affected');
-          setRerouteRouteData({ time: durationSec, dist: distM });
-          setRouteSource('evacuation'); // from EvacuationPlans — no card/button
-          // Do NOT setShowRoutes(true) — no card for evacuation-triggered routes
-          const lons = coords.map((p: [number, number]) => p[0]);
-          const lats = coords.map((p: [number, number]) => p[1]);
-          cameraRef.current?.fitBounds(
-            [Math.max(...lons), Math.max(...lats)],
-            [Math.min(...lons), Math.min(...lats)],
-            [80, 80, 260, 80], 1200,
-          );
-        }
-      } catch (e) {
-        console.warn('[DisasterMap] Walking route fetch failed:', e);
-        // Fallback: just fly to destination with no route overlay
+
+      // Reset state for a clean draw
+      setRerouteOverlay(null);
+      setRerouteStatus(null);
+      setRerouteRouteData(null);
+      setShowRoutes(false);
+      setDestinationPin([destLon, destLat]);
+      setDestinationLabel(label);
+      setRouteSource('evacuation');
+
+      // Fly to destination immediately while route loads
+      cameraRef.current?.setCamera({
+        centerCoordinate: [destLon, destLat], zoomLevel: 14, animationDuration: 800,
+      });
+
+      const userLon = userLocationRef.current[0];
+      const userLat = userLocationRef.current[1];
+      const hasUserLocation = userLon != null && userLat != null && (userLon !== 0 || userLat !== 0);
+
+      if (!hasUserLocation) {
+        console.warn('[DisasterMap] No user location — showing destination pin only');
+        return;
       }
+
+      // Try walking route first, fall back to driving if walking fails
+      const profiles = ['walking', 'driving'];
+      for (const profile of profiles) {
+        try {
+          const url =
+            `https://api.mapbox.com/directions/v5/mapbox/${profile}/` +
+            `${userLon},${userLat};${destLon},${destLat}` +
+            `?geometries=geojson&overview=full` +
+            `&access_token=${EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN}`;
+          console.log(`[showEvacuationRoute] Trying ${profile} route...`);
+          const res  = await fetch(url);
+          const data = await res.json();
+          const coords: [number, number][] = data?.routes?.[0]?.geometry?.coordinates ?? [];
+          console.log(`[showEvacuationRoute] ${profile} route returned ${coords.length} coords`);
+          if (coords.length > 1) {
+            const durationSec = data.routes[0].duration ?? 0;
+            const distM       = data.routes[0].distance ?? 0;
+            setRerouteOverlay(coords);
+            setRerouteDisasterId('evacuation');
+            setRerouteStatus('affected');
+            setRerouteRouteData({ time: durationSec, dist: distM });
+            const lons = coords.map((p: [number, number]) => p[0]);
+            const lats = coords.map((p: [number, number]) => p[1]);
+            cameraRef.current?.fitBounds(
+              [Math.max(...lons), Math.max(...lats)],
+              [Math.min(...lons), Math.min(...lats)],
+              [80, 80, 260, 80], 1200,
+            );
+            return; // success — stop trying profiles
+          }
+        } catch (e) {
+          console.warn(`[DisasterMap] ${profile} route fetch failed:`, e);
+        }
+      }
+      console.warn('[showEvacuationRoute] All profiles failed — showing destination pin only');
     },
   }));
 
@@ -1125,6 +1160,20 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
           </MapboxGL.ShapeSource>
         )}
 
+        {/* -- Reroute destination pin — end point of assigned route -- */}
+        {rerouteOverlay && rerouteOverlay.length > 1 && (
+          <MapboxGL.MarkerView
+            id="reroute-dest-pin"
+            coordinate={rerouteOverlay[rerouteOverlay.length - 1]}
+            anchor={{ x: 0.5, y: 1.0 }}
+            allowOverlap
+          >
+            <View style={styles.rerouteDestPin}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFFFFF' }} />
+            </View>
+          </MapboxGL.MarkerView>
+        )}
+
 
         {/* -- Disaster markers — key includes styleKey so they remount after style switch -- */}
         {validDisasters.map(d => (
@@ -1484,28 +1533,12 @@ export const DisasterMap = forwardRef<DisasterMapRef, DisasterMapProps>(({
             <Path d="M12 5v14M5 12h14" stroke="#1F2937" strokeWidth={2.5} strokeLinecap="round" />
           </Svg>
         </TouchableOpacity>
-        {/* Zoom-out row — with Clear Route button beside it for responders */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <TouchableOpacity style={styles.btn} onPress={handleZoomOut}>
-            <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-              <Path d="M5 12h14" stroke="#1F2937" strokeWidth={2.5} strokeLinecap="round" />
-            </Svg>
-          </TouchableOpacity>
-          {isResponder && rerouteOverlay && (
-            <TouchableOpacity
-              style={styles.clearRouteBtn}
-              onPress={() => {
-                setRerouteOverlay(null); setRerouteDisasterId(null);
-                setRerouteStatus(null); setRerouteRouteData(null);
-                setDestinationPin(null); setDestinationLabel('');
-                setShowRoutes(false);
-                setCarPosition(null); carProgressRef.current = 0;
-              }}
-            >
-              <Text style={styles.clearRouteBtnTxt}>✕ Clear Route</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* Zoom-out row */}
+        <TouchableOpacity style={styles.btn} onPress={handleZoomOut}>
+          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+            <Path d="M5 12h14" stroke="#1F2937" strokeWidth={2.5} strokeLinecap="round" />
+          </Svg>
+        </TouchableOpacity>
       </View>
 
       {/* Right controls */}
@@ -1867,6 +1900,14 @@ const styles = StyleSheet.create({
   destDotInner: {
     width: 6, height: 6, borderRadius: 3,
     backgroundColor: '#FFFFFF',
+  },
+  rerouteDestPin: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#EA580C',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 3, borderColor: '#FFFFFF',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35, shadowRadius: 4, elevation: 8,
   },
   // Legacy refs
   pinWrapper:  {},

@@ -197,7 +197,7 @@ export const API = {
                         routeId
                           ? `/reroute/status/${disasterId}?route_id=${routeId}`
                           : `/reroute/status/${disasterId}`,
-    // GET — route_id is a QUERY param, not a path segment
+    // GET — route_id is a QUERY PARAM
     plans:            () => '/reroute/plans',
     // GET
     health:           () => '/reroute/health',

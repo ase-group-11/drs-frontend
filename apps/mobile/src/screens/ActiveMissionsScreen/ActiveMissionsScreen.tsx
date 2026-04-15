@@ -28,6 +28,7 @@ import { showLocalNotification } from '@services/notificationService';
 import { disasterStore } from '@services/disasterStore';
 import { disasterService } from '@services/disasterService';
 import { API, WS_URL } from '@services/apiConfig';
+import { mapActionStore } from '@services/mapActionStore';
 import { formatTime, formatTimeAgo } from '@utils/formatters';
 
 const RED = '#DC2626';
@@ -275,7 +276,16 @@ export const ActiveMissionsScreen: React.FC = () => {
   };
 
   const navigateToDisaster = (m: Mission) => {
-    navigation.navigate('Home' as any, { flyToLat: m.coordinates.lat, flyToLon: m.coordinates.lon, flyToLabel: m.location_address });
+    // Queue a flyTo map action — HomeScreen will fly the camera to the disaster,
+    // fetch the active reroute plan, and draw a route line with a Clear Route button.
+    mapActionStore.setPending({
+      type:       'flyTo',
+      lat:        m.coordinates.lat,
+      lon:        m.coordinates.lon,
+      label:      m.location_address,
+      disasterId: m.disaster_id,
+    });
+    navigation.navigate('Home' as any);
   };
 
   // ── Chat — real WebSocket via /ws/chat/{disaster_id} ───────────────
@@ -713,6 +723,13 @@ export const ActiveMissionsScreen: React.FC = () => {
                 activeOpacity={0.8}
               >
                 <Text style={S.btnOverrideTxt}>🚦  Traffic Override</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[S.btnOverride, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}
+                onPress={() => navigation.navigate('EvacuationPlans' as any, { disasterId: m.disaster_id })}
+                activeOpacity={0.8}
+              >
+                <Text style={[S.btnOverrideTxt, { color: '#DC2626' }]}>🚨  Evacuation Plans</Text>
               </TouchableOpacity>
               <TouchableOpacity style={S.btnOutline}
                 onPress={() => Alert.alert('📞 Contact Command', 'Call HQ?',

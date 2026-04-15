@@ -136,7 +136,7 @@ const SAFETY_ADVICE: Record<string, SafetyAdvice> = {
 };
 
 const getSafetyAdvice = (type: string): SafetyAdvice =>
-  SAFETY_ADVICE[type?.toUpperCase()] ?? SAFETY_ADVICE.DEFAULT;
+  SAFETY_ADVICE[type?.toUpperCase()] ?? SAFETY_ADVICE.OTHER;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -358,10 +358,11 @@ export const DisasterAlertDetailScreen: React.FC = () => {
               onPress={() => {
                 if (lat && lon) {
                   mapActionStore.setPending({
-                    type:  'flyTo',
-                    lat:   Number(lat),
-                    lon:   Number(lon),
-                    label: d?.location_address ?? 'Disaster',
+                    type:       'flyTo',
+                    lat:        Number(lat),
+                    lon:        Number(lon),
+                    label:      d?.location_address ?? 'Disaster',
+                    disasterId: d?.id ?? d?.disaster_id ?? disasterId,
                   });
                 }
                 navigation.navigate('Home' as any);
